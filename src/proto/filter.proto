@@ -1,0 +1,38 @@
+package ps;
+
+message Filter {
+  enum Type {
+    // cache the keys at both sender and receiver
+    KEY_CACHING = 1;
+
+    // compress data by snappy
+    COMPRESSING = 2;
+
+    // convert a float/double into a fixed-point integer
+    FIXING_FLOAT = 3;
+
+    // add noise to data
+    NOISE = 4;
+  }
+  required Type type = 1;
+
+  // -- key caching --
+  // if the task is done, then clear the cache (to save memory)
+  optional bool clear_cache_if_done = 20 [default = false];
+
+  // -- fixing float filter --
+  optional int32 num_bytes = 5 [default = 3];
+
+  // -- nosie --
+  optional float mean = 6;
+  optional float std = 7;
+
+  // -- runtime parameters used by the system --
+  message FixedFloatConfig {
+    optional float min_value = 1 [default = -1];
+    optional float max_value = 2 [default = 1];
+  }
+  repeated FixedFloatConfig fixed_point = 4;
+  optional uint32 signature = 2;
+  repeated uint64 uncompressed_size = 3;
+}

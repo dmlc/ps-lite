@@ -1,0 +1,31 @@
+package ps;
+
+message HeartbeatReport {
+  optional int32 task_id = 1 [default = 0];
+  optional string hostname = 14;
+
+  // time stamp
+  // latest heartbeat report the scheduler has ever received
+  //    from a specified worker/server
+  optional uint32 seconds_since_epoch = 2;
+
+  optional uint32 total_time_milli = 13;
+  optional uint32 busy_time_milli = 3;
+
+  // recv/sent bytes via zmq
+  optional uint32 net_in_mb = 4;
+  optional uint32 net_out_mb = 5;
+
+  // user+sys (percentage)
+  optional uint32 process_cpu_usage = 6;
+  optional uint32 host_cpu_usage = 7;
+
+  optional uint32 process_rss_mb = 8;
+  optional uint32 process_virt_mb = 9;
+  optional uint32 host_in_use_gb = 10;
+  optional uint32 host_in_use_percentage = 15;
+
+  // host's network in/out bandwidth usage (MB/s)
+  optional uint32 host_net_in_bw = 11;
+  optional uint32 host_net_out_bw = 12;
+}

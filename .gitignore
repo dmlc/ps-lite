@@ -1,28 +1,17 @@
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
+example/**/data
+example/**/model
+build
+third_party
+**/log/**
+**/cache/**
+**/output/**
+*.pb.cc
+*.pb.h
+.*
+*core*
+config.mk
+**/bak/**
+doc/html
+doc/latex
+test/
+test-bak

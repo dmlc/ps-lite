@@ -1,0 +1,21 @@
+package ps;
+import "proto/range.proto";
+
+message Node {
+  enum Role {
+    SERVER = 0;
+    WORKER = 1;
+    SCHEDULER = 3;  // each running application has a single scheduler
+    GROUP = 4;      // a virtual node, present a group of node
+    UNUSED = 5;     // a backup node, could turn into another node
+  }
+
+  required Role role = 1;
+  optional string id = 2;
+  optional int32 rank = 5;
+  // network address
+  optional string hostname = 3;
+  optional int32 port = 4;
+
+  optional PbRange key = 6;
+}

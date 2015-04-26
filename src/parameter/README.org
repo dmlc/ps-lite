@@ -1,0 +1,9 @@
+#+TITLE:	Shared Parameters
+
+DEPRECATED
+
+| name           | KV pairs op | sorted key | value size | storage  | usage                                                                               |
+|----------------+-------------+------------+------------+----------+-------------------------------------------------------------------------------------|
+| KVVector       | batched     | yes        | fixed      | array    | sparse data with billions keys, used in worker node, or server node for bath method |
+| KVMap          | individual  | no         | fixed      | hash map |                                                                                     |
+| KVLayer        | individual  | yes        | vary       | hash map | neural network                                                                    |

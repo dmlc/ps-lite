@@ -1,0 +1,49 @@
+package ps;
+import "proto/range.proto";
+
+message DataConfig {
+  enum DataFormat {
+    BIN = 1;
+    PROTO = 2;
+    TEXT = 3;
+  }
+  required DataFormat format = 1;
+
+  // see https://github.com/mli/parameter_server/wiki/Data
+  enum TextFormat {
+    DENSE = 1;
+    SPARSE = 2;
+    SPARSE_BINARY = 3;
+    ADFEA = 4;
+    LIBSVM = 5;
+    TERAFEA = 6;
+    VW = 7;
+  }
+  optional TextFormat text = 2;
+
+  // filenames, supports regular expressions
+  repeated string file = 3;
+  // files stored in hdfs
+  optional HDFSConfig hdfs = 5;
+  // ignore the feature group information
+  optional bool ignore_feature_group = 6;
+  // the maximal number of files will be assigned to a worker, -1 means no limit
+  optional int32 max_num_files_per_worker = 7 [default = -1];
+
+  // the maximal number of lines will be read from a file, -1 means no limit
+  optional int32 max_num_lines_per_file = 8 [default = -1];
+
+  // randomly shuffle the file order
+  optional bool shuffle = 9 [default = false];
+
+  // only valid for the binary format
+  optional PbRange range = 4;
+  // duplicate the file several times
+  optional int32 replica = 10 [default = 1];
+}
+
+message HDFSConfig {
+  optional string home = 1;  // HADOOP_HOME
+  optional string ugi = 2;   // hadoop.job.ugi, format: user,passwd
+  optional string namenode = 4;  // fs.default.name
+}
