@@ -15,9 +15,9 @@ packages, e.g. [centos](http://linux.web.cern.ch/linux/devtoolset/),
 Assume `git` is installed:
 
 ```bash
-git clone https://github.com/dmlc/parameter_server -b dev
-cd parameter_server
-./script/install_third.sh
+git clone https://github.com/dmlc/ps-lite
+cd ps-lite
+./make/install_third.sh
 make -j8
 ```
 
