@@ -1,4 +1,5 @@
 #pragma once
+namespace ps {
 
 #ifndef SWIG
 // Standard typedefs
@@ -89,3 +90,5 @@ static const  int64 kint64min  =
     static_cast<int64>(GG_LONGLONG(0x8000000000000000));
 static const  int64 kint64max  =
     static_cast<int64>(GG_LONGLONG(0x7FFFFFFFFFFFFFFF));
+
+} // namespace PS
