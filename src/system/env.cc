@@ -88,7 +88,7 @@ void Env::AssembleMyNode() {
       id = "W" + std::to_string(my_rank);
     } else { // if (my_rank < FLAGS_num_workers + FLAGS_num_servers) {
       role = Node::SERVER;
-      id = "S" + std::to_string(FLAGS_my_rank - FLAGS_num_workers);
+      id = "S" + std::to_string(my_rank - FLAGS_num_workers);
     }
   }
 
