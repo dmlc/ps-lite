@@ -1,17 +1,44 @@
 #pragma once
 #include <sstream>
-#include "base/integral_types.h"
+#include <string>
+#include <limits>
+#if USE_DMLC
+#include "dmlc/logging."
+#else
+#include "glog/logging.h"
+#endif  // USE_DMLC
+
 namespace ps {
 
+typedef signed char         int8;
+typedef short               int16;  // NOLINT
+typedef int                 int32;
+#ifdef COMPILER_MSVC
+typedef __int64             int64;  // NOLINT
+#else
+typedef long long           int64;  // NOLINT
+#endif /* COMPILER_MSVC */
+
+typedef unsigned char      uint8;
+typedef unsigned short     uint16;  // NOLINT
+typedef unsigned int       uint32;
+#ifdef COMPILER_MSVC
+typedef unsigned __int64   uint64;
+#else
+typedef unsigned long long uint64;  // NOLINT
+#endif /* COMPILER_MSVC */
+
+#if USE_KEY32
+typedef uint32 Key;
+#else
 typedef uint64 Key;
-static const Key kMaxKey = kuint64max;
+#endif
 
+static const Key kMaxKey = std::numeric_limits<Key>::max();
 
-/**
- * \brief returns a short debug string
- */
+/*! \brief returns a short debug string */
 template <typename V>
-inline std::string DBSTR(const V* data, int n, int m = 5) {
+inline std::string DebugStr(const V* data, int n, int m = 5) {
   std::stringstream ss;
   ss << "[" << n << "]: ";
   if (n < 2 * m) {
@@ -24,9 +51,7 @@ inline std::string DBSTR(const V* data, int n, int m = 5) {
   return ss.str();
 }
 
-/**
- * \brief printf-style logging
- */
+/*! \brief printf-style logging */
 #define NOTICE(_fmt_, args...) do {                                     \
     struct timeval tv; gettimeofday(&tv, NULL);                         \
     time_t ts = (time_t)(tv.tv_sec);                                    \

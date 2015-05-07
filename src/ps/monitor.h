@@ -1,7 +1,6 @@
 /**
  * @file   monitor.h
  * @brief  A distributed monitor
- *
  */
 #pragma once
 #include "ps.h"
@@ -23,7 +22,7 @@ class MonitorMaster : public Customer {
   MonitorMaster(int id = NextCustomerID()) : Customer(id) {}
 
   // Get the newest progress
-  const Progress& GetProgress() {
+  Progress GetProgress() {
 
   }
 
@@ -53,7 +52,6 @@ class MonitorMaster : public Customer {
   }
  private:
   std::unordered_map<NodeID, Progress> progress_;
-  double interval_;
   Timer timer_;
   double total_time_ = 0;
 };

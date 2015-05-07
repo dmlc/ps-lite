@@ -40,6 +40,7 @@ message Task {
   // filters applied to the data
   repeated Filter filter = 12;
 
+  // not so useful, remove it TODO
   // if true, the tasks will be packed into a single one during sending
   optional bool more = 16 [default = false];
   repeated Task task = 15;
@@ -49,6 +50,8 @@ message Task {
 
   // system control signals
   optional Control ctrl = 18;
+
+  optional int32 cmd = 19;
 
   // parameters
   optional ParamCall param = 20;

@@ -1,5 +1,5 @@
 #pragma once
-#include "base/shared_array.h"
+#include "ps/shared_array.h"
 #include "base/assign_op.h"
 namespace ps {
 

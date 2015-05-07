@@ -3,25 +3,23 @@
  * \brief  The parameter server interface
  */
 #pragma once
-#include "base/base.h"
-#include "base/blob.h"
+#include <functional>
+#include <memory>
+#include "ps/base.h"
+#include "ps/blob.h"
+#include "proto/task.pb.h"
+#include "ps/shared_array.h"
+#include "kv/kv_cache.h"
+#include "kv/kv_store_sparse.h"
+#include "kv/kv_store_sparse_dynamic.h"
 #include "proto/filter.pb.h"
+
 ///////////////////////////////////////////////////////////////////////////////
 ///                              Worker node APIs                           ///
 ///////////////////////////////////////////////////////////////////////////////
-
-/**
- * \brief The main function for a worker node
- *
- * All flags and their arguments (e.g. -logtostderr 1) has been parsed and removed
- * from argc and argv, but commandline arguments are remained such as data=my_data.txt
- */
-int WorkerNodeMain(int argc, char *argv[]);
-
 namespace ps {
-/**
- * \brief Options for Push and Pull
- */
+
+/** \brief Push and Pull options */
 struct SyncOpts {
   /**
    * \brief the timestamp of the depended requests. This request will be
@@ -41,16 +39,14 @@ struct SyncOpts {
   std::vector<Filter> filters;
 
   /**
-   * \brief A helper function. Sample usage: AddFilter(FilterConfig::COMPRESSING);
+   * \brief Sample usage: AddFilter(FilterConfig::COMPRESSING);
    */
-  Filter& AddFilter(Filter::Type type) {
-    filters.push_back(Filter());
-    filters.back().set_type(type);
-    return filters.back();
-  }
+  Filter* AddFilter(Filter::Type type);
+
+  /** \brief Convert to a task */
+  void GetTask(Task* task) const;
 };
 
-template<typename K, typename V> class KVCache;
 /*!
  * \brief key-value cache for sending (receiving) key-value pairs to (from) servers
  *
@@ -63,38 +59,42 @@ class KVWorker {
    * @param id the unique identity which is used to find the KVStore at the
    * parameter server. Negative IDs is preserved by system.
    */
-  explicit KVWorker(int id = 0);
-  ~KVWorker();
+  explicit KVWorker(int id = 0) {
+    cache_ = CHECK_NOTNULL((new KVCache<Key, V>(id)));
+  }
+  ~KVWorker() {
+    delete cache_;
+  }
 
   /*!
    * \brief Pushes a list of key-value pairs into the parameter server
    *
    * It's a non-blocking call, which returns immediately once the message is
    * queued in the system's sending buffer. The actual push is finished only
-   * after Wait(returned_timestamp) returns or the provided callback is called.
+   * after Wait(the_returned_timestamp) returns or the provided callback is called.
    *
-   * Both keys and values will be copied, using the SArray version for zero-copy
+   * Both keys and values will be copied, using ZPush for zero-copy
    * pushing.
    *
    * Sample usage: assume we have two key-value pairs {1, (1.1, 1.2)}, {3,
    * (3.1,3.2)}, where the value is a 2-length float vector. We then can push these
-   * two pairs into the parameter server:
+   * two pairs into the server nodes:
    \code
-     KVWorker<float> cache(0);
+     KVWorker<float> ps(0);
      std::vector<Key> keys = {1, 3};
      std::vector<float> vals = {1.1, 1.2, 3.1, 3.2};
-     cache.Push(keys, vals);
+     ps.Push(keys, vals);
    \endcode
    *
    * @param keys a list of keys
-   * @param values a list of values, whose size should be an integer multiple
+   * @param vals a list of values, whose size should be an integer multiple
    * the key size
    *
    * @return the timestamp of this request.
    */
-  int Push(const std::vector<Key>& keys, const std::vector<V>& values,
+  int Push(const std::vector<Key>& keys, const std::vector<V>& vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Push(CBlob<Key>(keys), CBlob<V>(values), opts);
+    return Push(Blob<const Key>(keys), Blob<const V>(vals), opts);
   }
 
   /*!
@@ -102,26 +102,28 @@ class KVWorker {
    *
    * It's a non-blocking call, which returns immediately once the message is
    * queued in the system's sending buffer. The actual push is finished only
-   * after Wait(returned_timestamp) returns or the provided callback is called.
+   * after Wait(the_returned_timestamp) returns or the provided callback is called.
    *
-   * Keys will be copied, using the SArray version for zero-copy pushing.
-   *
-   * @param keys a list of keys
-   * @param values the buffer for the pulled values, which should be pre-allocated
+   * Keys will be copied, using ZPull for zero-copy pull.
    *
    * Sample usage: again assume each key is associated with a 2-length float
    * vector value. We then can pull the newest value from the parameter server:
    \code
-     KVWorker<float> cache(0);
+     KVWorker<float> ps(0);
      std::vector<Key> keys = {1, 3};
      std::vector<float> vals(4);
-     cache.Pull(keys, &vals);
+     ps.Pull(keys, &vals);
    \endcode
+   *
+   * @param keys a list of keys
+   * @param vals the buffer for the pulled values, which should be
+   * pre-allocated and not changed before the pulling is finished.
+   *
    * @return the timestamp of this request
    */
-  int Pull(const std::vector<Key>& keys, std::vector<V>* values,
+  int Pull(const std::vector<Key>& keys, std::vector<V>* vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Pull(CBlob<Key>(keys), Blob<V>(*values), opts);
+    return Pull(Blob<const Key>(keys), Blob<V>(*vals), opts);
   }
 
   /*!
@@ -129,55 +131,87 @@ class KVWorker {
    *
    * Sample usage:
    \code
-     int ts = cache.Pull(keys, &vals);
+     int ts = ps.Pull(keys, &vals);
      Wait(ts);
      // now vals is ready for use
    \endcode
    */
-  void Wait(int timestamp);
-
-  /*! \brief Blob style Push and Pull */
-
-  int Push(CBlob<Key> keys, CBlob<V> values, const SyncOpts& opts = SyncOpts());
-  int Pull(CBlob<Key> keys, Blob<V> values, const SyncOpts& opts = SyncOpts());
+  void Wait(int timestamp) {
+    cache_->Wait(timestamp);
+  }
 
   /**
-   * \brief zero-copy synchronization. Keys (and values) will not be copied to
-   * reduce the communication delay. Therefore, it is the user's responsibility
-   * to keep the keys and values unchanged until the request is finished, namely
-   * Wait(ts) returns or the callback is called.
+   * \brief zero-copy synchronization. Keys (and values for ZPush) will not be
+   * copied to reduce the communication delay. Therefore, it is the user's
+   * responsibility to keep the keys and values unchanged until the request is
+   * finished, namely Wait(ts) returns or the callback is called.
    */
-  int ZPush(const SBlob<Key>& keys, const SBlob<V>& values,
-           const SyncOpts& opts = SyncOpts());
+  int ZPush(const std::shared_ptr<std::vector<Key> >& keys,
+            const std::shared_ptr<std::vector<V> >& vals,
+            const SyncOpts& opts = SyncOpts()) {
+    return ZPush(SArray<Key>(keys), SArray<V>(vals), opts);
+  }
 
-  int ZPull(const SBlob<Key>& keys, SBlob<V>* values,
-           const SyncOpts& opts = SyncOpts());
+  int ZPull(const std::shared_ptr<std::vector<Key> >& keys, std::vector<V>* vals,
+            const SyncOpts& opts = SyncOpts()) {
+    return ZPull(SArray<Key>(keys),
+                 SArray<V>(vals->data(), vals->size(), EmptyDel<V>()), opts);
+  }
+
+  /*! \brief C-style Push and Pull */
+  int Push(Blob<const Key> keys, Blob<const V> vals, const SyncOpts& opts) {
+    // copy data
+    SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
+    SArray<V> s_vals; s_vals.CopyFrom(vals.data, vals.size);
+    return ZPush(s_keys, s_vals, opts);
+  }
+
+  int Pull(Blob<const Key> keys, Blob<V> vals, const SyncOpts& opts) {
+    // copy data
+    SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
+    return ZPull(s_keys,
+                 SArray<V>(vals.data(), vals.size(), EmptyDel<V>()), opts);
+  }
+
+  int ZPush(const SArray<Key>& keys, const SArray<V>& vals,
+            const SyncOpts& opts) {
+    Task req; opts.GetTask(&req);
+    return cache_->Push(req, keys, vals);
+  }
+
+
+  int ZPull(const SArray<Key>& keys, const SArray<V>& vals,
+            const SyncOpts& opts) {
+    Task req; opts.GetTask(&req);
+    return cache_->Pull(req, keys, vals);
+  }
 
   /*!
    * \brief Increases the clock by delta
    */
-  void IncrClock(int delta = 1);
+  void IncrClock(int delta = 1) {
+    cache_->exector()->IncrClock(delta);
+  }
  private:
   KVCache<Key, V>* cache_;
 };
 }  // namespace ps
 
-///////////////////////////////////////////////////////////////////////////////
-///                             Server node APIs                            ///
-///////////////////////////////////////////////////////////////////////////////
 
 /**
- * \brief The main function for a server node
+ * \brief The main function for a worker node
  *
  * All flags and their arguments (e.g. -logtostderr 1) has been parsed and removed
  * from argc and argv, but commandline arguments are remained such as data=my_data.txt
  */
-int CreateServerNode(int argc, char *argv[]);
+int WorkerNodeMain(int argc, char *argv[]);
 
+///////////////////////////////////////////////////////////////////////////////
+///                             Server node APIs                            ///
+///////////////////////////////////////////////////////////////////////////////
 namespace ps {
 /**
- * \brief An example of user-defineable handle. See more handle examples in
- * ps_server_handle.h
+ * \brief An example of user-defineable handle.
  * \tparam V the value type
  */
 template <typename V>
@@ -193,10 +227,10 @@ class IHandle {
    * @param recv_vals the corresponding values received from the worker node
    * @param my_vals the corresponding local values
    */
-  inline void HandlePush(int ts, CBlob<Key> recv_keys, CBlob<V> recv_vals,
-                         Blob<V>* my_vals) {
+  inline void HandlePush(int ts, Blob<const Key> recv_keys,
+                         Blob<const V> recv_vals, Blob<V> my_vals) {
     for (size_t i = 0; i < recv_vals.size; ++i)
-      (*my_vals)[i] += recv_vals[i];
+      my_vals[i] += recv_vals[i];
   }
   /**
    * \brief Handle PUSH requests from worker nod
@@ -205,23 +239,23 @@ class IHandle {
    * @param my_vals the corresponding local values
    * @param sent_vals the corresponding values will send to the worker node
    */
-  inline void HandlePull(int ts, CBlob<Key> recv_keys, CBlob<V> my_vals,
-                         Blob<V>* send_vals) {
+  inline void HandlePull(int ts, Blob<const Key> recv_keys,
+                         Blob<const V> my_vals, Blob<V> send_vals) {
     for (size_t i = 0; i < my_vals.size; ++i)
-      (*send_vals)[i] = my_vals[i];
+      send_vals[i] = my_vals[i];
   }
 
   /**
-   * \brief Initialize local values
+   * \brief Initialize local values. Will be only called once when allocating
+   * these key-value paris
    */
-  inline void HandleInit(int ts, CBlob<Key> keys, Blob<V>* vals) {
-    memset(vals->data, 0, vals->size*sizeof(V));
+  inline void HandleInit(int ts, Blob<const Key> keys, Blob<V> vals) {
+    memset(vals.data, 0, vals.size*sizeof(V));
   }
 };
 
 
 static const int kDynamicValue = -1;
-class KVStore;
 /*!
  * \brief key-value store for server nodes
  *
@@ -267,24 +301,44 @@ class KVServer {
   void set_sync_val_len(int len) { sync_val_len_ = len; }
   Handle& handle() { return handle_; }
 
-  KVStore* Run();
+  KVStore* Run() {
+    KVStore* server = NULL;
+    if (type_ == ONLINE) {
+      if (val_len != kDynamicValue) {
+        server = new KVStoreSparse<Key, V, Handle, val_len>(
+            id_, handle_, sync_val_len_);
+      } else {
+        server = new KVStoreSparseDynamic<Key, V, Handle>(id_, handle_);
+      }
+    }
+    CHECK_NOTNULL(server);
+    // let the system to delete server when finished
+    Postoffice::instance().manager().TransferCustomer(server);
+    return server;
+  }
+
  private:
   int id_;
   Type type_;
   int sync_val_len_;
   Handle handle_;
 };
+}  // namespace ps
 
+/**
+ * \brief The main function for a server node
+ *
+ * All flags and their arguments (e.g. -logtostderr 1) has been parsed and removed
+ * from argc and argv, but commandline arguments are remained such as data=my_data.txt
+ */
+int CreateServerNode(int argc, char *argv[]);
 
 
 ///////////////////////////////////////////////////////////////////////////////
 ///                            Scheduler Node APIs                          ///
 ///////////////////////////////////////////////////////////////////////////////
-// TODO
-}  // namespace ps
 
-/// implementation
-#include "ps-inl.h"
+// TODO
 
 ///////////////////////////////////////////////////////////////////////////////
 ///                            More Advanced APIs                           ///
@@ -349,3 +403,7 @@ inline void StopSystem() {
 // }
 
 }  // namespace ps
+
+// Implementation
+
+#include <ps/ps-inl.h>

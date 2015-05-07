@@ -2,7 +2,7 @@
 #include <string.h>
 #include <zmq.h>
 #include <libgen.h>
-#include "base/shared_array_inl.h"
+#include "ps/shared_array.h"
 #include "system/manager.h"
 #include "system/postoffice.h"
 namespace ps {
@@ -228,8 +228,8 @@ bool Van::Recv(Message* msg, size_t* recv_bytes) {
       // SArray<char> data; data.CopyFrom(buf, size);
 
       // ugly zero-copy
-      SArray<char> data(buf, size, false);
-      data.pointer().reset(buf, [zmsg](char*) {
+      SArray<char> data;
+      data.reset(buf, size, [zmsg](char*) {
           zmq_msg_close(zmsg);
           delete zmsg;
         });

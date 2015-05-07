@@ -1,6 +1,6 @@
 #pragma once
 #include "kv/kv_store.h"
-#include "base/blob.h"
+#include "ps/blob.h"
 namespace ps {
 
 // dynamic length value
@@ -39,8 +39,8 @@ class KVStoreSparseDynamic : public KVStore {
       int val_len = msg->task.dyn_val_len(i);
       Blob<V> send(send_val.data() + os, val_len);
       handle_.HandlePull(
-          ts, CBlob<K>(key_ptr+i, 1),
-          CBlob<V>(FindValue(key_ptr[i], ts, val_len), val_len), &send);
+          ts, Blob<const K>(key_ptr+i, 1),
+          Blob<const V>(FindValue(key_ptr[i], ts, val_len), val_len), &send);
       os += val_len;
     }
     msg->add_value(send_val);
@@ -71,7 +71,7 @@ class KVStoreSparseDynamic : public KVStore {
       CHECK_GE(recv_val.size(), os + val_len);
       Blob<V> my_val(FindValue(key_ptr[i], ts, val_len), val_len);
       handle_.HandlePush(
-          ts, CBlob<K>(key_ptr, 1), CBlob<V>(recv_val.data() + os, val_len),
+          ts, Blob<const K>(key_ptr, 1), Blob<const V>(recv_val.data() + os, val_len),
           &my_val);
     }
   }
@@ -87,7 +87,7 @@ class KVStoreSparseDynamic : public KVStore {
       CHECK(it2.second);
       it = it2.first;
 
-      handle_.HandleInit(ts, CBlob<K>(&key, 1), &my_val);
+      handle_.HandleInit(ts, Blob<const K>(&key, 1), &my_val);
     } else {
       CHECK_EQ(it->second.size, len);
     }

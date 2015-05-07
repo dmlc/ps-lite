@@ -1,6 +1,6 @@
 #pragma once
 #include "base/common.h"
-#include "base/shared_array.h"
+#include "ps/shared_array.h"
 #include "proto/task.pb.h"
 #include "proto/filter.pb.h"
 namespace ps {

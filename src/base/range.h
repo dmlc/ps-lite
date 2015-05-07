@@ -1,12 +1,20 @@
 #pragma once
 #include "proto/range.pb.h"
 
+#if USE_DMLC
+#include "dmlc/logging."
+#else
+#include "glog/logging.h"
+#endif  // USE_DMLC
+
 namespace ps {
 
 template<class T> class Range;
 typedef Range<size_t> SizeR;
 
-// a range between [begin_, end_)
+/**
+ * \brief a range between [begin, end)
+ */
 template<class T>
 class Range {
  public:

@@ -23,7 +23,7 @@ class KVStoreSparse : public KVStore {
       K key_i = key[i];
       Blob<V> send_val(val_data, k_);
       handle_.HandlePull(
-          ts, CBlob<K>(&key_i, 1), CBlob<V>(FindValue(key_i, ts), val_len),
+          ts, Blob<const K>(&key_i, 1), Blob<const V>(FindValue(key_i, ts), val_len),
           &send_val);
     }
     msg->add_value(val);
@@ -44,7 +44,7 @@ class KVStoreSparse : public KVStore {
       K key_i = key[i];
       Blob<V> my_val(FindValue(key_i, ts), val_len);
       handle_.HandlePush(
-          ts, CBlob<K>(&key_i, 1), CBlob<V>(val_data, k_), &my_val);
+          ts, Blob<const K>(&key_i, 1), Blob<const V>(val_data, k_), &my_val);
     }
   }
 
@@ -57,7 +57,7 @@ class KVStoreSparse : public KVStore {
       CHECK(it2.second);
       it = it2.first;
       Blob<V> my_val(it->second.data(), val_len);
-      handle_.HandleInit(ts, CBlob<K>(&key, 1), &my_val);
+      handle_.HandleInit(ts, Blob<const K>(&key, 1), &my_val);
     }
     return it->second.data();
   }

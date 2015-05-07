@@ -1,7 +1,7 @@
 #include "system/remote_node.h"
 #include "system/customer.h"
 #include "base/crc32c.h"
-#include "base/shared_array_inl.h"
+#include "ps/shared_array.h"
 namespace ps {
 
 IFilter* RemoteNode::FindIFilterOrCreate(const Filter& conf) {

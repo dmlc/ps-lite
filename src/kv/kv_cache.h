@@ -1,4 +1,5 @@
 #pragma once
+#include "ps/shared_array.h"
 #include "system/customer.h"
 #include "base/parallel_ordered_match.h"
 namespace ps {
@@ -11,35 +12,43 @@ class KVCache : public Customer {
 
   /// called by users ///
 
-  inline int Push(const SBlob<K>& keys,
-                  const SBlob<V>& values,
-                  const SyncOpts& opts) {
-    Message msg(ParseOption(opts), kServerGroup);
-    msg.set_key(SArray<K>(keys));
-    msg.add_value(SArray<V>(values));
-    if (opts.callback) msg.callback = opts.callback;
+  inline int Push(const Task& req, const SArray<K>& keys,
+                  const SArray<V>& vals, const Message::Callback& cb) {
+    Message msg(req, kServerGroup);
+    if (!req.has_time()) msg.task.set_time(exec_.time());
+    msg.set_key(keys);
+    msg.add_value(vals);
+    if (cb) msg.callback = cb;
     msg.task.mutable_param()->set_push(true);
     return Submit(&msg);
   }
 
-  inline int Pull(const SBlob<Key>& keys,
-                  SBlob<V>* values,
-                  const SyncOpts& opts) {
-    Message msg(ParseOption(opts), kServerGroup);
+  inline int Pull(const Task& req, const SArray<K>& keys,
+                  const SArray<V>& vals, const Message::Callback& cb) {
+    Message msg(req, kServerGroup);
+    if (!req.has_time()) msg.task.set_time(exec_.time());
     int ts = msg.task.time();
     mu_.lock();
     auto& kv = pull_data_[ts];
     mu_.unlock();
-    kv.key = SArray<K>(keys);
-    kv.value = SArray<V>(*values);
+    kv.key = keys;
+    kv.value = vals;
     // LL << ts << " " << pull_data_[ts].key << " " << kv.value;
     msg.set_key(kv.key);
-    msg.callback = [ts, opts, this] {
-      if (opts.callback) opts.callback();
-      mu_.lock();
-      pull_data_.erase(ts);
-      mu_.unlock();
-    };
+    if (cb) {
+      msg.callback = [ts, cb, this] {
+        cb();
+        mu_.lock();
+        pull_data_.erase(ts);
+        mu_.unlock();
+      };
+    } else {
+      msg.callback = [ts, this] {
+        mu_.lock();
+        pull_data_.erase(ts);
+        mu_.unlock();
+      };
+    }
     msg.task.mutable_param()->set_push(false);
     CHECK_EQ(ts, Submit(&msg));
     return ts;
@@ -74,14 +83,6 @@ class KVCache : public Customer {
   }
 
  private:
-  Task ParseOption(const SyncOpts& opts) {
-    Task req; req.set_request(true);
-    req.set_time(exec_.time());
-    for (int l : opts.deps) req.add_wait_time(l);
-    for (const auto& f : opts.filters) req.add_filter()->CopyFrom(f);
-    return req;
-  }
-
   struct KVPair {
     SArray<K> key;    // [key_0,  ..., key_n]
     SArray<V> value;  // [val_00, ..., val_0k, ..., val_n0, ..., val_nk]
