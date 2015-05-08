@@ -220,6 +220,32 @@ class IHandle {
   IHandle() { }
   virtual ~IHandle() { }
 
+  /** \brief Accepts the caller */
+  inline void SetCaller(void *obj) { }
+
+  /**
+   * \brief Start to handle a request from a worker
+   *
+   * @param push true if this is a push request
+   * @param timestamp the timestamp of this request
+   * @param worker the worker id
+   */
+  inline void Start(bool push, int timestamp, const std::string& worker) { }
+
+  /**
+   * \brief The request has been handled
+   */
+  inline void Finish() { }
+
+  /**
+   * \brief Handle initialization, which will be only called once when
+   * allocating these key-value paris
+   */
+  inline void Init(Blob<const Key> keys,
+                   Blob<V> vals) {
+    memset(vals.data, 0, vals.size*sizeof(V));
+  }
+
   /**
    * \brief Handle PUSH requests from worker nodes
    *
@@ -227,8 +253,9 @@ class IHandle {
    * @param recv_vals the corresponding values received from the worker node
    * @param my_vals the corresponding local values
    */
-  inline void HandlePush(int ts, Blob<const Key> recv_keys,
-                         Blob<const V> recv_vals, Blob<V> my_vals) {
+  inline void Push(Blob<const Key> recv_keys,
+                   Blob<const V> recv_vals,
+                   Blob<V> my_vals) {
     for (size_t i = 0; i < recv_vals.size; ++i)
       my_vals[i] += recv_vals[i];
   }
@@ -239,18 +266,11 @@ class IHandle {
    * @param my_vals the corresponding local values
    * @param sent_vals the corresponding values will send to the worker node
    */
-  inline void HandlePull(int ts, Blob<const Key> recv_keys,
-                         Blob<const V> my_vals, Blob<V> send_vals) {
+  inline void Pull(Blob<const Key> recv_keys,
+                   Blob<const V> my_vals,
+                   Blob<V> send_vals) {
     for (size_t i = 0; i < my_vals.size; ++i)
       send_vals[i] = my_vals[i];
-  }
-
-  /**
-   * \brief Initialize local values. Will be only called once when allocating
-   * these key-value paris
-   */
-  inline void HandleInit(int ts, Blob<const Key> keys, Blob<V> vals) {
-    memset(vals.data, 0, vals.size*sizeof(V));
   }
 };
 

@@ -1,6 +1,6 @@
 # Tutorial of the Parameter Server
 
-Here we show several examples on how to use the simplified parameter server API [ps.h](../include/ps.h).
+Here we show several examples on how to use the simplified parameter server API [ps.h](../src/ps.h).
 
 ## Worker APIs
 
@@ -38,7 +38,7 @@ int WorkerNodeMain(int argc, char *argv[]) {
 ```
 
 This example can be compiled by `make -C .. guide` and run using 4 worker nodes
-(processes) and 1 server node by `./local.sh 1 4 ./example_a`. A possible
+and 1 server node in local machine by `./local.sh 1 4 ./example_a`. A possible
 output is
 ```
 values pulled at W3: [3]: 2 2 2
@@ -137,5 +137,81 @@ two filters can reduce the total number of data sent by a worker from 2GB to
 ## Server APIs
 
 ### Simple handle summing the data
+
+Example [e](example_e.cc) is similar to Example a, where servers sum the data
+pushed by workers. The main difference is we
+let the handle print some debug information to clearly see how the handle is
+called:
+
+```c++
+class MyHandle {
+ public:
+  void SetCaller(void *obj) { obj_ = (Customer*)obj; }
+
+  inline void Start(bool push, int timestamp, const std::string& worker) {
+    std::cout << "accept " << (push ? "push" : "pull") << " from " << worker
+              << " with timestamp " << timestamp << std::endl;
+    ts_ = timestamp;
+  }
+
+  inline void Finish() {
+    std::cout << "finished " << obj_->NumDoneReceivedRequest(ts_, kWorkerGroup)
+              << " / " << FLAGS_num_workers << " on timestamp " << ts_ << std::endl;
+  }
+
+  inline void Init(Blob<const Key> keys,
+                   Blob<Val> vals) {
+    memset(vals.data, 0, vals.size*sizeof(Val));
+    std::cout << "init key " << keys << " val " << vals << std::endl;
+  }
+
+  inline void Push(Blob<const Key> recv_keys,
+                   Blob<const Val> recv_vals,
+                   Blob<Val> my_vals) {
+    for (size_t i = 0; i < recv_vals.size; ++i)
+      my_vals[i] += recv_vals[i];
+    std::cout << "handle push: key " << recv_keys << " val " << recv_vals << std::endl;
+  }
+
+  inline void Pull(Blob<const Key> recv_keys,
+                   Blob<const Val> my_vals,
+                   Blob<Val> send_vals) {
+    for (size_t i = 0; i < my_vals.size; ++i)
+      send_vals[i] = my_vals[i];
+    std::cout << "handle pull: key " << recv_keys << std::endl;
+  }
+ private:
+  Customer* obj_ = nullptr;
+  int ts_;
+};
+```
+
+A sample output after running `./local.sh 1 2 ./example_e`
+
+```
+accept push from W1 with timestamp 0
+init key [1]: 1  val [1]: 0
+handle push: key [1]: 1  val [1]: 1
+init key [1]: 3  val [1]: 0
+handle push: key [1]: 3  val [1]: 1
+init key [1]: 5  val [1]: 0
+handle push: key [1]: 5  val [1]: 1
+finished 1 / 2 on timestamp 0
+accept pull from W1 with timestamp 1
+handle pull: key [1]: 1
+handle pull: key [1]: 3
+handle pull: key [1]: 5
+finished 1 / 2 on timestamp 1
+accept push from W0 with timestamp 0
+handle push: key [1]: 1  val [1]: 1
+handle push: key [1]: 3  val [1]: 1
+handle push: key [1]: 5  val [1]: 1
+finished 2 / 2 on timestamp 0
+accept pull from W0 with timestamp 1
+handle pull: key [1]: 1
+handle pull: key [1]: 3
+handle pull: key [1]: 5
+finished 2 / 2 on timestamp 1
+```
 
 ### Adaptive gradient descent
