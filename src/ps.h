@@ -123,7 +123,7 @@ class KVWorker {
    */
   int Pull(const std::vector<Key>& keys, std::vector<V>* vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Pull(Blob<const Key>(keys), Blob<V>(*vals), opts);
+    return Pull(Blob<const Key>(keys), Blob<V>(vals), opts);
   }
 
   /*!
@@ -170,20 +170,20 @@ class KVWorker {
     // copy data
     SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
     return ZPull(s_keys,
-                 SArray<V>(vals.data(), vals.size(), EmptyDel<V>()), opts);
+                 SArray<V>(vals.data, vals.size, EmptyDel<V>()), opts);
   }
 
   int ZPush(const SArray<Key>& keys, const SArray<V>& vals,
             const SyncOpts& opts) {
     Task req; opts.GetTask(&req);
-    return cache_->Push(req, keys, vals);
+    return cache_->Push(req, keys, vals, opts.callback);
   }
 
 
   int ZPull(const SArray<Key>& keys, const SArray<V>& vals,
             const SyncOpts& opts) {
     Task req; opts.GetTask(&req);
-    return cache_->Pull(req, keys, vals);
+    return cache_->Pull(req, keys, vals, opts.callback);
   }
 
   /*!

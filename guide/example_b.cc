@@ -19,7 +19,7 @@ int WorkerNodeMain(int argc, char *argv[]) {
   opts.deps = {ts};
   opts.callback = [&recv_val]() {
     std::cout << "values pulled at " << MyNodeID() << ": " <<
-    CBlob<Val>(recv_val).ShortDebugString() << std::endl;
+    Blob<const Val>(recv_val) << std::endl;
   };
   ts = wk.Pull(key, &recv_val, opts);
   wk.Wait(ts);

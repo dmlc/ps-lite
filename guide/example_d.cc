@@ -10,10 +10,10 @@ int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
 
   int n = 1000000;
-  SBlob<Key> key(n);
-  SBlob<Val> val(n, 1);
-  SBlob<Val> recv_val(n, 0);
-  for (int i = 0; i < n; ++i) key[i] = kMaxKey / n * i;
+  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>(n));
+  for (int i = 0; i < n; ++i) (*key)[i] = kMaxKey / n * i;
+  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>(n, 1.0));
+  std::vector<Val> recv_val(n);
 
   KVWorker<Val> wk;
   int m = 100;

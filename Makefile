@@ -18,7 +18,7 @@ endif
 
 WARN = -Wall -Wno-unused-function -finline-functions -Wno-sign-compare #-Wconversion
 INCPATH = -I./src -I./include -I$(THIRD_PATH)/include
-CFLAGS = -std=c++0x $(WARN) $(OPT) $(INCPATH) $(EXTRA_CFLAGS)
+CFLAGS = -std=c++11 $(WARN) $(OPT) $(INCPATH) $(EXTRA_CFLAGS)
 ifeq ($(USE_S3), 1)
 CFLAGS += -DUSE_S3=1
 endif
@@ -32,7 +32,7 @@ clean:
 	rm -rf build
 	find src -name "*.pb.[ch]*" -delete
 
-ps: $(PS_LIB) $(PS_MAIN) #$(TEST_MAIN)
+ps: $(PS_LIB) $(PS_MAIN) guide #$(TEST_MAIN)
 
 # PS system
 ps_srcs	= $(wildcard src/*.cc src/*/*.cc)

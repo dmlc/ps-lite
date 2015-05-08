@@ -5,6 +5,7 @@
  */
 #pragma once
 #include <cstring>
+#include <type_traits>
 #include "ps/base.h"
 #if USE_EIGEN
 #include "Eigen/src/Core/Map.h"
@@ -33,8 +34,9 @@ struct Blob {
   Blob(T* d, size_t s) : data(d), size(s) { }
 
   /*! \brief Create a blob from std::vector */
-  Blob(const std::vector<T>& v) : data(v.data()), size(v.size()) { }
-  Blob(std::vector<T>& v) : data(v.data()), size(v.size()) { }
+  Blob(const std::vector<typename std::remove_cv<T>::type>& v)
+      : data(v.data()), size(v.size()) { }
+  Blob(std::vector<T>* v) : data(v->data()), size(v->size()) { }
 
   inline T& operator[] (size_t n) const {
     CHECK_LT(n, size);
@@ -71,5 +73,11 @@ struct Blob {
     return DebugStr(data, size);
   }
 };
+
+// for debug use
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const Blob<T>& obj) {
+  os << obj.ShortDebugString(); return os;
+}
 
 }  // namespace ps

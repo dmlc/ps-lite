@@ -20,6 +20,6 @@ int WorkerNodeMain(int argc, char *argv[]) {
   wk.Wait(ts);
 
   std::cout << "values pulled at " << MyNodeID() << ": " <<
-      CBlob<Val>(recv_val).ShortDebugString() << std::endl;
+      Blob<const Val>(recv_val) << std::endl;
   return 0;
 }

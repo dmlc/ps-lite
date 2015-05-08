@@ -31,8 +31,8 @@ int WorkerNodeMain(int argc, char *argv[]) {
   ts = wk.Pull(key, &recv_val);
   wk.Wait(ts);
 
-  std::cout << MyNodeID() << ": " <<
-      CBlob<Val>(recv_val).ShortDebugString() << std::endl;
+  std::cout << "values pulled at " << MyNodeID() << ": " <<
+      Blob<const Val>(recv_val) << std::endl;
   return 0;
 }
 ```
@@ -71,7 +71,7 @@ codes ([example_b](example_b.cc)) are equal to above.
   opts.deps = {ts};
   opts.callback = [&recv_val]() {
     std::cout << "values pulled at " << MyNodeID() << ": " <<
-    CBlob<Val>(recv_val).ShortDebugString() << std::endl;
+    Blob<const Val>(recv_val) << std::endl;
   };
   ts = wk.Pull(key, &recv_val, opts);
   wk.Wait(ts);
@@ -85,9 +85,9 @@ overhead is expensive, we can then use `ZPush` and `ZPull` to do zero-copy data
 communication ([example_c](example_c.cc)):
 
 ```c++
-  SBlob<Key> key = {1, 3, 5};
-  SBlob<Val> val = {1, 1, 1};
-  SBlob<Val> recv_val(3);
+  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>({1, 3, 5}));
+  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>({1, 1, 1}));
+  std::vector<Val> recv_val(3);
 
   KVWorker<Val> wk;
   int ts = wk.ZPush(key, val);
@@ -95,16 +95,12 @@ communication ([example_c](example_c.cc)):
 
   ts = wk.ZPull(key, &recv_val);
   wk.Wait(ts);
-
-  std::cout << "values pulled at " << MyNodeID() << ": " <<
-      recv_val.ShortDebugString() << std::endl;
-  return 0;
 ```
 
-Here `SBlob` wrappers a `std::shared_ptr`, the referred memory will be deleted
-only if the reference count goes to 0. Therefore, it's safe to delete both `key`
-and `val` immediately after `Push`. However, writing them could change the data
-sent by this node.
+The system will maintain a copy of `key` and `val` to prevent release the memory
+before the `Push` and `Pull` are finished. It's safe to destroy `key` and `val`
+on the user codes. However, change the content of `key` and `val` may affect the
+actualy data sent out.
 
 ### Filters
 
@@ -115,10 +111,10 @@ compression on values.
 
 ```c++
   int n = 1000000;
-  SBlob<Key> key(n);
-  SBlob<Val> val(n, 1);
-  SBlob<Val> recv_val(n, 0);
-  for (int i = 0; i < n; ++i) key[i] = kMaxKey / n * i;
+  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>(n));
+  for (int i = 0; i < n; ++i) (*key)[i] = kMaxKey / n * i;
+  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>(n, 1.0));
+  std::vector<Val> recv_val(n);
 
   KVWorker<Val> wk;
   int m = 100;
@@ -132,16 +128,14 @@ compression on values.
     ts = wk.ZPull(key, &recv_val, opts);
     wk.Wait(ts);
   }
-  return 0;
 ```
 
 Using 4 workers and 4 servers (`./local.sh 4 4 ./example_d -logtostderr`), these
-two filters can reduce the total number of data sent by a worker from 2GB to 20MB.
+two filters can reduce the total number of data sent by a worker from 2GB to
+20MB.
 
 ## Server APIs
 
 ### Simple handle summing the data
-TODO
 
 ### Adaptive gradient descent
-TODO

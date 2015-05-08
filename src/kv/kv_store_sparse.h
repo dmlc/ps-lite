@@ -21,10 +21,10 @@ class KVStoreSparse : public KVStore {
     V* val_data = val.data();
     for (size_t i = 0; i < n; ++i, val_data += k_) {
       K key_i = key[i];
-      Blob<V> send_val(val_data, k_);
       handle_.HandlePull(
-          ts, Blob<const K>(&key_i, 1), Blob<const V>(FindValue(key_i, ts), val_len),
-          &send_val);
+          ts, Blob<const K>(&key_i, 1),
+          Blob<const V>(FindValue(key_i, ts), val_len),
+          Blob<V>(val_data, k_));
     }
     msg->add_value(val);
   }
@@ -42,9 +42,9 @@ class KVStoreSparse : public KVStore {
     V* val_data = val.data();
     for (size_t i = 0; i < n; ++i, val_data += k_) {
       K key_i = key[i];
-      Blob<V> my_val(FindValue(key_i, ts), val_len);
       handle_.HandlePush(
-          ts, Blob<const K>(&key_i, 1), Blob<const V>(val_data, k_), &my_val);
+          ts, Blob<const K>(&key_i, 1), Blob<const V>(val_data, k_),
+          Blob<V>(FindValue(key_i, ts), val_len));
     }
   }
 
@@ -56,8 +56,8 @@ class KVStoreSparse : public KVStore {
       auto it2 = data_.insert(std::make_pair(key, std::array<V, val_len>()));
       CHECK(it2.second);
       it = it2.first;
-      Blob<V> my_val(it->second.data(), val_len);
-      handle_.HandleInit(ts, Blob<const K>(&key, 1), &my_val);
+      handle_.HandleInit(ts, Blob<const K>(&key, 1),
+                         Blob<V>(it->second.data(), val_len));
     }
     return it->second.data();
   }

@@ -40,7 +40,7 @@ class KVStoreSparseDynamic : public KVStore {
       Blob<V> send(send_val.data() + os, val_len);
       handle_.HandlePull(
           ts, Blob<const K>(key_ptr+i, 1),
-          Blob<const V>(FindValue(key_ptr[i], ts, val_len), val_len), &send);
+          Blob<const V>(FindValue(key_ptr[i], ts, val_len), val_len), send);
       os += val_len;
     }
     msg->add_value(send_val);
@@ -72,7 +72,7 @@ class KVStoreSparseDynamic : public KVStore {
       Blob<V> my_val(FindValue(key_ptr[i], ts, val_len), val_len);
       handle_.HandlePush(
           ts, Blob<const K>(key_ptr, 1), Blob<const V>(recv_val.data() + os, val_len),
-          &my_val);
+          my_val);
     }
   }
 
@@ -87,7 +87,7 @@ class KVStoreSparseDynamic : public KVStore {
       CHECK(it2.second);
       it = it2.first;
 
-      handle_.HandleInit(ts, Blob<const K>(&key, 1), &my_val);
+      handle_.HandleInit(ts, Blob<const K>(&key, 1), my_val);
     } else {
       CHECK_EQ(it->second.size, len);
     }

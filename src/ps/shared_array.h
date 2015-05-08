@@ -57,6 +57,14 @@ template<typename V> class SArray {
     reset(data, size, d);
   }
 
+  /** @brief Zero-copy constructor. */
+  SArray(const std::shared_ptr<std::vector<V> >& vec) {
+    size_ = vec.get()->size();
+    capacity_ = size_;
+    ptr_ = std::shared_ptr<V>(vec, vec.get()->data());
+  }
+
+
   /** @brief Copy constructor */
   void CopyFrom(const V* src, size_t size) {
     resize(size);
