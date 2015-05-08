@@ -50,9 +50,9 @@ struct SyncOpts {
 /*!
  * \brief key-value cache for sending (receiving) key-value pairs to (from) servers
  *
- * @tparam V the type of value
+ * @tparam Val the type of value
  */
-template<typename V>
+template<typename Val>
 class KVWorker {
  public:
   /**
@@ -60,7 +60,7 @@ class KVWorker {
    * parameter server. Negative IDs is preserved by system.
    */
   explicit KVWorker(int id = 0) {
-    cache_ = CHECK_NOTNULL((new KVCache<Key, V>(id)));
+    cache_ = CHECK_NOTNULL((new KVCache<Key, Val>(id)));
   }
   ~KVWorker() {
     delete cache_;
@@ -92,9 +92,10 @@ class KVWorker {
    *
    * @return the timestamp of this request.
    */
-  int Push(const std::vector<Key>& keys, const std::vector<V>& vals,
+  int Push(const std::vector<Key>& keys,
+           const std::vector<Val>& vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Push(Blob<const Key>(keys), Blob<const V>(vals), opts);
+    return Push(Blob<const Key>(keys), Blob<const Val>(vals), opts);
   }
 
   /*!
@@ -121,9 +122,10 @@ class KVWorker {
    *
    * @return the timestamp of this request
    */
-  int Pull(const std::vector<Key>& keys, std::vector<V>* vals,
+  int Pull(const std::vector<Key>& keys,
+           std::vector<Val>* vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Pull(Blob<const Key>(keys), Blob<V>(vals), opts);
+    return Pull(Blob<const Key>(keys), Blob<Val>(vals), opts);
   }
 
   /*!
@@ -147,40 +149,41 @@ class KVWorker {
    * finished, namely Wait(ts) returns or the callback is called.
    */
   int ZPush(const std::shared_ptr<std::vector<Key> >& keys,
-            const std::shared_ptr<std::vector<V> >& vals,
+            const std::shared_ptr<std::vector<Val> >& vals,
             const SyncOpts& opts = SyncOpts()) {
-    return ZPush(SArray<Key>(keys), SArray<V>(vals), opts);
+    return ZPush(SArray<Key>(keys), SArray<Val>(vals), opts);
   }
 
-  int ZPull(const std::shared_ptr<std::vector<Key> >& keys, std::vector<V>* vals,
+  int ZPull(const std::shared_ptr<std::vector<Key> >& keys,
+            std::vector<Val>* vals,
             const SyncOpts& opts = SyncOpts()) {
     return ZPull(SArray<Key>(keys),
-                 SArray<V>(vals->data(), vals->size(), EmptyDel<V>()), opts);
+                 SArray<Val>(vals->data(), vals->size(), EmptyDel<Val>()), opts);
   }
 
   /*! \brief C-style Push and Pull */
-  int Push(Blob<const Key> keys, Blob<const V> vals, const SyncOpts& opts) {
+  int Push(Blob<const Key> keys, Blob<const Val> vals, const SyncOpts& opts) {
     // copy data
     SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
-    SArray<V> s_vals; s_vals.CopyFrom(vals.data, vals.size);
+    SArray<Val> s_vals; s_vals.CopyFrom(vals.data, vals.size);
     return ZPush(s_keys, s_vals, opts);
   }
 
-  int Pull(Blob<const Key> keys, Blob<V> vals, const SyncOpts& opts) {
+  int Pull(Blob<const Key> keys, Blob<Val> vals, const SyncOpts& opts) {
     // copy data
     SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
     return ZPull(s_keys,
-                 SArray<V>(vals.data, vals.size, EmptyDel<V>()), opts);
+                 SArray<Val>(vals.data, vals.size, EmptyDel<Val>()), opts);
   }
 
-  int ZPush(const SArray<Key>& keys, const SArray<V>& vals,
+  int ZPush(const SArray<Key>& keys, const SArray<Val>& vals,
             const SyncOpts& opts) {
     Task req; opts.GetTask(&req);
     return cache_->Push(req, keys, vals, opts.callback);
   }
 
 
-  int ZPull(const SArray<Key>& keys, const SArray<V>& vals,
+  int ZPull(const SArray<Key>& keys, const SArray<Val>& vals,
             const SyncOpts& opts) {
     Task req; opts.GetTask(&req);
     return cache_->Pull(req, keys, vals, opts.callback);
@@ -193,7 +196,7 @@ class KVWorker {
     cache_->exector()->IncrClock(delta);
   }
  private:
-  KVCache<Key, V>* cache_;
+  KVCache<Key, Val>* cache_;
 };
 }  // namespace ps
 
@@ -214,7 +217,7 @@ namespace ps {
  * \brief An example of user-defineable handle.
  * \tparam V the value type
  */
-template <typename V>
+template <typename Val>
 class IHandle {
  public:
   IHandle() { }
@@ -242,8 +245,8 @@ class IHandle {
    * allocating these key-value paris
    */
   inline void Init(Blob<const Key> keys,
-                   Blob<V> vals) {
-    memset(vals.data, 0, vals.size*sizeof(V));
+                   Blob<Val> vals) {
+    memset(vals.data, 0, vals.size*sizeof(Val));
   }
 
   /**
@@ -254,8 +257,8 @@ class IHandle {
    * @param my_vals the corresponding local values
    */
   inline void Push(Blob<const Key> recv_keys,
-                   Blob<const V> recv_vals,
-                   Blob<V> my_vals) {
+                   Blob<const Val> recv_vals,
+                   Blob<Val> my_vals) {
     for (size_t i = 0; i < recv_vals.size; ++i)
       my_vals[i] += recv_vals[i];
   }
@@ -267,8 +270,8 @@ class IHandle {
    * @param sent_vals the corresponding values will send to the worker node
    */
   inline void Pull(Blob<const Key> recv_keys,
-                   Blob<const V> my_vals,
-                   Blob<V> send_vals) {
+                   Blob<const Val> my_vals,
+                   Blob<Val> send_vals) {
     for (size_t i = 0; i < my_vals.size; ++i)
       send_vals[i] = my_vals[i];
   }
@@ -285,7 +288,7 @@ static const int kDynamicValue = -1;
  * local. It could be a dynamic length DYNAMIC_LEN
  * @tparam sync_val_len the length of value will be synchronized
  */
-template <typename V, typename Handle = IHandle<V>, int val_len = 1>
+template <typename Val, typename Handle = IHandle<Val>, int val_len = 1>
 class KVServer {
  public:
   /**
@@ -325,10 +328,10 @@ class KVServer {
     KVStore* server = NULL;
     if (type_ == ONLINE) {
       if (val_len != kDynamicValue) {
-        server = new KVStoreSparse<Key, V, Handle, val_len>(
+        server = new KVStoreSparse<Key, Val, Handle, val_len>(
             id_, handle_, sync_val_len_);
       } else {
-        server = new KVStoreSparseDynamic<Key, V, Handle>(id_, handle_);
+        server = new KVStoreSparseDynamic<Key, Val, Handle>(id_, handle_);
       }
     }
     CHECK_NOTNULL(server);
