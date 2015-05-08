@@ -2,7 +2,7 @@
 #include "system/van.h"
 #include "base/common.h"
 #include "base/local_machine.h"
-#include "base/file.h"
+#include "base/dir.h"
 // #include "data/common.h"
 #include "proto/node.pb.h"
 namespace ps {
@@ -27,7 +27,7 @@ void Env::Init(char* argv0) {
 
 void Env::InitGlog(char* argv0) {
   if (FLAGS_log_dir.empty()) FLAGS_log_dir = "/tmp";
-  if (!dirExists(FLAGS_log_dir)) { createDir(FLAGS_log_dir); }
+  if (!DirExists(FLAGS_log_dir)) { CreateDir(FLAGS_log_dir); }
   // change the hostname in default log filename to node id
   string logfile = FLAGS_log_dir + "/" + string(basename(argv0)) + "."
                    + Van::ParseNode(FLAGS_my_node).id() + ".log.";

@@ -8,9 +8,6 @@ DECLARE_int32(num_workers);
 DECLARE_int32(num_replicas);
 DECLARE_int32(report_interval);
 
-DEFINE_string(app_conf, "", "the string configuration of app");
-DEFINE_string(app_file, "", "the configuration file of app");
-
 Manager::Manager() {}
 Manager::~Manager() {
   for (auto& it : customers_) {
@@ -32,9 +29,6 @@ void Manager::Init(int argc, char *argv[]) {
     if (!FLAGS_logtostderr) {
       LOG(INFO) << "Staring system. Logging into " << FLAGS_log_dir
                 << "/" << basename(argv[0]) <<".log.*";
-
-      // NOTICE("Staring system. Logging into %s/%s.log.*",
-          // FLAGS_log_dir.c_str(), basename(argv[0]));
     }
 
     node_assigner_ = new NodeAssigner(FLAGS_num_servers);

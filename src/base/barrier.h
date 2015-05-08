@@ -2,8 +2,7 @@
 
 #include <mutex>
 #include <condition_variable>
-#include "base/macros.h"
-#include "glog/logging.h"
+#include "ps/base.h"
 
 namespace ps {
 

@@ -9,7 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 
-#include "base/macros.h"
+#include "ps/base.h"
 #include "base/barrier.h"
 
 namespace ps {

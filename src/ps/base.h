@@ -64,4 +64,13 @@ inline std::string DebugStr(const V* data, int n, int m = 5) {
             __FILE__+n+1, __LINE__, ##args);                            \
 } while (0)
 
+#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+  TypeName(const TypeName&);               \
+  void operator=(const TypeName&)
+
+#define SINGLETON(Typename)                     \
+  static Typename& instance() {                 \
+    static Typename e;                          \
+    return e;                                   \
+  }
 }  // namespace ps
