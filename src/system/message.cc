@@ -24,7 +24,7 @@ std::string Message::ShortDebugString() const {
   if (key.size()) ss << "key [" << key.size() << "] ";
   if (value.size()) {
     ss << "value [";
-    for (int i = 0; i < value.size(); ++i) {
+    for (size_t i = 0; i < value.size(); ++i) {
       ss << value[i].size();
       if (i < value.size() - 1) ss << ",";
     }

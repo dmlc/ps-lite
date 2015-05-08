@@ -113,7 +113,7 @@ template <typename K> void SliceKOFVMessage(
   std::vector<size_t> pos(n+1);
   SArray<K> key(msg.key);
   Range<Key> msg_key_range(msg.task.key_range());
-  for (int i = 0; i < n; ++i) {
+  for (size_t i = 0; i < n; ++i) {
     if (i == 0) {
       K k = (K)msg_key_range.Project(krs[0].begin());
       pos[0] = std::lower_bound(key.begin(), key.end(), k) - key.begin();
@@ -125,7 +125,7 @@ template <typename K> void SliceKOFVMessage(
   }
 
   // split the message according to *pos*
-  for (int i = 0; i < n; ++i) {
+  for (size_t i = 0; i < n; ++i) {
     Message* ret = CHECK_NOTNULL((*rets)[i]);
     if (krs[i].SetIntersection(msg_key_range).empty()) {
       // the remote node does not maintain this key range. mark this message as

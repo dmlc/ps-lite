@@ -28,7 +28,7 @@ class KVStoreSparseDynamic : public KVStore {
     // parse values
     CHECK_EQ(msg->task.dyn_val_len_size(), n);
     size_t send_val_len = 0;
-    for (int i = 0; i < n; ++i) send_val_len += msg->task.dyn_val_len(i);
+    for (size_t i = 0; i < n; ++i) send_val_len += msg->task.dyn_val_len(i);
     // TODO zero copy
     SArray<V> send_val(send_val_len);
 

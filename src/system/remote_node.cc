@@ -31,7 +31,7 @@ void RemoteNode::DecodeMessage(Message* msg) {
 void RemoteNode::AddGroupNode(RemoteNode* rnode) {
   CHECK_NOTNULL(rnode);
   // insert s into sub_nodes such as sub_nodes is still ordered
-  int pos = 0;
+  size_t pos = 0;
   Range<Key> kr(rnode->node.key());
   while (pos < group.size()) {
     if (kr.InLeft(Range<Key>(group[pos]->node.key()))) {
@@ -46,7 +46,7 @@ void RemoteNode::AddGroupNode(RemoteNode* rnode) {
 void RemoteNode::RemoveGroupNode(RemoteNode* rnode) {
   size_t n = group.size();
   CHECK_EQ(n, keys.size());
-  for (int i = 0; i < n; ++i) {
+  for (size_t i = 0; i < n; ++i) {
     if (group[i] == rnode) {
       group.erase(group.begin() + i);
       keys.erase(keys.begin() + i);

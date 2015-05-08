@@ -132,7 +132,7 @@ int Executor::Submit(Message* msg) {
   CHECK_EQ(msgs.size(), rnode->group.size());
 
   // send them one by one
-  for (int i = 0; i < msgs.size(); ++i) {
+  for (size_t i = 0; i < msgs.size(); ++i) {
     RemoteNode* r = CHECK_NOTNULL(rnode->group[i]);
     Message* m = CHECK_NOTNULL(msgs[i]);
     if (!m->valid) {
@@ -351,7 +351,7 @@ void Executor::AddNode(const Node& node) {
   if (num_replicas_ <= 0) return;
 
   const auto& servers = nodes_[kServerGroup];
-  for (int i = 0; i < servers.group.size(); ++i) {
+  for (int i = 0; i < (int)servers.group.size(); ++i) {
     auto s = servers.group[i];
     if (s->node.id() != my_node_.id()) continue;
 

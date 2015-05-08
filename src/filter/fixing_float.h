@@ -76,7 +76,7 @@ class FixingFloatIFilter : public IFilter {
       SArray<uint8> code(orig.size() * nbytes);
       uint8* code_ptr = code.data();
       int seed = time(NULL);
-      for (int i = 0; i < orig.size(); ++i) {
+      for (size_t i = 0; i < orig.size(); ++i) {
         double proj = orig[i] > max_v ? max_v : orig[i] < min_v ? min_v : orig[i];
         double tmp = (proj - min_v) / bin * ratio;
         uint64 r = static_cast<uint64>(floor(tmp)) + boolrand(&seed);
@@ -90,7 +90,7 @@ class FixingFloatIFilter : public IFilter {
       // nbytes*8 int to float/double
       uint8* code_ptr = SArray<uint8>(array).data();
       SArray<V> orig(array.size() / nbytes);
-      for (int i = 0; i < orig.size(); ++i) {
+      for (size_t i = 0; i < orig.size(); ++i) {
         double r = 0;
         for (int j = 0; j < nbytes; ++j) {
           r += static_cast<uint64>(*(code_ptr++)) << 8 * j;

@@ -135,7 +135,7 @@ bool Van::Send(Message* msg, size_t* send_bytes) {
   int n = has_key + msg->value.size();
 
   // send task
-  size_t task_size = msg->task.ByteSize();
+  int task_size = msg->task.ByteSize();
   char* task_buf = new char[task_size+5];
   CHECK(msg->task.SerializeToArray(task_buf, task_size))
       << "failed to serialize " << msg->task.ShortDebugString();
@@ -162,7 +162,7 @@ bool Van::Send(Message* msg, size_t* send_bytes) {
     zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
     if (i == n - 1) tag = 0; // ZMQ_DONTWAIT;
     while (true) {
-      if (zmq_msg_send(&data_msg, socket, tag) == data->size()) break;
+      if (zmq_msg_send(&data_msg, socket, tag) == (int)data->size()) break;
       if (errno == EINTR) continue;  // may be interupted by profiler
       LOG(WARNING) << "failed to send message to node [" << id
                    << "] errno: " << zmq_strerror(errno);

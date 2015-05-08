@@ -51,7 +51,7 @@ class DataAssigner {
   int size() { return parts_.size(); }
  private:
   std::vector<DataConfig> parts_;
-  int cur_i_ = 0;
+  size_t cur_i_ = 0;
 };
 
 } // namespace ps

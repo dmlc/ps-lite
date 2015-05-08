@@ -7,12 +7,12 @@ endif
 ifeq ($(STATIC_THIRD_LIB), 1)
 THIRD_LIB=$(addprefix $(THIRD_PATH)/lib/, libgflags.a libprotobuf.a libglog.a libzmq.a)
 else
-THIRD_LIB=-L$(THIRD_PATH)/lib -lgflags -lprotobuf -lglog -lzmq -lsnappy
+THIRD_LIB=-L$(THIRD_PATH)/lib -lgflags -lprotobuf -lglog -lzmq
 endif
 
-WARN = -Wall -Wno-unused-function -finline-functions -Wno-sign-compare #-Wconversion
+WARN = -Wall  -finline-functions #-Wno-sign-compare #-Wconversion
 INCPATH = -I./src -I./include -I$(THIRD_PATH)/include
-CFLAGS = -std=c++11 $(WARN) $(OPT) $(INCPATH) $(EXTRA_CFLAGS)
+CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(EXTRA_CFLAGS)
 
 LDFLAGS = $(EXTRA_LDFLAGS) $(THIRD_LIB) -lpthread # -lrt
 
