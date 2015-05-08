@@ -217,3 +217,9 @@ finished 2 / 2 on timestamp 1
 See more online handles in [sgd_server_handle.h](https://github.com/dmlc/wormhole/blob/master/learn/linear/sgd/sgd_server_handle.h)
 
 ### Batch Model
+
+TODO
+
+### Data Consistency
+
+TODO
