@@ -10,7 +10,7 @@ else
 THIRD_LIB=-L$(THIRD_PATH)/lib -lgflags -lprotobuf -lglog -lzmq
 endif
 
-WARN = -Wall  -finline-functions #-Wno-sign-compare #-Wconversion
+WARN = -Wall -finline-functions
 INCPATH = -I./src -I./include -I$(THIRD_PATH)/include
 CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(EXTRA_CFLAGS)
 

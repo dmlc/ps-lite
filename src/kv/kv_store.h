@@ -1,5 +1,5 @@
 #pragma once
-#include "system/customer.h"
+#include "ps/app.h"
 #include "proto/param.pb.h"
 namespace ps {
 

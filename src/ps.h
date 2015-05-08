@@ -343,7 +343,7 @@ int CreateServerNode(int argc, char *argv[]);
 ///////////////////////////////////////////////////////////////////////////////
 ///                            More Advanced APIs                           ///
 ///////////////////////////////////////////////////////////////////////////////
-#include "system/customer.h"
+#include "ps/app.h"
 namespace ps {
 
 // The app this node runs
