@@ -1,11 +1,6 @@
 #pragma once
 #include "proto/range.pb.h"
-
-#if USE_DMLC
-#include "dmlc/logging."
-#else
 #include "glog/logging.h"
-#endif  // USE_DMLC
 
 namespace ps {
 

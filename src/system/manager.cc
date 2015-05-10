@@ -300,9 +300,9 @@ void Manager::RemoveCustomer(int id) {
 }
 
 int Manager::NextCustomerID() {
-  int id = -1;
-  for (const auto& it : customers_) id = std::min(id, it.second.first->id()-1);
-  return id;
+  int id = 0;
+  for (const auto& it : customers_) id = std::min(id, it.second.first->id());
+  return id - 1;
 }
 
 } // namespace ps

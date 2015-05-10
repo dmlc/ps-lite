@@ -5,7 +5,7 @@
  * @brief  Parallel sort
  */
 #pragma once
-#include "base/shared_array.h"
+#include "ps/shared_array.h"
 namespace ps {
 
 namespace  {

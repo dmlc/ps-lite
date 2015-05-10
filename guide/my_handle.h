@@ -41,7 +41,7 @@ class MyHandle {
   }
  private:
   Customer* obj_ = nullptr;
-  int ts_;
+  int ts_ = 0;
 };
 
 }  // namespace ps

@@ -420,10 +420,10 @@ inline void StopSystem() {
   ps::Postoffice::instance().Stop();
 }
 
-// inline int RunSystem(int argc, char *argv[]) {
-//   StartSystem(argc, argv); StopSystem();
-//   return 0;
-// }
+inline int RunSystem(int* argc, char ***argv) {
+  StartSystem(argc, argv); StopSystem();
+  return 0;
+}
 
 }  // namespace ps
 

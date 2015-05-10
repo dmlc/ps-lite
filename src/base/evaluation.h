@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/shared_array.h"
+#include "ps/shared_array.h"
 #include "base/parallel_sort.h"
 
 namespace ps {

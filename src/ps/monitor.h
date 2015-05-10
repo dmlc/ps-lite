@@ -14,6 +14,7 @@ namespace ps {
  * \code
    void Merge(const Progress&);
    void Parse(const std::string&);
+   void Clear();
    \endcode
  */
 template <typename Progress>
@@ -22,38 +23,18 @@ class MonitorMaster : public Customer {
   MonitorMaster(int id = NextCustomerID()) : Customer(id) {}
 
   // Get the newest progress
-  Progress GetProgress() {
+  void Get(Progress *prog) { Lock lk(mu_); prog->Merge(progress_); }
 
-  }
-
-  double GetElapsedTime() {
-
-  }
+  void Clear() { Lock lk(mu_); progress_.Clear(); }
 
   // implement system required functions
   virtual void ProcessRequest(Message* request) {
-    // NodeID sender = request->sender;
-    // Progress prog;
-    // CHECK(prog.ParseFromString(request->task.msg()));
-    // if (merger_) {
-    //   merger_(prog, &progress_[sender]);
-    // } else {
-    //   progress_[sender] = prog;
-    // }
-
-    // double time = timer_.stop();
-    // if (time > interval_ && printer_) {
-    //   total_time_ += time;
-    //   printer_(total_time_, &progress_);
-    //   timer_.restart();
-    // } else {
-    //   timer_.start();
-    // }
+    Lock lk(mu_);
+    progress_.Merge(request->task.msg());
   }
  private:
-  std::unordered_map<NodeID, Progress> progress_;
-  Timer timer_;
-  double total_time_ = 0;
+  std::mutex mu_;
+  Progress progress_;
 };
 
 /**
