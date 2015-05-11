@@ -11,18 +11,15 @@ OPT = -O3 -ggdb
 
 # statically link all dependent libraries, such as gflags, zeromq, if
 # 1. otherwise use dynamic linking
-STATIC_THIRD_LIB = 0
+STATIC_DEPS = 0
 
 # the installed path of third party libraries
-THIRD_PATH = $(shell pwd)/third_party
+DEPS_PATH = $(shell pwd)/third_party
 
 # additional link flags, such as -ltcmalloc_and_profiler
 EXTRA_LDFLAGS =
 
 # additional compile flags
 EXTRA_CFLAGS =
-
-# io option
-USE_S3 = 0
 
 all: ps

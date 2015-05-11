@@ -4,17 +4,13 @@ else
 include make/config.mk
 endif
 
-ifeq ($(STATIC_THIRD_LIB), 1)
-THIRD_LIB=$(addprefix $(THIRD_PATH)/lib/, libgflags.a libprotobuf.a libglog.a libzmq.a)
-else
-THIRD_LIB=-L$(THIRD_PATH)/lib -lgflags -lprotobuf -lglog -lzmq
-endif
+include make/ps.mk
 
 WARN = -Wall -finline-functions
-INCPATH = -I./src -I./include -I$(THIRD_PATH)/include
-CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(EXTRA_CFLAGS)
+INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
+CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
 
-LDFLAGS = $(EXTRA_LDFLAGS) $(THIRD_LIB) -lpthread # -lrt
+# LDFLAGS = $(EXTRA_LDFLAGS) $(PS_LDFLAGS) -lpthread # -lrt
 
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
@@ -44,7 +40,7 @@ build/%.o: src/%.cc
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.pb.cc %.pb.h : %.proto
-	${THIRD_PATH}/bin/protoc --cpp_out=./src --proto_path=./src $<
+	${DEPS_PATH}/bin/protoc --cpp_out=./src --proto_path=./src $<
 
 -include build/*/*.d
 -include build/*/*/*.d

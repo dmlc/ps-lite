@@ -22,18 +22,22 @@ class MonitorMaster : public Customer {
  public:
   MonitorMaster(int id = NextCustomerID()) : Customer(id) {}
 
-  // Get the newest progress
-  void Get(Progress *prog) { Lock lk(mu_); prog->Merge(progress_); }
+  // Get the merged progress on channel chl
+  void Get(int chl, Progress *prog) {
+    Lock lk(mu_); prog->Merge(prog_[chl]);
+  }
 
-  void Clear() { Lock lk(mu_); progress_.Clear(); }
+  void Clear(int chl) { Lock lk(mu_); prog_[chl].Clear(); }
 
   // implement system required functions
   virtual void ProcessRequest(Message* request) {
     Lock lk(mu_);
-    progress_.Merge(request->task.msg());
+    Progress p; p.Parse(request->task.msg());
+    prog_[request->task.key_channel()].Merge(p);
   }
  private:
   std::mutex mu_;
+  std::unordered_map<int, Progress> prog_;
   Progress progress_;
 };
 
@@ -54,11 +58,13 @@ class MonitorSlaver : public Customer {
   virtual ~MonitorSlaver() { }
 
   /**
-   * @brief Sends a report to the master
+   * @brief Sends a report to the master, reports on the same channel are merged
+  on the master
    */
-  void Report(const Progress& prog) {
+  void Report(int chl, const Progress& prog) {
     string str; prog.Serialize(&str);
     Task report; report.set_msg(str);
+    report.set_key_channel(chl);
     Submit(report, master_);
   }
  protected:

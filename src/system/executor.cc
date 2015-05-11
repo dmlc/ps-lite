@@ -155,6 +155,7 @@ void Executor::Reply(Message* request, Message* response) {
   res.set_request(false);
   if (req.has_control()) res.set_control(req.control());
   if (req.has_customer_id()) res.set_customer_id(req.customer_id());
+  if (req.has_cmd()) res.set_cmd(req.cmd());
   res.set_time(req.time());
 
   response->recver = request->sender;
