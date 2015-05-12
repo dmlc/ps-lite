@@ -3,7 +3,7 @@
 
 namespace ps {
 
-class CompressingIFilter : public IFilter {
+class CompressingFilter : public IFilter {
  public:
   void Encode(Message* msg) {
     // auto conf = Find(Filter::COMPRESSING, msg);

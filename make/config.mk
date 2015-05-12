@@ -22,4 +22,4 @@ EXTRA_LDFLAGS =
 # additional compile flags
 EXTRA_CFLAGS =
 
-all: ps
+all: ps guide

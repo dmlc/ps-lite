@@ -19,7 +19,7 @@ clean:
 	rm -rf build
 	find src -name "*.pb.[ch]*" -delete
 
-ps: $(PS_LIB) $(PS_MAIN) guide #$(TEST_MAIN)
+ps: $(PS_LIB) $(PS_MAIN) #$(TEST_MAIN)
 
 # PS system
 ps_srcs	= $(wildcard src/*.cc src/*/*.cc)

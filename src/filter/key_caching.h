@@ -1,9 +1,10 @@
 #pragma once
+#include <city.h>
 #include "filter/filter.h"
-#include "base/crc32c.h"
+// #include "base/crc32c.h"
 namespace ps {
 
-class KeyCachingIFilter : public IFilter {
+class KeyCachingFilter : public IFilter {
  public:
   // thread safe
   void Encode(Message* msg) {
@@ -15,7 +16,7 @@ class KeyCachingIFilter : public IFilter {
       return;
     }
     const auto& key = msg->key;
-    auto sig = crc32c::Value(key.data(), std::min(key.size(), max_sig_len_));
+    uint64 sig = FastHash(key);
     conf->set_signature(sig);
     auto cache_k = std::make_pair(
         msg->task.key_channel(), Range<Key>(msg->task.key_range()));
@@ -28,7 +29,7 @@ class KeyCachingIFilter : public IFilter {
       cache.first = sig;
       cache.second = key;
     }
-    if (conf->clear_cache_if_done() && isDone(msg->task)) {
+    if (conf->clear_cache_if_done() && IsDone(msg->task)) {
       cache_.erase(cache_k);
     }
   }
@@ -39,9 +40,7 @@ class KeyCachingIFilter : public IFilter {
     if (!conf || !conf->has_signature()) return;
     auto sig = conf->signature();
     // do a double check
-    if (msg->has_key()) {
-      CHECK_EQ(crc32c::Value(msg->key.data(), std::min(msg->key.size(), max_sig_len_)), sig);
-    }
+    if (msg->has_key()) CHECK_EQ(FastHash(msg->key), sig);
     auto cache_k = std::make_pair(
         msg->task.key_channel(), Range<Key>(msg->task.key_range()));
     Lock l(mu_);
@@ -54,16 +53,28 @@ class KeyCachingIFilter : public IFilter {
       CHECK_EQ(sig, cache.first) << msg->DebugString();
       msg->set_key(cache.second);
     }
-    if (conf->clear_cache_if_done() && isDone(msg->task)) {
+    if (conf->clear_cache_if_done() && IsDone(msg->task)) {
       cache_.erase(cache_k);
     }
   }
 
  private:
-  bool isDone(const Task& task) {
+  bool IsDone(const Task& task) {
     return (!task.request() ||
             (task.has_param()
              && task.param().push()));
+  }
+
+  inline uint64 Hash64(const char* buf, size_t len) {
+    return CityHash64(buf, len);
+  }
+
+  inline uint64 FastHash(const SArray<char>& arr) {
+    if (arr.size() < max_sig_len_) {
+      return Hash64(arr.data(), arr.size());
+    }
+    return (Hash64(arr.data(), max_sig_len_/2) ^
+            Hash64(arr.data()+arr.size()-max_sig_len_/2, max_sig_len_/2));
   }
 
   std::unordered_map<
@@ -71,7 +82,8 @@ class KeyCachingIFilter : public IFilter {
 
   // calculate the signature using the first max_sig_len_*4 bytes to accelerate
   // the computation
-  const size_t max_sig_len_ = 2048;
+
+  const size_t max_sig_len_ = 1024;
   std::mutex mu_;
 };
 

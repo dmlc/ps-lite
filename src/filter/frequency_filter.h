@@ -9,7 +9,7 @@ namespace ps {
  * @tparam V counter type
  */
 template<typename K, typename V>
-class FreqencyIFilter {
+class FreqencyFilter {
  public:
   /**
    * @brief Add keys with their key count
@@ -45,7 +45,7 @@ class FreqencyIFilter {
 
 // countmin implementation
 template<typename K, typename V>
-SArray<K> FreqencyIFilter<K,V>::QueryKeys(const SArray<K>& key, int freqency) {
+SArray<K> FreqencyFilter<K,V>::QueryKeys(const SArray<K>& key, int freqency) {
   CHECK_LT(freqency, kuint8max) << "change to uint16 or uint32...";
   SArray<K> filtered_key;
   for (auto k : key) {
@@ -57,7 +57,7 @@ SArray<K> FreqencyIFilter<K,V>::QueryKeys(const SArray<K>& key, int freqency) {
 }
 
 template<typename K, typename V>
-void FreqencyIFilter<K,V>::InsertKeys(const SArray<K>& key, const SArray<V>& count) {
+void FreqencyFilter<K,V>::InsertKeys(const SArray<K>& key, const SArray<V>& count) {
   CHECK_EQ(key.size(), count.size());
   for (size_t i = 0; i < key.size(); ++i) {
     count_.insert(key[i], count[i]);

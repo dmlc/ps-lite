@@ -1,10 +1,9 @@
 #include "system/remote_node.h"
-#include "base/crc32c.h"
 #include "ps/shared_array.h"
 #include "ps/app.h"
 namespace ps {
 
-IFilter* RemoteNode::FindIFilterOrCreate(const Filter& conf) {
+IFilter* RemoteNode::FindFilterOrCreate(const Filter& conf) {
   int id = conf.type();
   auto it = filters.find(id);
   if (it == filters.end()) {
@@ -17,14 +16,14 @@ IFilter* RemoteNode::FindIFilterOrCreate(const Filter& conf) {
 void RemoteNode::EncodeMessage(Message* msg) {
   const auto& tk = msg->task;
   for (int i = 0; i < tk.filter_size(); ++i) {
-    FindIFilterOrCreate(tk.filter(i))->Encode(msg);
+    FindFilterOrCreate(tk.filter(i))->Encode(msg);
   }
 }
 void RemoteNode::DecodeMessage(Message* msg) {
   const auto& tk = msg->task;
   // a reverse order comparing to encode
   for (int i = tk.filter_size()-1; i >= 0; --i) {
-    FindIFilterOrCreate(tk.filter(i))->Decode(msg);
+    FindFilterOrCreate(tk.filter(i))->Decode(msg);
   }
 }
 

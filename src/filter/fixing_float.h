@@ -3,7 +3,7 @@
 #include <time.h>
 namespace ps {
 
-class FixingFloatIFilter : public IFilter {
+class FixingFloatFilter : public IFilter {
  public:
   void Encode(Message* msg) {
     convert(msg, true);

@@ -9,13 +9,13 @@ namespace ps {
 IFilter* IFilter::create(const Filter& conf) {
   switch (conf.type()) {
     case Filter::KEY_CACHING:
-      return new KeyCachingIFilter();
+      return new KeyCachingFilter();
     case Filter::COMPRESSING:
-      return new CompressingIFilter();
+      return new CompressingFilter();
     case Filter::FIXING_FLOAT:
-      return new FixingFloatIFilter();
+      return new FixingFloatFilter();
     case Filter::NOISE:
-      return new AddNoiseIFilter();
+      return new AddNoiseFilter();
     default:
       CHECK(false) << "unknow filter type";
   }

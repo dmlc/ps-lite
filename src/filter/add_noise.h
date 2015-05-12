@@ -6,7 +6,7 @@ namespace ps {
  * @brief Add noise
  *
  */
-class AddNoiseIFilter : public IFilter {
+class AddNoiseFilter : public IFilter {
  public:
   void Encode(Message* msg) {
     auto filter_conf = CHECK_NOTNULL(Find(Filter::NOISE, msg));
