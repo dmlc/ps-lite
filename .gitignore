@@ -2,6 +2,7 @@ example/**/data
 example/**/model
 build
 third_party
+deps
 **/log/**
 **/cache/**
 **/output/**
