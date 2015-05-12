@@ -3,6 +3,7 @@
 #include "filter/key_caching.h"
 #include "filter/fixing_float.h"
 #include "filter/add_noise.h"
+#include "filter/delta_key.h"
 
 namespace ps {
 
@@ -16,6 +17,8 @@ IFilter* IFilter::create(const Filter& conf) {
       return new FixingFloatFilter();
     case Filter::NOISE:
       return new AddNoiseFilter();
+    case Filter::DELTA_KEY:
+      return new DeltaKeyFilter();
     default:
       CHECK(false) << "unknow filter type";
   }

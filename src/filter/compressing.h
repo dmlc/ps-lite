@@ -10,10 +10,10 @@ class CompressingFilter : public IFilter {
     auto conf = Find(Filter::COMPRESSING, msg);
     if (!conf) return;
     conf->clear_uncompressed_size();
-    if (msg->has_key()) {
-      conf->add_uncompressed_size(msg->key.size());
-      msg->key = Compress(msg->key);
-    }
+    // if (msg->has_key()) {
+    //   conf->add_uncompressed_size(msg->key.size());
+    //   msg->key = Compress(msg->key);
+    // }
     for (auto& v : msg->value) {
       conf->add_uncompressed_size(v.size());
       v = Compress(v);
@@ -22,12 +22,12 @@ class CompressingFilter : public IFilter {
   void Decode(Message* msg) {
     auto conf = Find(Filter::COMPRESSING, msg);
     if (!conf) return;
-    int has_key = msg->has_key();
+    int has_key = 0; //msg->has_key();
     CHECK_EQ(conf->uncompressed_size_size(), msg->value.size() + has_key);
 
-    if (has_key) {
-      msg->key = Decompress(msg->key, conf->uncompressed_size(0));
-    }
+    // if (has_key) {
+    //   msg->key = Decompress(msg->key, conf->uncompressed_size(0));
+    // }
     for (size_t i = 0; i < msg->value.size(); ++i) {
       msg->value[i] = Decompress(msg->value[i], conf->uncompressed_size(i+has_key));
     }

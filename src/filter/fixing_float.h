@@ -48,18 +48,22 @@ class FixingFloatFilter : public IFilter {
 
   // Decode / Encode an array
   template <typename V>
-  SArray<char> convert(const SArray<char>& array, bool Encode, int nbytes,
+  SArray<char> convert(const SArray<char>& array, bool encode, int nbytes,
                        Filter::FixedFloatConfig* conf) {
     CHECK_GT(nbytes, 0);
     CHECK_LT(nbytes, 8);
     double ratio = static_cast<double>(1 << (nbytes*8)) - 2;
 
-    if (Encode) {
-      if (!conf->has_min_value()) {
-        // conf->set_min_value(SArray<V>(array).EigenArray().minCoeff());
-      }
-      if (!conf->has_max_value()) {
-        // conf->set_max_value(SArray<V>(array).EigenArray().maxCoeff() + 1e-6); // to avoid max_v == min_v
+    if (encode) {
+      double min_v = 1e20, max_v = -1e20;
+      if (!conf->has_min_value() || !conf->has_max_value()) {
+        SArray<V> vec(array);
+        for (V v : vec) {
+          min_v = v < min_v ? v : min_v;
+          max_v = v > max_v ? v : max_v;
+        }
+        conf->set_min_value(min_v);
+        conf->set_max_value(max_v + 1e-6); // to avoid max_v == min_v
       }
     }
 
@@ -70,7 +74,7 @@ class FixingFloatFilter : public IFilter {
     double bin = max_v - min_v;
     CHECK_GT(bin, 0);
 
-    if (Encode) {
+    if (encode) {
       // float/double to nbytes*8 int
       SArray<V> orig(array);
       SArray<uint8> code(orig.size() * nbytes);

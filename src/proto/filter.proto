@@ -4,15 +4,15 @@ message Filter {
   enum Type {
     // cache the keys at both sender and receiver
     KEY_CACHING = 1;
-
     // compress data by snappy
     COMPRESSING = 2;
-
     // convert a float/double into a fixed-point integer
     FIXING_FLOAT = 3;
-
     // add noise to data
     NOISE = 4;
+    // key[i] <- key[i+1] - key[i]
+    DELTA_KEY = 5;
+
   }
   required Type type = 1;
 

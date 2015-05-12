@@ -152,6 +152,7 @@ template<typename V> class SArray {
   /** @brief release the memory */
   void clear() { reset(nullptr, 0, EmptyDel<V>()); }
 
+  Blob<V> blob() const { return Blob<V>(data(), size()); }
 
   /**
    * @brief Slice a segment, zero-copy
@@ -300,7 +301,7 @@ template<typename V> class SArray {
 // for debug use
 template <typename V>
 std::ostream& operator<<(std::ostream& os, const SArray<V>& obj) {
-  // os << DBSTR(obj.data(), obj.size(), 10);
+  os << obj.blob();
   return os;
 }
 
