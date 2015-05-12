@@ -147,9 +147,9 @@ bool Van::Send(Message* msg, size_t* send_bytes) {
 
   while (true) {
     if (zmq_msg_send(&task_msg, socket, tag) == task_size) break;
-    if (errno == EINTR) continue;  // may be interupted by profiler
+    if (errno == EINTR) continue;
     LOG(WARNING) << "failed to send message to node [" << id
-                 << "] errno: " << zmq_strerror(errno);
+                 << "] errno: " << errno << " " << zmq_strerror(errno);
     return false;
   }
   *send_bytes += task_size;
@@ -163,9 +163,9 @@ bool Van::Send(Message* msg, size_t* send_bytes) {
     if (i == n - 1) tag = 0; // ZMQ_DONTWAIT;
     while (true) {
       if (zmq_msg_send(&data_msg, socket, tag) == (int)data->size()) break;
-      if (errno == EINTR) continue;  // may be interupted by profiler
+      if (errno == EINTR) continue;
       LOG(WARNING) << "failed to send message to node [" << id
-                   << "] errno: " << zmq_strerror(errno);
+                   << "] errno: " << errno << " " << zmq_strerror(errno);
       return false;
     }
     *send_bytes += data->size();
@@ -183,9 +183,9 @@ bool Van::Recv(Message* msg, size_t* recv_bytes) {
     CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
     while (true) {
       if (zmq_msg_recv(zmsg, receiver_, 0) != -1) break;
-      if (errno == EINTR) continue;  // may be interupted by google profiler
+      if (errno == EINTR) continue;
       LOG(WARNING) << "failed to receive message. errno: "
-                   << zmq_strerror(errno);
+                   << errno << " " << zmq_strerror(errno);
       return false;
     }
     char* buf = CHECK_NOTNULL((char *)zmq_msg_data(zmsg));
@@ -272,7 +272,7 @@ void Van::Monitor() {
     zmq_msg_t msg;
     zmq_msg_init(&msg);
     if (zmq_msg_recv(&msg, s, 0) == -1) {
-      if (errno == EINTR) continue;  // may be interupted by google profiler
+      if (errno == EINTR) continue;
       break;
     }
     uint8_t *data = (uint8_t *)zmq_msg_data (&msg);

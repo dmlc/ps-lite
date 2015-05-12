@@ -15,7 +15,6 @@ class KVCache : public Customer {
   inline int Push(const Task& req, const SArray<K>& keys,
                   const SArray<V>& vals, const Message::Callback& cb) {
     Message msg(req, kServerGroup);
-    if (!req.has_time()) msg.task.set_time(exec_.time());
     msg.set_key(keys);
     msg.add_value(vals);
     if (cb) msg.callback = cb;
@@ -26,32 +25,31 @@ class KVCache : public Customer {
   inline int Pull(const Task& req, const SArray<K>& keys,
                   const SArray<V>& vals, const Message::Callback& cb) {
     Message msg(req, kServerGroup);
-    if (!req.has_time()) msg.task.set_time(exec_.time());
-    int ts = msg.task.time();
     mu_.lock();
-    auto& kv = pull_data_[ts];
+    int chl = chl_ ++;
+    auto& kv = pull_data_[chl];
     mu_.unlock();
     kv.key = keys;
     kv.value = vals;
     // LL << ts << " " << pull_data_[ts].key << " " << kv.value;
     msg.set_key(kv.key);
     if (cb) {
-      msg.callback = [ts, cb, this] {
+      msg.callback = [chl, cb, this] {
         cb();
         mu_.lock();
-        pull_data_.erase(ts);
+        pull_data_.erase(chl);
         mu_.unlock();
       };
     } else {
-      msg.callback = [ts, this] {
+      msg.callback = [chl, this] {
         mu_.lock();
-        pull_data_.erase(ts);
+        pull_data_.erase(chl);
         mu_.unlock();
       };
     }
+    msg.task.set_key_channel(chl);
     msg.task.mutable_param()->set_push(false);
-    CHECK_EQ(ts, Submit(&msg));
-    return ts;
+    return Submit(&msg);
   }
 
   /// called by system ///
@@ -73,7 +71,7 @@ class KVCache : public Customer {
     int k = recv_data.size() / recv_key.size();
 
     // local kv
-    auto& kv = pull_data_[msg->task.time()];
+    auto& kv = pull_data_[msg->task.key_channel()];
     CHECK_EQ(kv.value.size(), kv.key.size() * k);
 
     // match
@@ -89,6 +87,7 @@ class KVCache : public Customer {
   };
   std::unordered_map<int, KVPair> pull_data_;
   std::mutex mu_;
+  int chl_ = 0;
   int split_val_ = 10000;
 };
 }  // namespace ps
