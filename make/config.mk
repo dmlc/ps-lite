@@ -14,7 +14,7 @@ OPT = -O3 -ggdb
 STATIC_DEPS = 0
 
 # the installed path of third party libraries
-DEPS_PATH = $(shell pwd)/third_party
+DEPS_PATH = $(shell pwd)/deps
 
 # additional link flags, such as -ltcmalloc_and_profiler
 EXTRA_LDFLAGS =
