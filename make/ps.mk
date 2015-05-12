@@ -12,9 +12,9 @@ PS_CFLAGS += -DUSE_KEY32=1
 endif
 
 ifeq ($(STATIC_DEPS), 1)
-PS_LDFLAGS += $(addprefix $(DEPS_PATH)/lib/, libgflags.a libprotobuf.a libglog.a libzmq.a libcityhash.a)
+PS_LDFLAGS += $(addprefix $(DEPS_PATH)/lib/, libgflags.a libprotobuf.a libglog.a libzmq.a libcityhash.a liblz4.a)
 else
-PS_LDFLAGS += -L$(DEPS_PATH)/lib -lgflags -lprotobuf -lglog -lzmq -lcityhash
+PS_LDFLAGS += -L$(DEPS_PATH)/lib -lgflags -lprotobuf -lglog -lzmq -lcityhash -llz4
 endif
 
 USE_GLOG = 1
