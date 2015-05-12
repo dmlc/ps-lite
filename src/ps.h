@@ -39,7 +39,7 @@ struct SyncOpts {
   std::vector<Filter> filters;
 
   /**
-   * \brief Sample usage: AddFilter(FilterConfig::COMPRESSING);
+   * \brief Sample usage: AddFilter(Filter::COMPRESSING);
    */
   Filter* AddFilter(Filter::Type type);
 

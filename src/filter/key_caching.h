@@ -18,19 +18,17 @@ class KeyCachingFilter : public IFilter {
     const auto& key = msg->key;
     uint64 sig = FastHash(key);
     conf->set_signature(sig);
-    auto cache_k = std::make_pair(
-        msg->task.key_channel(), Range<Key>(msg->task.key_range()));
+
     Lock l(mu_);
-    auto& cache = cache_[cache_k];
-    bool hit_cache = cache.first == sig && cache.second.size() == key.size();
-    if (hit_cache) {
+    bool clear = conf->clear_cache() && IsDone(msg->task);
+    auto it = cache_.find(sig);
+    if (it != cache_.end() && it->second.size() == key.size()) {
+      // hit cache
       msg->clear_key();
+      if (clear) cache_.erase(it);
     } else {
-      cache.first = sig;
-      cache.second = key;
-    }
-    if (conf->clear_cache_if_done() && IsDone(msg->task)) {
-      cache_.erase(cache_k);
+      // not hit
+      if (!clear) cache_[sig] = key;
     }
   }
 
@@ -41,20 +39,17 @@ class KeyCachingFilter : public IFilter {
     auto sig = conf->signature();
     // do a double check
     if (msg->has_key()) CHECK_EQ(FastHash(msg->key), sig);
-    auto cache_k = std::make_pair(
-        msg->task.key_channel(), Range<Key>(msg->task.key_range()));
+
     Lock l(mu_);
-    auto& cache = cache_[cache_k];
+    bool clear = conf->clear_cache() && IsDone(msg->task);
     if (msg->has_key()) {
-      cache.first = sig;
-      cache.second = msg->key;
+      if (!clear) cache_[sig] = msg->key;
     } else {
-      // the cache is invalid... may ask the sender to resend this task
-      CHECK_EQ(sig, cache.first) << msg->DebugString();
-      msg->set_key(cache.second);
-    }
-    if (conf->clear_cache_if_done() && IsDone(msg->task)) {
-      cache_.erase(cache_k);
+      // a lit bittle danger
+      auto it = cache_.find(sig);
+      CHECK(it != cache_.end()) << "invalid key cache";
+      msg->set_key(it->second);
+      if (clear) cache_.erase(it);
     }
   }
 
@@ -77,13 +72,9 @@ class KeyCachingFilter : public IFilter {
             Hash64(arr.data()+arr.size()-max_sig_len_/2, max_sig_len_/2));
   }
 
-  std::unordered_map<
-    std::pair<int, Range<Key>>, std::pair<uint32_t, SArray<char>>> cache_;
+  std::unordered_map<uint64, SArray<char>> cache_;
 
-  // calculate the signature using the first max_sig_len_*4 bytes to accelerate
-  // the computation
-
-  const size_t max_sig_len_ = 1024;
+  const size_t max_sig_len_ = 4096;
   std::mutex mu_;
 };
 

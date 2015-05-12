@@ -18,7 +18,7 @@ message Filter {
 
   // -- key caching --
   // if the task is done, then clear the cache (to save memory)
-  optional bool clear_cache_if_done = 20 [default = false];
+  optional bool clear_cache = 20 [default = false];
 
   // -- fixing float filter --
   optional int32 num_bytes = 5 [default = 3];
