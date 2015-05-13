@@ -16,5 +16,3 @@ PS_LDFLAGS += $(addprefix $(DEPS_PATH)/lib/, libgflags.a libprotobuf.a libglog.a
 else
 PS_LDFLAGS += -L$(DEPS_PATH)/lib -lgflags -lprotobuf -lglog -lzmq -lcityhash -llz4
 endif
-
-USE_GLOG = 1

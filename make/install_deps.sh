@@ -19,3 +19,5 @@ install_glog
 install_zmq
 install_lz4
 install_cityhash
+
+rm -rf $install_dir/build

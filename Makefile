@@ -1,27 +1,36 @@
+ifndef config
 ifneq ("$(wildcard ./config.mk)","")
-include ./config.mk
+config = ./config.mk
 else
-include make/config.mk
+config = make/config.mk
+endif
 endif
 
+include $(config)
 include make/ps.mk
 
+ifndef OPT
+OPT  = -O3 -ggdb
+endif
+
+ifndef DEPS_PATH
+DEPS_PATH = $(shell pwd)/deps
+endif
+
 WARN = -Wall -finline-functions
-INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
+INCPATH = -I./src -I$(DEPS_PATH)/include
 CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
 
 
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
-# TEST_MAIN = build/test_main.o
 
 clean:
 	rm -rf build
 	find src -name "*.pb.[ch]*" -delete
 
-ps: $(PS_LIB) $(PS_MAIN) #$(TEST_MAIN)
+ps: $(PS_LIB) $(PS_MAIN)
 
-# PS system
 ps_srcs	= $(wildcard src/*.cc src/*/*.cc)
 ps_protos	= $(wildcard src/proto/*.proto)
 ps_objs	= $(patsubst src/%.proto, build/%.pb.o, $(ps_protos)) \
@@ -35,8 +44,8 @@ build/libps_main.a: build/ps_main.o
 
 build/%.o: src/%.cc
 	@mkdir -p $(@D)
-	$(CC) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
+	$(CXX) $(CFLAGS) -c $< -o $@
 
 %.pb.cc %.pb.h : %.proto
 	${DEPS_PATH}/bin/protoc --cpp_out=./src --proto_path=./src $<
