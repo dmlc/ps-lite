@@ -109,8 +109,8 @@ bool Van::Connect(const Node& node) {
   string my_id = my_node_.id(); // address(my_node_);
   zmq_setsockopt (sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
 
-  // uint64_t hwm = 5000000;
-  // zmq_setsockopt (sender, ZMQ_SNDHWM, &hwm, sizeof(hwm));
+  // uint64_t hwm = 500000;
+  // zmq_setsockopt(sender, ZMQ_SNDHWM, &hwm, sizeof(hwm));
 
   // connect
   string addr = "tcp://" + node.hostname() + ":" + std::to_string(node.port());
@@ -172,16 +172,22 @@ bool Van::Send(Message* msg, size_t* send_bytes) {
     SArray<char>* data = new SArray<char>(
         (has_key && i == 0) ? msg->key : msg->value[i-has_key]);
     zmq_msg_t data_msg;
+    int data_size = data->size();
     zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
     if (i == n - 1) tag = 0; // ZMQ_DONTWAIT;
     while (true) {
-      if (zmq_msg_send(&data_msg, socket, tag) == (int)data->size()) break;
+      if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
       if (errno == EINTR) continue;
+      // if (errno == EINTR || errno == EAGAIN) {
+      //   usleep(1000);
+      //   continue;
+      // }
       LOG(WARNING) << "failed to send message to node [" << id
-                   << "] errno: " << errno << " " << zmq_strerror(errno);
+                   << "] errno: " << errno << " " << zmq_strerror(errno)
+                   << ". " << i << "/" << n << ": " << msg->ShortDebugString();
       return false;
     }
-    *send_bytes += data->size();
+    *send_bytes += data_size;
   }
 
   VLOG(1) << "TO " << msg->recver << " " << msg->ShortDebugString();
