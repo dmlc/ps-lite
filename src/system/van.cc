@@ -2,11 +2,13 @@
 #include <string.h>
 #include <zmq.h>
 #include <libgen.h>
+#include <stdlib.h>
+#include <time.h>
+#include <functional>
 #include "ps/shared_array.h"
 #include "system/manager.h"
 #include "system/postoffice.h"
 namespace ps {
-
 DEFINE_int32(bind_to, 0, "binding port");
 DEFINE_bool(local, false, "run in local");
 
@@ -54,17 +56,28 @@ void Van::Bind() {
   CHECK(receiver_ != NULL)
       << "create receiver socket failed: " << zmq_strerror(errno);
   string addr = "tcp://*:";
+  bool retry = false;
   if (FLAGS_bind_to) {
     addr += std::to_string(FLAGS_bind_to);
   } else {
     CHECK(my_node_.has_port()) << my_node_.ShortDebugString();
+    if (!IsScheduler()) retry = true;
     addr += std::to_string(my_node_.port());
   }
   if (FLAGS_local) {
     addr = "ipc:///tmp/" + my_node_.id();
   }
-  CHECK(zmq_bind(receiver_, addr.c_str()) == 0)
-      << "bind to " << addr << " failed: " << zmq_strerror(errno);
+  std::hash<std::string> hash;
+  srand((int)time(NULL) + hash(my_node_.id()));
+  int max_retry = retry ? 40 : 1;
+  for (int i = 0; i < max_retry; ++i) {
+    if (zmq_bind(receiver_, addr.c_str()) == 0) break;
+    CHECK_NE(i, max_retry - 1)
+        << "bind to " << addr << " failed: " << " " << zmq_strerror(errno);
+
+    my_node_.set_port(10000 + rand() % 40000);
+    addr = "tcp://*:" + std::to_string(my_node_.port());
+  }
 
   VLOG(1) << "BIND address " << addr;
 }
