@@ -369,6 +369,9 @@ int CreateServerNode(int argc, char *argv[]);
 #include "ps/app.h"
 namespace ps {
 
+DECLARE_int32(num_workers);
+DECLARE_int32(num_servers);
+
 // The app this node runs
 inline App* MyApp() { return Postoffice::instance().manager().app(); }
 
@@ -402,6 +405,9 @@ inline int RankSize() {
   return IsWorkerNode() ? mng.num_workers() : (IsServerNode() ? mng.num_servers() : 1);
 }
 
+inline int NumWorkers() { return FLAGS_num_workers; }
+
+inline int NumServers() { return FLAGS_num_servers; }
 // Wait until all FLAGS_num_servers servers are ready.
 inline void WaitServersReady() {
   ps::Postoffice::instance().manager().WaitServersReady();
