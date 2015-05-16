@@ -177,7 +177,13 @@ bool Executor::PickActiveMsg() {
 
     // check if the remote node is still alive.
     Lock l(node_mu_);
-    auto rnode = GetRNode(msg->sender);
+
+    auto nit = nodes_.find(msg->sender);
+    if (nit == nodes_.end()) {
+      // it happens AddNode(msg->sender) is not executed yet, simply wait
+      continue;
+    }
+    auto rnode = &nit->second;
     if (!rnode->alive) {
       LOG(WARNING) << my_node_.id() << ": rnode " << msg->sender <<
           " is not alive, ignore received message: " << msg->ShortDebugString();
@@ -373,6 +379,7 @@ void Executor::AddNode(const Node& node) {
     }
     break;
   }
+  dag_cond_.notify_one();
 }
 
 } // namespace ps

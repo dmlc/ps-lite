@@ -19,6 +19,7 @@ class KVCache : public Customer {
     msg.add_value(vals);
     if (cb) msg.callback = cb;
     msg.task.mutable_param()->set_push(true);
+    sys_.manager().WaitServersReady();
     return Submit(&msg);
   }
 
@@ -49,6 +50,7 @@ class KVCache : public Customer {
     }
     msg.task.set_key_channel(chl);
     msg.task.mutable_param()->set_push(false);
+    sys_.manager().WaitServersReady();
     return Submit(&msg);
   }
 
