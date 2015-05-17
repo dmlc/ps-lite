@@ -92,7 +92,7 @@ int KVLayer<V, Updater>::Push(const Task& task, V* data, size_t size, bool zero_
   // LOG_FIRST_N(INFO, 100) << size;
   SArray<V> val;
   if (zero_copy) {
-    val = SArray<V>(data, size, false);
+    val.reset(data, size, EmptyDel<V>());
   } else {
     val.CopyFrom(data, size);
   }
@@ -109,7 +109,7 @@ int KVLayer<V, Updater>::Pull(
   if (data == NULL) {
     if (layer_[id].size() != size) layer_[id].resize(size, 0);
   } else {
-    layer_[id] = SArray<V>(data, size, false);
+    layer_[id].reset(data, size, EmptyDel<V>());
   }
   Message pull(task, kServerGroup);
   Range<Key>(0, size).To(pull.task.mutable_key_range());
