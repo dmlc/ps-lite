@@ -60,6 +60,7 @@ class KVStoreSparse : public KVStore {
   void SaveModel(const std::string& file) {
     std::string name = file + "_" + this->sys_.manager().van().my_node().id();
     dmlc::Stream *fs = dmlc::Stream::Create(name.c_str(), "w");
+    {  // let os be destroied before delete fs
     dmlc::ostream os(fs);
     std::vector<V> val(k_);
     for (const auto& it : data_) {
@@ -67,10 +68,16 @@ class KVStoreSparse : public KVStore {
       handle_.Pull(Blob<const K>(&key, 1),
                    Blob<const V>(it.second, val_len),
                    Blob<V>(val.data(), k_));
+      bool save = false;
+      for (int i = 0; i < k_; ++i) if (val[i] != 0) { save = true; break; }
+      if (!save) continue;
       os << key;
       for (int i = 0; i < k_; ++i) { os << "\t" << val[i]; }
-      os << "\n";
+      os << std::endl;
     }
+    }
+    delete fs;
+    LOG(INFO) << "save model to " << name;
   }
 
  private:
