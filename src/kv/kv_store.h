@@ -36,6 +36,8 @@ class KVStore : public Customer {
     if (response) Reply(request, response);
   }
 
+  virtual void SaveModel(const std::string& file) { }
+
  protected:
   /// User-defineded functions ////
 

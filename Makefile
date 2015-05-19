@@ -17,8 +17,12 @@ ifndef DEPS_PATH
 DEPS_PATH = $(shell pwd)/deps
 endif
 
+ifndef CORE_PATH
+CORE_PATH = $(shell pwd)/../../dmlc-core
+endif
+
 WARN = -Wall -finline-functions
-INCPATH = -I./src -I$(DEPS_PATH)/include
+INCPATH = -I./src -I$(DEPS_PATH)/include -I$(CORE_PATH)/include
 CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
 
 

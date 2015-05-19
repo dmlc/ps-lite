@@ -1,5 +1,6 @@
 #pragma once
 #include "kv/kv_store.h"
+#include "dmlc/io.h"
 namespace ps {
 
 // fixed length value
@@ -54,6 +55,22 @@ class KVStoreSparse : public KVStore {
     }
     FinishReceivedRequest(ts, msg->sender);
     handle_.Finish();
+  }
+
+  void SaveModel(const std::string& file) {
+    std::string name = file + "_" + this->sys_.manager().van().my_node().id();
+    dmlc::Stream *fs = dmlc::Stream::Create(name.c_str(), "w");
+    dmlc::ostream os(fs);
+    std::vector<V> val(k_);
+    for (const auto& it : data_) {
+      K key = it.first;
+      handle_.Pull(Blob<const K>(&key, 1),
+                   Blob<const V>(it.second.data(), val_len),
+                   Blob<V>(val.data(), k_));
+      os << key;
+      for (int i = 0; i < k_; ++i) { os << "\t" << val[i]; }
+      os << "\n";
+    }
   }
 
  private:
