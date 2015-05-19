@@ -65,7 +65,7 @@ class KVStoreSparse : public KVStore {
     for (const auto& it : data_) {
       K key = it.first;
       handle_.Pull(Blob<const K>(&key, 1),
-                   Blob<const V>(it.second.data(), val_len),
+                   Blob<const V>(it.second, val_len),
                    Blob<V>(val.data(), k_));
       os << key;
       for (int i = 0; i < k_; ++i) { os << "\t" << val[i]; }
@@ -77,16 +77,15 @@ class KVStoreSparse : public KVStore {
   inline V* FindValue(K key) {
     auto it = data_.find(key);
     if (it == data_.end()) {
-      // init if necessary
-      auto it2 = data_.insert(std::make_pair(key, std::array<V, val_len>()));
-      CHECK(it2.second);
-      it = it2.first;
+      V* val = data_[key];
       handle_.Init(Blob<const K>(&key, 1),
-                   Blob<V>(it->second.data(), val_len));
+                   Blob<V>(val, val_len));
+      return val;
     }
-    return it->second.data();
+    return it->second;
   }
-  std::unordered_map<K, std::array<V, val_len>> data_;
+  // std::unordered_map<K, std::array<V, val_len>> data_;
+  std::unordered_map<K, V[val_len]> data_;
   Handle handle_;
   int k_;
 };
