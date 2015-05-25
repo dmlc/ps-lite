@@ -231,9 +231,9 @@ class IHandle {
    *
    * @param push true if this is a push request
    * @param timestamp the timestamp of this request
-   * @param worker the worker id
+   * @param msg the received message
    */
-  inline void Start(bool push, int timestamp, const std::string& worker) { }
+  inline void Start(bool push, int timestamp, void* msg) { }
 
   /**
    * \brief The request has been handled

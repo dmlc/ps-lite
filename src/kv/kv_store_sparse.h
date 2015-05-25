@@ -21,7 +21,7 @@ class KVStoreSparse : public KVStore {
     int ts = msg->task.time();
 
     // handle this pull request
-    handle_.Start(false, ts, msg->sender);
+    handle_.Start(false, ts, (void*)msg);
     V* val_data = val.data();
     for (size_t i = 0; i < n; ++i, val_data += k_) {
       K key_i = key[i];
@@ -45,7 +45,7 @@ class KVStoreSparse : public KVStore {
 
     // handle this push request
 
-    handle_.Start(true, ts, msg->sender);
+    handle_.Start(true, ts, (void*)msg);
 
     V* val_data = val.data();
     for (size_t i = 0; i < n; ++i, val_data += k_) {
