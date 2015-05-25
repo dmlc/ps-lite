@@ -270,7 +270,7 @@ Node Van::ParseNode(const string& node_str) {
   Node node;
   CHECK(google::protobuf::TextFormat::ParseFromString(node_str, &node));
   if (!node.has_id()) {
-    string str = node.hostname() + ":" + std::to_string(node.port());
+    string str = node.hostname() + "_" + std::to_string(node.port());
     if (node.role() == Node::SCHEDULER) {
       str = "H";
     } else if (node.role() == Node::WORKER) {
