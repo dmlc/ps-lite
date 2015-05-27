@@ -1,18 +1,9 @@
 #include "system/postoffice.h"
 #include "ps/app.h"
-// #include "base/file.h"
-// #include <omp.h>
 
 namespace ps {
 
-DEFINE_int32(report_interval, 0,
-  "Servers/Workers report running status to the scheduler "
-  "in every report_interval seconds. "
-  "default: 0; if set to 0, heartbeat is disabled");
-
 DECLARE_string(interface);
-
-Postoffice::Postoffice() { }
 
 Postoffice::~Postoffice() {
   if (recv_thread_) recv_thread_->join();
@@ -27,10 +18,6 @@ void Postoffice::Run(int* argc, char*** argv) {
   google::ParseCommandLineFlags(argc, argv, true);
 
   manager_.Init(*argc, *argv);
-
-  if (FLAGS_report_interval > 0) {
-    perf_monitor_.init(FLAGS_interface, manager_.van().my_node().hostname());
-  }
 
   // start the I/O threads
   recv_thread_ =

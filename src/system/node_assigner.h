@@ -37,21 +37,4 @@ class NodeAssigner {
   Range<Key> key_range_;
 };
 
-// divide *data* into *num* parts.
-class DataAssigner {
- public:
-  DataAssigner() { }
-  DataAssigner(const DataConfig& data, int num) { set(data, num); }
-  ~DataAssigner() { }
-
-  void set(const DataConfig& data, int num);
-  bool next(DataConfig *data);
-
-  int cur_i() { return cur_i_; }
-  int size() { return parts_.size(); }
- private:
-  std::vector<DataConfig> parts_;
-  size_t cur_i_ = 0;
-};
-
 } // namespace ps

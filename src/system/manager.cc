@@ -8,6 +8,8 @@ DECLARE_int32(num_workers);
 DECLARE_int32(num_replicas);
 DECLARE_int32(report_interval);
 
+DEFINE_uint64(max_key, -1, "maximal global key");
+
 Manager::Manager() {}
 Manager::~Manager() {
   for (auto& it : customers_) {
@@ -49,7 +51,7 @@ void Manager::Run() {
   // synchronization.
 
   // wait my node info is updated
-  while (!is_my_node_inited_) usleep(500);
+  while (!is_my_node_inited_) usleep(5000);
   if (van_.my_node().role() == Node::WORKER) {
     WaitServersReady();
     usleep(1000);  // sleep a while to let all servers has been connected to me
@@ -61,7 +63,7 @@ void Manager::Run() {
 void Manager::Stop() {
   if (IsScheduler()) {
     // wait all other nodes are ready for exit
-    while (num_active_nodes_ > 1) usleep(500);
+    while (num_active_nodes_ > 1) usleep(5000);
     // broadcast the terminate signal
     in_exit_ = true;
     for (const auto& it : nodes_) {
@@ -75,7 +77,7 @@ void Manager::Stop() {
     SendTask(van_.scheduler(), task);
 
     // run as a daemon until received the termination message
-    while (!done_) usleep(500);
+    while (!done_) usleep(50000);
   }
 }
 
