@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include "proto/range.pb.h"
 #include "glog/logging.h"
 
@@ -90,8 +91,8 @@ class Range {
   }
 
   static Range All() {
-    CHECK_GT((T)-1, 0) << "it is a not unsigned integer";
-    return Range(0, (T)-1);
+    return Range(std::numeric_limits<T>::min(),
+                 std::numeric_limits<T>::max());
   }
  private:
   T begin_;

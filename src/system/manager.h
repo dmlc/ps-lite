@@ -4,7 +4,7 @@
 #include "proto/task.pb.h"
 #include "system/van.h"
 #include "system/env.h"
-#include "system/assigner.h"
+#include "system/node_assigner.h"
 #include "system/network_usage.h"
 namespace ps {
 

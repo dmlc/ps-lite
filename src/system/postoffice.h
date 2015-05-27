@@ -3,7 +3,6 @@
 #include "system/message.h"
 #include "base/threadsafe_queue.h"
 #include "system/manager.h"
-#include "system/heartbeat_info.h"
 namespace ps {
 
 class Postoffice {
@@ -30,10 +29,9 @@ class Postoffice {
   void Queue(Message* msg);
 
   Manager& manager() { return manager_; }
-  HeartbeatInfo& pm() { return perf_monitor_; }
 
  private:
-  Postoffice();
+  Postoffice() { }
   void Send();
   void Recv();
   bool Process(Message* msg);
@@ -42,7 +40,6 @@ class Postoffice {
   ThreadsafeQueue<Message*> sending_queue_;
 
   Manager manager_;
-  HeartbeatInfo perf_monitor_;
 
   // key: <sender, customer_id>, value: messages will be packed
   std::map<std::pair<NodeID, int>, std::vector<Message*>> pack_;

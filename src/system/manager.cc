@@ -8,6 +8,8 @@ DECLARE_int32(num_workers);
 DECLARE_int32(num_replicas);
 DECLARE_int32(report_interval);
 
+DEFINE_uint64(max_key, -1, "maximal global key");
+
 Manager::Manager() {}
 Manager::~Manager() {
   for (auto& it : customers_) {
@@ -31,7 +33,11 @@ void Manager::Init(int argc, char *argv[]) {
                 << "/" << basename(argv[0]) <<".log.*";
     }
 
-    node_assigner_ = new NodeAssigner(FLAGS_num_servers);
+    if (FLAGS_max_key == (uint64)-1) {
+      node_assigner_ = new NodeAssigner(FLAGS_num_servers, Range<Key>::All());
+    } else {
+      node_assigner_ = new NodeAssigner(FLAGS_num_servers, Range<Key>(0, FLAGS_max_key));
+    }
 
     // add my node into app_
     AddNode(van_.my_node());
@@ -49,7 +55,7 @@ void Manager::Run() {
   // synchronization.
 
   // wait my node info is updated
-  while (!is_my_node_inited_) usleep(500);
+  while (!is_my_node_inited_) usleep(5000);
   if (van_.my_node().role() == Node::WORKER) {
     WaitServersReady();
     usleep(1000);  // sleep a while to let all servers has been connected to me
@@ -84,7 +90,7 @@ void Manager::Stop() {
     SendTask(van_.scheduler(), task);
 
     // run as a daemon until received the termination message
-    while (!done_) usleep(5000);
+    while (!done_) usleep(50000);
   }
 }
 
@@ -106,7 +112,7 @@ bool Manager::Process(Message* msg) {
       CHECK_EQ(ctrl.node_size(), 1);
       CHECK(van_.Connect(ctrl.node(0)));
       Node sender = ctrl.node(0);
-      CHECK_NOTNULL(node_assigner_)->assign(&sender);
+      CHECK_NOTNULL(node_assigner_)->Assign(&sender);
       AddNode(sender);
       break;
     }
