@@ -68,7 +68,7 @@ class KVCache : public Customer {
     // received kv
     SArray<K> recv_key(msg->key);
     if (recv_key.empty()) return;
-    CHECK_EQ(msg->value.size(), 1);
+    CHECK_EQ(msg->value.size(), (size_t)1);
     SArray<V> recv_data(msg->value[0]);
     int k = recv_data.size() / recv_key.size();
 

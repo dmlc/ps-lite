@@ -233,7 +233,7 @@ bool Van::Recv(Message* msg, size_t* recv_bytes) {
         CHECK(!zmq_getsockopt(
             receiver_,  ZMQ_IDENTITY_FD, (char*)val, &val_len))
             << "failed to get the file descriptor of " << msg->sender;
-        CHECK_EQ(val_len, 4);
+        CHECK_EQ(val_len, (size_t)4);
         int fd = val[0];
         VLOG(1) << "node [" << msg->sender << "] is on file descriptor " << fd;
         Lock l(fd_to_nodeid_mu_);

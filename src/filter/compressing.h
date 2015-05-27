@@ -23,7 +23,7 @@ class CompressingFilter : public IFilter {
     auto conf = Find(Filter::COMPRESSING, msg);
     if (!conf) return;
     int has_key = 0; //msg->has_key();
-    CHECK_EQ(conf->uncompressed_size_size(), msg->value.size() + has_key);
+    CHECK_EQ((size_t)conf->uncompressed_size_size(), msg->value.size() + has_key);
 
     // if (has_key) {
     //   msg->key = Decompress(msg->key, conf->uncompressed_size(0));
@@ -46,7 +46,7 @@ class CompressingFilter : public IFilter {
 
   SArray<char> Decompress(const SArray<char>& src, size_t orig_size) {
     SArray<char> dst(orig_size);
-    CHECK_EQ(LZ4_decompress_safe(src.data(), dst.data(), src.size(), orig_size), orig_size);
+    CHECK_EQ((size_t)LZ4_decompress_safe(src.data(), dst.data(), src.size(), orig_size), orig_size);
     return dst;
   }
 };
