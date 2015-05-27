@@ -8,13 +8,13 @@ namespace ps {
 // assign *node* with proper rank_id, key_range, etc..
 class NodeAssigner {
  public:
-  NodeAssigner(int num_servers, Range<Key> key_range = Range<Key>::All()) {
+  NodeAssigner(int num_servers, Range<Key> key_range) {
     num_servers_ = num_servers;
     key_range_ = key_range;
   }
   ~NodeAssigner() { }
 
-  void assign(Node* node) {
+  void Assign(Node* node) {
     Range<Key> kr = key_range_;
     int rank = 0;
     if (node->role() == Node::SERVER) {
@@ -27,8 +27,8 @@ class NodeAssigner {
     kr.To(node->mutable_key());
   }
 
-  void remove(const Node& node) {
-    // TODO
+  void Remove(const Node& node) {
+    // TODO...
   }
  protected:
   int num_servers_ = 0;

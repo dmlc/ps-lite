@@ -33,7 +33,11 @@ void Manager::Init(int argc, char *argv[]) {
                 << "/" << basename(argv[0]) <<".log.*";
     }
 
-    node_assigner_ = new NodeAssigner(FLAGS_num_servers);
+    if (FLAGS_max_key == (uint64)-1) {
+      node_assigner_ = new NodeAssigner(FLAGS_num_servers, Range<Key>::All());
+    } else {
+      node_assigner_ = new NodeAssigner(FLAGS_num_servers, Range<Key>(0, FLAGS_max_key));
+    }
 
     // add my node into app_
     AddNode(van_.my_node());
@@ -99,7 +103,7 @@ bool Manager::Process(Message* msg) {
       CHECK_EQ(ctrl.node_size(), 1);
       CHECK(van_.Connect(ctrl.node(0)));
       Node sender = ctrl.node(0);
-      CHECK_NOTNULL(node_assigner_)->assign(&sender);
+      CHECK_NOTNULL(node_assigner_)->Assign(&sender);
       AddNode(sender);
       break;
     }
