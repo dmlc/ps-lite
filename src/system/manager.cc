@@ -60,22 +60,31 @@ void Manager::Run() {
 
 void Manager::Stop() {
   if (IsScheduler()) {
-    // wait all other nodes are ready for exit
-    while (num_active_nodes_ > 1) usleep(500);
+    // wait all other nodes are ready for exit for 5 seceonds
+    int itv = 100000;
+    int i = 5 * 1000000 / itv;
+    while (i > 0 && num_active_nodes_ > 1) {
+      usleep(itv); --i;
+    }
+    if (num_active_nodes_ > 1) {
+      LOG(WARNING) << "scheduler: timeout (5sec) to wait the remain "
+                   << num_active_nodes_ - 1 << " nodes";
+    }
     // broadcast the terminate signal
     in_exit_ = true;
     for (const auto& it : nodes_) {
       Task task = NewControlTask(Control::EXIT);
       SendTask(it.second, task);
     }
-    usleep(800);
+    // sleep .5 sec to let other nodes exit
+    usleep(500000);
     LOG(INFO) << "System stopped";
   } else {
     Task task = NewControlTask(Control::READY_TO_EXIT);
     SendTask(van_.scheduler(), task);
 
     // run as a daemon until received the termination message
-    while (!done_) usleep(500);
+    while (!done_) usleep(5000);
   }
 }
 
@@ -231,11 +240,11 @@ void Manager::NodeDisconnected(const NodeID node_id) {
     RemoveNode(node_id);
   } else {
     // sleep a while, in case this node is already in terminating
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 500; ++i) {
       usleep(1000);
       if (done_) return;
     }
-    LOG(ERROR) << van_.my_node().id() << ": the scheduler is died, killing myself";
+    LOG(WARNING) << van_.my_node().id() << ": the scheduler is died, killing myself";
     string kill = "kill -9 " + std::to_string(getpid());
     int ret = system(kill.c_str());
     if (ret != 0) LOG(WARNING) << "failed to " << kill;
