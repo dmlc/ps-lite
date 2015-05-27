@@ -53,6 +53,7 @@ class KeyCachingFilter : public IFilter {
     }
   }
 
+
  private:
   bool IsDone(const Task& task) {
     return (!task.request() ||

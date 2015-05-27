@@ -40,8 +40,8 @@ class Manager {
   int NextCustomerID();
 
   // workers and servers
-  void WaitServersReady();
-  void WaitWorkersReady();
+  bool WaitServersReady();
+  bool WaitWorkersReady();
 
   int num_workers() { return num_workers_; }
   int num_servers() { return num_servers_; }
@@ -62,6 +62,8 @@ class Manager {
   void SendTask(const Node& recver, const Task& task) {
     SendTask(recver.id(), task);
   }
+
+  bool Timeout(int sec, const std::function<bool()>& pred);
 
   // the app
   App* app_ = nullptr;

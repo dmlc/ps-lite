@@ -8,6 +8,8 @@ DECLARE_int32(num_workers);
 DECLARE_int32(num_replicas);
 DECLARE_int32(report_interval);
 
+DEFINE_int32(connection_timeout, 5, "connection timeout in sec.");
+
 DEFINE_uint64(max_key, -1, "maximal global key");
 
 Manager::Manager() {}
@@ -273,15 +275,38 @@ void Manager::SendTask(const NodeID& recver, const Task& task) {
   Postoffice::instance().Queue(msg);
 }
 
-void Manager::WaitServersReady() {
-  while (num_servers_ < FLAGS_num_servers) {
-    usleep(500);
+bool Manager::Timeout(int sec, const std::function<bool()>& pred) {
+  int itv = 10000;
+  int i =  sec * 1000000 / itv;
+  while (i > 0 && pred()) {
+    usleep(itv); --i;
   }
+  if (i == 0 && pred()) return true;
+  return false;
 }
-void Manager::WaitWorkersReady() {
-  while (num_workers_ < FLAGS_num_workers) {
-    usleep(500);
+
+bool Manager::WaitServersReady() {
+  if (Timeout(FLAGS_connection_timeout, [this](){
+        return num_servers_ < FLAGS_num_servers;
+      })) {
+    LOG(ERROR) << van_.my_node().id() << ": timeout (" << FLAGS_connection_timeout
+               << " sec) for waiting servers ready. "
+               << num_servers_ << "/" << FLAGS_num_servers;
+    return false;
   }
+  return true;
+}
+
+bool Manager::WaitWorkersReady() {
+  if (Timeout(FLAGS_connection_timeout, [this](){
+        return num_workers_ < FLAGS_num_workers;
+      })) {
+    LOG(ERROR) << van_.my_node().id() << ": timeout (" << FLAGS_connection_timeout
+               << " sec) for waiting workers ready. "
+               << num_workers_ << "/" << FLAGS_num_workers;
+    return false;
+  }
+  return true;
 }
 
 // customers

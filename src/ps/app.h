@@ -270,10 +270,9 @@ class App : public Customer {
 
   /// @brief It is executed by the main thread immediately after this app has been
   /// created.
-  virtual void Run() {
+  virtual bool Run() {
     // in default, just wait all nodes are ready.
-    sys_.manager().WaitServersReady();
-    sys_.manager().WaitWorkersReady();
+    return sys_.manager().WaitServersReady() && sys_.manager().WaitWorkersReady();
   }
 };
 
