@@ -38,7 +38,7 @@ class KVStoreSparse : public KVStore {
     // parse data
     SArray<K> key(msg->key);
     size_t n = key.size();
-    CHECK_EQ(msg->value.size(), 1);
+    CHECK_EQ(msg->value.size(), (size_t)1);
     SArray<V> val(msg->value[0]);
     CHECK_EQ(n * k_, val.size());
     int ts = msg->task.time();
