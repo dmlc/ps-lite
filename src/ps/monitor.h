@@ -22,22 +22,25 @@ class MonitorMaster : public Customer {
  public:
   MonitorMaster(int id = NextCustomerID()) : Customer(id) {}
 
-  // Get the merged progress on channel chl
-  void Get(int chl, Progress *prog) {
-    Lock lk(mu_); prog->Merge(prog_[chl]);
+  // Get the merged progress on channel chl, return the number of unique senders
+  int Get(int chl, Progress *prog) {
+    Lock lk(mu_); prog->Merge(prog_[chl]); return nodes_[chl].size();
   }
 
-  void Clear(int chl) { Lock lk(mu_); prog_[chl].Clear(); }
+  void Clear(int chl) { Lock lk(mu_); prog_[chl].Clear(); nodes_[chl].clear(); }
 
   // implement system required functions
   virtual void ProcessRequest(Message* request) {
     Lock lk(mu_);
     Progress p; p.Parse(request->task.msg());
-    prog_[request->task.key_channel()].Merge(p);
+    int chl = request->task.key_channel();
+    prog_[chl].Merge(p);
+    nodes_[chl].insert(request->sender);
   }
  private:
   std::mutex mu_;
   std::unordered_map<int, Progress> prog_;
+  std::unordered_map<int, std::unordered_set<std::string>> nodes_;
   Progress progress_;
 };
 

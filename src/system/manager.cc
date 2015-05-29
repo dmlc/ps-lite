@@ -60,7 +60,7 @@ void Manager::Run() {
   while (!is_my_node_inited_) usleep(5000);
   if (van_.my_node().role() == Node::WORKER) {
     WaitServersReady();
-    usleep(1000);  // sleep a while to let all servers has been connected to me
+    usleep(100000);  // sleep a while to let all servers has been connected to me
   }
   VLOG(1) << "run app..";
   CHECK_NOTNULL(app_)->Run();
@@ -252,10 +252,10 @@ void Manager::NodeDisconnected(const NodeID node_id) {
       usleep(1000);
       if (done_) return;
     }
-    LOG(WARNING) << van_.my_node().id() << ": the scheduler is died, killing myself";
+    LOG(INFO) << van_.my_node().id() << ": the scheduler is died, exit";
     string kill = "kill -9 " + std::to_string(getpid());
     int ret = system(kill.c_str());
-    if (ret != 0) LOG(WARNING) << "failed to " << kill;
+    if (ret != 0) LOG(INFO) << "failed to " << kill;
   }
 }
 
