@@ -67,6 +67,7 @@ message Control {
     REGISTER_NODE = 2;
     REPORT_PERF = 3;
     READY_TO_EXIT = 4;
+    READY_TO_RUN = 5;
 
     // the scheduler => a node
     ADD_NODE = 10;

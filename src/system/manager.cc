@@ -8,7 +8,7 @@ DECLARE_int32(num_workers);
 DECLARE_int32(num_replicas);
 DECLARE_int32(report_interval);
 
-DEFINE_int32(connection_timeout, 5, "connection timeout in sec.");
+DEFINE_int32(connection_timeout, 10, "connection timeout in sec.");
 
 DEFINE_uint64(max_key, -1, "maximal global key");
 
@@ -58,26 +58,44 @@ void Manager::Run() {
 
   // wait my node info is updated
   while (!is_my_node_inited_) usleep(5000);
-  if (van_.my_node().role() == Node::WORKER) {
-    WaitServersReady();
-    usleep(100000);  // sleep a while to let all servers has been connected to me
+
+  // wait all other nodes are ready
+  auto role = van_.my_node().role();
+  if (role == Node::SCHEDULER) {
+    LOG(INFO) << "waiting " << FLAGS_num_servers << " servers and "
+              << FLAGS_num_workers << " are ready";
+    int num_nodes = FLAGS_num_servers + FLAGS_num_workers;
+    if (Timeout(FLAGS_connection_timeout, [this, num_nodes](){
+          return num_ready_nodes_ < num_nodes;
+        })) {
+      LOG(ERROR) << "Timeout ("
+                 << FLAGS_connection_timeout
+                 << " sec) for the scheduler to wait all nodes ("
+                 << num_ready_nodes_ << "/" << num_nodes
+                 << ") ready. Exit.";
+      LOG(ERROR) << "You may want to set a larger timeout via -connection_timeout";
+      return;
+    }
+  } else {
+    if (role == Node::WORKER) {
+      WaitServersReady();
+    } else if (role == Node::SERVER) {
+      WaitWorkersReady();
+    }
+    Task task = NewControlTask(Control::READY_TO_RUN);
+    SendTask(van_.scheduler(), task);
   }
+
+
   VLOG(1) << "run app..";
   CHECK_NOTNULL(app_)->Run();
 }
 
 void Manager::Stop() {
   if (IsScheduler()) {
-    // wait all other nodes are ready for exit
-    int itv = 100000;
-    while (num_active_nodes_ > 1) {
-      usleep(itv);
-    }
-    // cannot set a timeout here, some apps such as cxxnet has an empty scheduler
-    // if (num_active_nodes_ > 1) {
-    //   LOG(WARNING) << "scheduler: timeout (5sec) to wait the remain "
-    //                << num_active_nodes_ - 1 << " nodes";
-    // }
+    // wait all other nodes are ready for exit. cannot set a timeout here, some
+    // apps such as cxxnet has an empty scheduler
+    while (unfinished_nodes_.size() > 0) usleep(100000);
 
     // broadcast the terminate signal
     in_exit_ = true;
@@ -119,6 +137,13 @@ bool Manager::Process(Message* msg) {
       AddNode(sender);
       break;
     }
+    case Control::READY_TO_RUN: {
+      CHECK(IsScheduler());
+      Lock lk(nodes_mu_);
+      unfinished_nodes_.insert(msg->sender);
+      ++ num_ready_nodes_;
+      break;
+    }
     case Control::REPORT_PERF: {
       CHECK(IsScheduler());
       // TODO
@@ -126,7 +151,8 @@ bool Manager::Process(Message* msg) {
     }
     case Control::READY_TO_EXIT: {
       CHECK(IsScheduler());
-      -- num_active_nodes_;
+      Lock lk(nodes_mu_);
+      unfinished_nodes_.erase(msg->sender);
       break;
     }
     case Control::ADD_NODE:
@@ -163,7 +189,6 @@ void Manager::AddNode(const Node& node) {
     }
     if (node.role() == Node::WORKER) ++ num_workers_;
     if (node.role() == Node::SERVER) ++ num_servers_;
-    ++ num_active_nodes_;
   }
   nodes_[node.id()] = node;
   nodes_mu_.unlock();
@@ -206,7 +231,7 @@ void Manager::RemoveNode(const NodeID& node_id) {
   // van_.disconnect(node);
   if (node.role() == Node::WORKER) -- num_workers_;
   if (node.role() == Node::SERVER) -- num_servers_;
-  -- num_active_nodes_;
+  unfinished_nodes_.erase(node_id);
   nodes_.erase(it);
   nodes_mu_.unlock();
 
@@ -290,7 +315,8 @@ bool Manager::WaitServersReady() {
   if (Timeout(FLAGS_connection_timeout, [this](){
         return num_servers_ < FLAGS_num_servers;
       })) {
-    LOG(ERROR) << van_.my_node().id() << ": timeout (" << FLAGS_connection_timeout
+    LOG(ERROR) << van_.my_node().id() << ": timeout ("
+               << FLAGS_connection_timeout
                << " sec) for waiting servers ready. "
                << num_servers_ << "/" << FLAGS_num_servers;
     return false;
@@ -302,7 +328,8 @@ bool Manager::WaitWorkersReady() {
   if (Timeout(FLAGS_connection_timeout, [this](){
         return num_workers_ < FLAGS_num_workers;
       })) {
-    LOG(ERROR) << van_.my_node().id() << ": timeout (" << FLAGS_connection_timeout
+    LOG(ERROR) << van_.my_node().id() << ": timeout ("
+               << FLAGS_connection_timeout
                << " sec) for waiting workers ready. "
                << num_workers_ << "/" << FLAGS_num_workers;
     return false;
@@ -318,7 +345,8 @@ Customer* Manager::customer(int id) {
 }
 
 void Manager::AddCustomer(Customer* obj) {
-  CHECK_EQ(customers_.count(obj->id()), (size_t)0) << obj->id() << " already exists";
+  CHECK_EQ(customers_.count(obj->id()), (size_t)0)
+      << obj->id() << " already exists";
   customers_[obj->id()] = std::make_pair(obj, false);
   nodes_mu_.lock();
   for (const auto& it : nodes_) {
@@ -329,7 +357,8 @@ void Manager::AddCustomer(Customer* obj) {
 
 
 void Manager::TransferCustomer(Customer* obj) {
-  CHECK_EQ(customers_.count(obj->id()), (size_t)1) << obj->id() << " dose not exist";
+  CHECK_EQ(customers_.count(obj->id()), (size_t)1)
+      << obj->id() << " dose not exist";
   customers_[obj->id()].second = true;
 }
 
