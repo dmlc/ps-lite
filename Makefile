@@ -18,7 +18,11 @@ DEPS_PATH = $(shell pwd)/deps
 endif
 
 ifndef CORE_PATH
+ifneq ("$(wildcard ../../dmlc-core/*)","")
 CORE_PATH = $(shell pwd)/../../dmlc-core
+else
+CORE_PATH = $(shell pwd)/../dmlc-core
+endif
 endif
 
 WARN = -Wall -finline-functions
@@ -28,6 +32,8 @@ CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS
 
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
+
+all: ps
 
 clean:
 	rm -rf build

@@ -58,7 +58,8 @@ class FixingFloatFilter : public IFilter {
       double min_v = 1e20, max_v = -1e20;
       if (!conf->has_min_value() || !conf->has_max_value()) {
         SArray<V> vec(array);
-        for (V v : vec) {
+        for (V& v : vec) {
+          if (std::isnan(v)) v = 0;
           min_v = v < min_v ? v : min_v;
           max_v = v > max_v ? v : max_v;
         }
