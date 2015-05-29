@@ -127,6 +127,7 @@ void KVLayer<V, Updater>::Slice(
   Range<Key> kr(request.task.key_range());
   for (size_t i = 0; i < n; ++i) {
     Message* msg = (*msgs)[i];
+    msg->clear_value();
     auto mut_kr = msg->task.mutable_key_range();
     if (kr.size() < partition_thr_) {
       // a tiny layer, sent it to server k
