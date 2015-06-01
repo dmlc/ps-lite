@@ -189,6 +189,8 @@ void Manager::AddNode(const Node& node) {
     }
     if (node.role() == Node::WORKER) ++ num_workers_;
     if (node.role() == Node::SERVER) ++ num_servers_;
+  } else {
+    LOG(INFO) << "addnode: " << node.id() << " exits.";
   }
   nodes_[node.id()] = node;
   nodes_mu_.unlock();
