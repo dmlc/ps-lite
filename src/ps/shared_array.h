@@ -22,7 +22,7 @@ template<typename T> struct ArrayDel {
  * \code{.cpp}
    SArray<int> A(10);
    SArray<int> B = A;
-   SArray<int> C = A.Segment(SizeR(1,3));
+   SArray<int> C = A.Segment(1, 3);
    A[2] = 2;
    CHECK_EQ(B[2], 2);
    CHECK_EQ(C[1], 2);
@@ -171,6 +171,9 @@ template<typename V> class SArray {
     ret.size_ = range.size();
     ret.capacity_ = range.size();
     return ret;
+  }
+  SArray<V> Segment(size_t start, size_t end) const {
+    return Segment(SizeR(start, end));
   }
 
   /**

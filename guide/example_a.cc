@@ -10,7 +10,7 @@ int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
   std::vector<Key> key = {1, 3, 5};
   std::vector<Val> val = {1, 1, 1};
-  std::vector<Val> recv_val(3);
+  std::vector<Val> recv_val;
 
   KVWorker<Val> wk;
   int ts = wk.Push(key, val);

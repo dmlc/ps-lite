@@ -19,7 +19,6 @@ class KVStoreSparse : public KVStore {
   void GetValue(Message* msg) {
     int ts = msg->task.time();
     handle_.Start(false, ts, msg->task.cmd(), (void*)msg);
-
     SArray<K> key(msg->key);
     size_t n = key.size();
     SArray<V> val(n * k_);

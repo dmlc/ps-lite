@@ -64,6 +64,7 @@ class KVCache : public Customer {
       pull_data_.erase(chl);
       mu_.unlock();
     };
+    msg.set_key(keys);
     msg.task.set_key_channel(chl);
     msg.task.mutable_param()->set_push(false);
     sys_.manager().WaitServersReady();

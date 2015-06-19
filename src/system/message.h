@@ -137,6 +137,11 @@ template <typename K> void SliceMessage(
     }
     K k = (K)msg_key_range.Project(krs[i].end());
     pos[i+1] = std::lower_bound(key.begin(), key.end(), k) - key.begin();
+
+    Message* ret = (*rets)[i];
+    if (ret->valid) {
+      ret->set_key(key.Segment(pos[i], pos[i+1]));
+    }
   }
 
 
@@ -148,7 +153,7 @@ template <typename K> void SliceMessage(
       SArray<int> val_len(msg.value[j+1]);
       for (size_t i = 0; i < n; ++i) {
         val_pos[i+1] = val_pos[i];
-        for (int k : val_len.Segment(SizeR(pos[i], pos[i+1]))) val_pos[i+1] += k;
+        for (int k : val_len.Segment(pos[i], pos[i+1])) val_pos[i+1] += k;
       }
       const auto& v = msg.value[j];
       size_t k = v.size() / val_pos[n];
@@ -157,11 +162,10 @@ template <typename K> void SliceMessage(
       for (size_t i = 0; i < n; ++i) {
         Message* ret = (*rets)[i];
         if (ret->valid ) {
-          SizeR lr(pos[i], pos[i+1]);
-          ret->set_key(key.Segment(lr));
-          SizeR lr2(val_pos[i], val_pos[i+1]);
-          ret->value.push_back(v.Segment(lr*k));
-          ret->value.push_back(SArray<char>(val_len.Segment(lr)));
+          ret->value.push_back(
+              v.Segment(val_pos[i]*k, val_pos[i+1]*k));
+          ret->value.push_back(SArray<char>(
+              val_len.Segment(pos[i], pos[i+1])));
         }
       }
     }
@@ -173,9 +177,7 @@ template <typename K> void SliceMessage(
       for (size_t i = 0; i < n; ++i) {
         Message* ret = (*rets)[i];
         if (ret->valid) {
-          SizeR lr(pos[i], pos[i+1]);
-          ret->set_key(key.Segment(lr));
-          ret->value.push_back(v.Segment(lr*k));
+          ret->value.push_back(v.Segment(pos[i]*k, pos[i+1]*k));
         }
       }
     }

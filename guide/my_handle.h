@@ -1,8 +1,8 @@
 #include "ps.h"
 typedef float Val;
 namespace ps {
-
 DECLARE_int32(num_workers);
+}
 class MyHandle {
  public:
   void SetCaller(void *obj) { obj_ = (Customer*)obj; }

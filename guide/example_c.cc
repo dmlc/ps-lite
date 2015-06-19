@@ -2,16 +2,18 @@
 typedef float Val;
 
 int CreateServerNode(int argc, char *argv[]) {
-  ps::KVServer<Val> server; server.Run();
+  ps::OnlineServer<Val> server;
   return 0;
 }
 
 int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
+  auto key = std::make_shared<std::vector<Key>>();
+  auto val = std::make_shared<std::vector<Val>>();
+  std::vector<Val> recv_val;
 
-  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>({1, 3, 5}));
-  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>({1, 1, 1}));
-  std::vector<Val> recv_val(3);
+  *key = {1, 3, 5};
+  *val = {1, 1, 1};
 
   KVWorker<Val> wk;
   int ts = wk.ZPush(key, val);
