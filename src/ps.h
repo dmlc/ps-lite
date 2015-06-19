@@ -451,13 +451,13 @@ inline int NumWorkers() { return FLAGS_num_workers; }
 
 inline int NumServers() { return FLAGS_num_servers; }
 // Wait until all FLAGS_num_servers servers are ready.
-inline void WaitServersReady() {
-  ps::Postoffice::instance().manager().WaitServersReady();
+inline bool WaitServersReady() {
+  return ps::Postoffice::instance().manager().WaitServersReady();
 }
 
 // Wait until all FLAGS_num_workers workers are ready.
-inline void WaitWorkersReady() {
-  ps::Postoffice::instance().manager().WaitWorkersReady();
+inline bool WaitWorkersReady() {
+  return ps::Postoffice::instance().manager().WaitWorkersReady();
 }
 
 inline void StartSystem(int* argc, char ***argv) {

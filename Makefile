@@ -18,7 +18,11 @@ DEPS_PATH = $(shell pwd)/deps
 endif
 
 ifndef CORE_PATH
+ifneq ("$(wildcard ../../dmlc-core/*)","")
 CORE_PATH = $(shell pwd)/../../dmlc-core
+else
+CORE_PATH = $(shell pwd)/../dmlc-core
+endif
 endif
 
 WARN = -Wall -finline-functions

@@ -71,9 +71,14 @@ class Manager {
   // nodes
   std::map<NodeID, Node> nodes_;
   std::mutex nodes_mu_;
+  // number of nodes this node connected to
   int num_workers_ = 0;
   int num_servers_ = 0;
-  int num_active_nodes_ = 0;
+
+  // the following two are only available for the scheduler
+  int num_ready_nodes_ = 0;
+  std::unordered_set<NodeID> unfinished_nodes_;
+
   std::vector<NodeFailureHandler> node_failure_handlers_;
   bool is_my_node_inited_ = false;
 
