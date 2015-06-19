@@ -11,7 +11,6 @@
 #include "ps/shared_array.h"
 #include "kv/kv_cache.h"
 #include "kv/kv_store_sparse.h"
-#include "kv/kv_store_sparse_dynamic.h"
 #include "proto/filter.pb.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -40,6 +39,10 @@ struct SyncOpts {
    * \brief Sample usage: AddFilter(Filter::COMPRESSING);
    */
   Filter* AddFilter(Filter::Type type);
+  /**
+   * \brief The command sent to the server. -1 means no command.
+   */
+  int cmd = -1;
 };
 
 /*!
@@ -256,26 +259,23 @@ int WorkerNodeMain(int argc, char *argv[]);
 ///////////////////////////////////////////////////////////////////////////////
 namespace ps {
 /**
- * \brief An example of user-defineable handle.
- * \tparam V the value type
+ * \brief An example of user-defined online handle.
  */
-template <typename Val>
-class IHandle {
+template <typename Val, typename SyncVal>
+class IOnlineHandle {
  public:
-  IHandle() { }
-  virtual ~IHandle() { }
-
-  /** \brief Accepts the caller */
-  inline void SetCaller(void *obj) { }
+  IOnlineHandle() { }
+  virtual ~IOnlineHandle() { }
 
   /**
    * \brief Start to handle a request from a worker
    *
    * @param push true if this is a push request
    * @param timestamp the timestamp of this request
+   * @param cmd the cmd specified in SyncOpts
    * @param msg the received message
    */
-  inline void Start(bool push, int timestamp, void* msg) { }
+  inline void Start(bool push, int timestamp, int cmd, void* msg) { }
 
   /**
    * \brief The request has been handled
@@ -283,13 +283,10 @@ class IHandle {
   inline void Finish() { }
 
   /**
-   * \brief Handle initialization, which will be only called once when
-   * allocating these key-value paris
+   * \brief Handle initialization, which only called once when allocating these
+   * key-value pairs
    */
-  inline void Init(Blob<const Key> keys,
-                   Blob<Val> vals) {
-    memset(vals.data, 0, vals.size*sizeof(Val));
-  }
+  inline void Init(Key key, Val& val) { }
 
   /**
    * \brief Handle PUSH requests from worker nodes
@@ -298,12 +295,10 @@ class IHandle {
    * @param recv_vals the corresponding values received from the worker node
    * @param my_vals the corresponding local values
    */
-  inline void Push(Blob<const Key> recv_keys,
-                   Blob<const Val> recv_vals,
-                   Blob<Val> my_vals) {
-    for (size_t i = 0; i < recv_vals.size; ++i)
-      my_vals[i] += recv_vals[i];
+  inline void Push(Key recv_key, Blob<const SyncVal> recv_val, Val& my_val) {
+    for (const Val& v : recv_val) my_val += v;
   }
+
   /**
    * \brief Handle PUSH requests from worker nod
    *
@@ -311,84 +306,58 @@ class IHandle {
    * @param my_vals the corresponding local values
    * @param sent_vals the corresponding values will send to the worker node
    */
-  inline void Pull(Blob<const Key> recv_keys,
-                   Blob<const Val> my_vals,
-                   Blob<Val> send_vals) {
-    for (size_t i = 0; i < my_vals.size; ++i)
-      send_vals[i] = my_vals[i];
+  inline void Pull(Key recv_key, const Val& my_val, Blob<SyncVal>& send_val) {
+    for (Val& v : send_val) v = my_val;
   }
+
+  /** \brief Accepts the caller for advanced usage */
+  inline void SetCaller(void *obj) { }
 };
 
 
-static const int kDynamicValue = -1;
 /*!
- * \brief key-value store for server nodes
+ * \brief key-value store for server nodes in online mode.
  *
- * @tparam V the value type
- * @Handle User-defined handles
- * @tparam val_len the length of a value (= val_len * sizeof(V)) that stored in
- * local. It could be a dynamic length DYNAMIC_LEN
- * @tparam sync_val_len the length of value will be synchronized
+ * Individual key-value pairs received from workers are feed into the
+ * user-defined handle one by one. It users unordered_map or other equivalence
+ * data structure to store <Key,Val> pairs. It is suitable when new keys appears
+ * during running, such as SGD/online learning algorithms. However, both read
+ * and write could be 5x slower comparing to BatchServer
+ *
+ * @tparam Val the value type
+ * @tparam SyncVal the data type for synchronization, which should be primitive
+ * types such as int, float, ...
+ * @Handle User-defined handles (or model updater)
  */
-template <typename Val, typename Handle = IHandle<Val>, int val_len = 1>
-class KVServer {
+template <typename Val, typename SyncVal = Val,
+          typename Handle = IOnlineHandle<Val, SyncVal> >
+class OnlineServer {
  public:
   /**
-   * \brief Process key-value pairs in online or batch style
-   *
-   * - ONLINE: individual key-value pairs received from workers are feed into
-   *   user-defined writer/reader one by one.
-   *
-   * - BATCH: all key-value pairs received from a worker in a Push/Pull request
-   *   are feed into writer/reader togeter
-   *
-   * Implementation & Performance
-   *
-   * - ONLINE: use unordered_map or other equivalence data structure to store KV
-   *   pairs. It is suitable when new keys appears during running, such as
-   *   SGD/online learning algorithms. However, both read and write could be 5x
-   *   slower comparing to BATCH
-   *
-   * - BATCH: use array to store KV pairs. Suitable for the keys set is fixed at
-   *   the beginning, such as batch algorithm.
-   */
-  enum Type { ONLINE, BATCH };
-
-  /**
-   * @param type which affects how key-value pairs are feed into updater and
-   *  initializer, see comments below
+   * @param pull_val_len the length of value pulled from server for each key. If
+   * positive, then a fixed length SyncVal[pull_val_len] will be
+   * pulled. Otherwise, the length is dynamic, and abs(pull_val_len) is the hint
+   * length.
+   * @param handle
    * @param id the unique identity. Negative IDs is preserved by system.
    */
-  KVServer(int id = 0, Type type = ONLINE)
-      : id_(id), type_(type), sync_val_len_(val_len) { }
-  ~KVServer() { }
-
-  void set_sync_val_len(int len) { sync_val_len_ = len; }
-  Handle& handle() { return handle_; }
-
-  KVStore* Run() {
-    KVStore* server = NULL;
-    if (type_ == ONLINE) {
-      if (val_len != kDynamicValue) {
-        server = new KVStoreSparse<Key, Val, Handle, val_len>(
-            id_, handle_, sync_val_len_);
-      } else {
-        server = new KVStoreSparseDynamic<Key, Val, Handle>(id_, handle_);
-      }
-    }
-    CHECK_NOTNULL(server);
-    // let the system to delete server when finished
-    Postoffice::instance().manager().TransferCustomer(server);
-    return server;
+  OnlineServer(
+      const Handle& handle = Handle(), int pull_val_len = 1, int id = 0) {
+    server_ = new KVStoreSparse<Key, Val, SyncVal, Handle>(
+        id, handle, pull_val_len);
+    Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
   }
+  ~OnlineServer() { }
 
+  KVStore* server() { return server_; }
  private:
-  int id_;
-  Type type_;
-  int sync_val_len_;
-  Handle handle_;
+  KVStore* server_ = NULL;
 };
+
+
 }  // namespace ps
+
+
 
 /**
  * \brief The main function for a server node

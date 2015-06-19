@@ -43,6 +43,9 @@ struct Blob {
     return data[n];
   }
 
+  T* begin() { return data; }
+  T* end() { return data+size; }
+
   /*! \brief Slics a segment [begin, end) */
   Blob Slice(size_t begin, size_t end) const {
     CHECK_LE(begin, end); CHECK_LE(end, size);

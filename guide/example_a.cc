@@ -2,7 +2,7 @@
 typedef float Val;
 
 int CreateServerNode(int argc, char *argv[]) {
-  ps::KVServer<Val> server; server.Run();
+  ps::OnlineServer<Val> server;
   return 0;
 }
 
