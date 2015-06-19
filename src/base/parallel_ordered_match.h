@@ -82,6 +82,24 @@ size_t ParallelOrderedMatch(
   return n;
 }
 
+// similar to above, but use std::vector as the container
+template <typename K, typename V>
+size_t ParallelOrderedMatch(
+    const SArray<K>& src_key,  // source keys
+    const SArray<V>& src_val,  // source values
+    const SArray<K>& dst_key,  // destination keys
+    std::vector<V>* dst_val,   // destination values
+    int k = 1,                 // the size of a value entry = k * sizeof(V)
+    AssignOpType op = AssignOpType::ASSIGN, // assignment operator
+    int num_threads = FLAGS_num_threads) {
+  if (CHECK_NOTNULL(dst_val)->empty()) {
+    dst_val->resize(dst_key.size()*k);
+  }
+  SArray<V>* val = new SArray<V>(dst_val->data(), dst_val->size(), EmptyDel<V>());
+  return ParallelOrderedMatch(src_key, src_val, dst_key, val, k, op, num_threads);
+}
+
+
 // join key-value pairs. use the assigement operator "op" to solve conflicts. it
 // assumes both key1 and key2 are orderd.
 template <typename K, typename V>

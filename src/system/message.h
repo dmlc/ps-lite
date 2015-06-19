@@ -102,17 +102,32 @@ template <typename V> DataType Message::EncodeType() {
 }
 
 // Slice a "msg" according to key ranges "krs". "msg.key" must be ordered, and a
-// each value entry must have the same length.
-template <typename K> void SliceKOFVMessage(
+// each value entry must have the same length, or dyanmaic length of *dyn_val*
+// is true
+template <typename K> void SliceMessage(
     const Message& msg, const std::vector<Range<Key>>& krs,
-    std::vector<Message*>* rets) {
+    std::vector<Message*>* rets, bool dyn_val = false) {
   CHECK_EQ(krs.size(), rets->size());
 
-  // find the positions in msg.key
+  // set the message validation
   size_t n = krs.size();
-  std::vector<size_t> pos(n+1);
-  SArray<K> key(msg.key);
   Range<Key> msg_key_range(msg.task.key_range());
+  for (size_t i = 0; i < n; ++i) {
+    Message* ret = CHECK_NOTNULL((*rets)[i]);
+    if (krs[i].SetIntersection(msg_key_range).empty()) {
+      // the remote node does not maintain this key range. mark this message as
+      // valid, which will not be sent
+      ret->valid = false;
+    } else {
+      ret->valid = true;  // must set true, otherwise this piece might not be sent
+    }
+  }
+
+  // find the positions in msg.key
+  SArray<K> key(msg.key);
+  if (key.empty()) return;
+
+  std::vector<size_t> pos(n+1);
   for (size_t i = 0; i < n; ++i) {
     if (i == 0) {
       K k = (K)msg_key_range.Project(krs[0].begin());
@@ -124,32 +139,49 @@ template <typename K> void SliceKOFVMessage(
     pos[i+1] = std::lower_bound(key.begin(), key.end(), k) - key.begin();
   }
 
-  // split the message according to *pos*
-  for (size_t i = 0; i < n; ++i) {
-    Message* ret = CHECK_NOTNULL((*rets)[i]);
-    if (krs[i].SetIntersection(msg_key_range).empty()) {
-      // the remote node does not maintain this key range. mark this message as
-      // valid, which will not be sent
-      ret->valid = false;
-    } else {
-      ret->valid = true;  // must set true, otherwise this piece might not be sent
-      if (key.empty()) continue;  // to void be divided by 0
-      SizeR lr(pos[i], pos[i+1]);
-      ret->set_key(key.Segment(lr));
-      for (auto& v : msg.value) {
-        size_t k = v.size() / key.size();
-        CHECK_EQ(key.size() * k, v.size());
-        ret->value.push_back(v.Segment(lr*k));
+
+  // slice value and key
+  if (dyn_val) {
+    CHECK_EQ(msg.value.size() % 2, 0);
+    for (size_t j = 0; j < msg.value.size(); j += 2) {
+      std::vector<size_t> val_pos(n+1);
+      SArray<int> val_len(msg.value[j+1]);
+      for (size_t i = 0; i < n; ++i) {
+        val_pos[i+1] = val_pos[i];
+        for (int k : val_len.Segment(SizeR(pos[i], pos[i+1]))) val_pos[i+1] += k;
+      }
+      const auto& v = msg.value[j];
+      size_t k = v.size() / val_pos[n];
+      CHECK_EQ(val_pos[n] * k, v.size());
+
+      for (size_t i = 0; i < n; ++i) {
+        Message* ret = (*rets)[i];
+        if (ret->valid ) {
+          SizeR lr(pos[i], pos[i+1]);
+          ret->set_key(key.Segment(lr));
+          SizeR lr2(val_pos[i], val_pos[i+1]);
+          ret->value.push_back(v.Segment(lr*k));
+          ret->value.push_back(SArray<char>(val_len.Segment(lr)));
+        }
+      }
+    }
+  } else {
+    for (auto& v : msg.value) {
+      size_t k = v.size() / key.size();
+      CHECK_EQ(key.size() * k, v.size());
+
+      for (size_t i = 0; i < n; ++i) {
+        Message* ret = (*rets)[i];
+        if (ret->valid) {
+          SizeR lr(pos[i], pos[i+1]);
+          ret->set_key(key.Segment(lr));
+          ret->value.push_back(v.Segment(lr*k));
+        }
       }
     }
   }
 }
 
-// similar to above, but the values can be arbitary length
-template <typename K> void SliceDynValMessage(
-    const Message& msg, const std::vector<Range<Key>>& krs,
-    std::vector<Message*>* rets) {
-}
 
 } // namespace ps
 

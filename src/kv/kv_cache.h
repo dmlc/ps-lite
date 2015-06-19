@@ -18,6 +18,11 @@ class KVCache : public Customer {
     Message msg(req, kServerGroup);
     msg.set_key(keys);
     msg.add_value(vals);
+    if (vals_size.size()) {
+      CHECK_EQ(vals_size.size(), keys.size());
+      msg.add_value(vals_size);
+      msg.task.mutable_param()->set_dyn_val_size(true);
+    }
     if (cb) msg.callback = cb;
     msg.task.mutable_param()->set_push(true);
     sys_.manager().WaitServersReady();
@@ -33,23 +38,32 @@ class KVCache : public Customer {
     auto& kv = pull_data_[chl];
     mu_.unlock();
     kv.key = keys;
-    // kv.value = vals;
-    // LL << ts << " " << pull_data_[ts].key << " " << kv.value;
-    msg.set_key(kv.key);
-    if (cb) {
-      msg.callback = [chl, cb, this] {
-        cb();
-        mu_.lock();
-        pull_data_.erase(chl);
-        mu_.unlock();
-      };
-    } else {
-      msg.callback = [chl, this] {
-        mu_.lock();
-        pull_data_.erase(chl);
-        mu_.unlock();
-      };
+    kv.val = CHECK_NOTNULL(vals);
+    bool dyn_val = false;
+    if (vals_size) {
+      dyn_val = true;
+      msg.task.mutable_param()->set_dyn_val_size(true);
+      kv.val_size = vals_size;
     }
+    // LL << ts << " " << pull_data_[ts].key << " " << kv.value;
+    msg.callback = [chl, cb, dyn_val, this] {
+      if (dyn_val) {
+        // do a double check
+        mu_.lock();
+        auto& kv = pull_data_[chl];
+        mu_.unlock();
+        if (kv.matched_num != kv.key.size()) {
+          LOG(ERROR) << "invalid pull probably due to server failure..";
+        }
+        size_t len = 0;
+        for (int i : *(kv.val_size)) len += i;
+        CHECK_EQ(len, kv.val->size());
+      }
+      if (cb) cb();
+      mu_.lock();
+      pull_data_.erase(chl);
+      mu_.unlock();
+    };
     msg.task.set_key_channel(chl);
     msg.task.mutable_param()->set_push(false);
     sys_.manager().WaitServersReady();
@@ -60,11 +74,7 @@ class KVCache : public Customer {
 
   void Slice(const Message& request, const std::vector<Range<Key>>& krs,
              std::vector<Message*>* msgs) {
-    if (request.task.param().dyn_val_size()) {
-      SliceDynValMessage<K>(request, krs, msgs);
-    } else {
-      SliceKOFVMessage<K>(request, krs, msgs);
-    }
+    SliceMessage<K>(request, krs, msgs, request.task.param().dyn_val_size());
   }
 
   void ProcessResponse(Message* msg) {
@@ -74,28 +84,68 @@ class KVCache : public Customer {
     // received kv
     SArray<K> recv_key(msg->key);
     if (recv_key.empty()) return;
-    CHECK_EQ(msg->value.size(), (size_t)1);
-    SArray<V> recv_data(msg->value[0]);
-    int k = recv_data.size() / recv_key.size();
 
-    // local kv
+    mu_.lock();
     auto& kv = pull_data_[msg->task.key_channel()];
-    CHECK_EQ(kv.value.size(), kv.key.size() * k);
+    mu_.unlock();
 
-    // match
-    size_t n = ParallelOrderedMatch(
-        recv_key, recv_data, kv.key, &kv.value, k, AssignOpType::ASSIGN);
-    CHECK_EQ(n, recv_data.size());
+    if (msg->task.param().dyn_val_size()) {
+      CHECK_EQ(msg->value.size(), (size_t)2);
+      SArray<int> recv_size(msg->value[1]);
+      size_t n = ParallelOrderedMatch(
+          recv_key, recv_size, kv.key, kv.val_size, 1, AssignOpType::ASSIGN);
+      CHECK_EQ(n, recv_size.size());
+      kv.matched_num += n;
+      kv.recv.push_back(std::make_pair(recv_key[0], SArray<V>(msg->value[0])));
+
+      if ((int)kv.recv.size() != sys_.manager().num_servers()) return;
+
+      CHECK_EQ(kv.matched_num, kv.key.size());
+      std::sort(kv.recv.begin(), kv.recv.end(), [](
+          const std::pair<K, SArray<V>>& a, const std::pair<K, SArray<V>>& b) {
+                  return a.first < b.first;
+                });
+      size_t len = 0;
+      for (const auto& l : kv.recv) len += l.second.size();
+      kv.val->resize(len);
+      V* ptr = kv.val->data();
+
+      for (const auto& l : kv.recv) {
+        memcpy(ptr, l.second.data(), l.second.size() * sizeof(V));
+        ptr += l.second.size();
+      }
+      kv.recv.clear();
+    } else {
+      CHECK_EQ(msg->value.size(), (size_t)1);
+      SArray<V> recv_data(msg->value[0]);
+      int k = recv_data.size() / recv_key.size();
+      size_t n = ParallelOrderedMatch(
+          recv_key, recv_data, kv.key, kv.val, k, AssignOpType::ASSIGN);
+      CHECK_EQ(n, recv_data.size());
+    }
+
   }
 
  private:
   struct KVPair {
-    SArray<K> key;    // [key_0,  ..., key_n]
-    SArray<V> value;  // [val_00, ..., val_0k, ..., val_n0, ..., val_nk]
+    // [key_0,  ..., key_n]
+    SArray<K> key;
+    // constant value size:
+    //   [val_00, ..., val_0k, ..., val_n0, ..., val_nk]
+    // dynamic value size:
+    //   [val_00, ...val_0,val_size[0], ..., val_n0, ..., val_n,val_size[n]
+    std::vector<V>* val;
+    std::vector<int>* val_size = NULL;
+
+    // for match dynamic vals
+    std::vector<std::pair<K, SArray<V>>> recv;
+    // std::vector<K> recv_key;
+    size_t matched_num = 0;
   };
+
   std::unordered_map<int, KVPair> pull_data_;
   std::mutex mu_;
   int chl_ = 0;
-  int split_val_ = 10000;
 };
+
 }  // namespace ps

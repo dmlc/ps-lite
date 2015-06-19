@@ -50,7 +50,7 @@ class KVMap : public Parameter {
 
   virtual void Slice(const Message& request, const std::vector<Range<Key>>& krs,
                      std::vector<Message*>* msgs) {
-    SliceKOFVMessage<K>(request, krs, msgs);
+    SliceMessage<K>(request, krs, msgs);
   }
 
   virtual void GetValue(Message* msg);
