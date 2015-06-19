@@ -7,8 +7,9 @@ class MyHandle {
  public:
   void SetCaller(void *obj) { obj_ = (Customer*)obj; }
 
-  inline void Start(bool push, int timestamp, const std::string& worker) {
-    std::cout << "accept " << (push ? "push" : "pull") << " from " << worker
+  inline void Start(bool push, int timestamp, void* msg) {
+    Message *m = (Message*) msg;
+    std::cout << "accept " << (push ? "push" : "pull") << " from " << m->sender
               << " with timestamp " << timestamp << std::endl;
     ts_ = timestamp;
   }

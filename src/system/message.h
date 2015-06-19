@@ -145,6 +145,12 @@ template <typename K> void SliceKOFVMessage(
   }
 }
 
+// similar to above, but the values can be arbitary length
+template <typename K> void SliceDynValMessage(
+    const Message& msg, const std::vector<Range<Key>>& krs,
+    std::vector<Message*>* rets) {
+}
+
 } // namespace ps
 
 // inline std::ostream& operator<<(std::ostream& os, const Message& msg) {

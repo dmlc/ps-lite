@@ -12,11 +12,13 @@ inline Filter* SyncOpts::AddFilter(Filter::Type type) {
   return &(filters.back());
 }
 
-inline void SyncOpts::GetTask(Task* req) const {
-  req->Clear();
-  req->set_request(true);
-  for (int l : deps) req->add_wait_time(l);
-  for (const auto& f : filters) req->add_filter()->CopyFrom(f);
+template<typename Val>
+Task KVWorker<Val>::GetTask(const SyncOpts& opts) {
+  Task req;
+  req.set_request(true);
+  for (int l : opts.deps) req.add_wait_time(l);
+  for (const auto& f : opts.filters) req.add_filter()->CopyFrom(f);
+  return req;
 }
 
 }  // namespace ps

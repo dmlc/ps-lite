@@ -25,9 +25,10 @@ WARN = -Wall -finline-functions
 INCPATH = -I./src -I$(DEPS_PATH)/include -I$(CORE_PATH)/include
 CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
 
-
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
+
+all: ps guide
 
 clean:
 	rm -rf build

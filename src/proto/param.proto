@@ -5,6 +5,7 @@ message ParamCall {
   // push or pull
   optional bool push = 1 [default = true];
 
+  optional bool dyn_val_size = 4 [default = false];
   // merge operator
   optional AssignOpType op = 2;
 

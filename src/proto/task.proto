@@ -31,9 +31,6 @@ message Task {
 
   optional DataType key_type = 13;
 
-  // dynamic value length
-  repeated int32 dyn_val_len = 24 [packed=true];
-
   // data type
   repeated DataType value_type = 14 [packed=true];
 

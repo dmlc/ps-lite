@@ -13,7 +13,8 @@ class KVCache : public Customer {
   /// called by users ///
 
   inline int Push(const Task& req, const SArray<K>& keys,
-                  const SArray<V>& vals, const Message::Callback& cb) {
+                  const SArray<V>& vals, const SArray<int>& vals_size,
+                  const Message::Callback& cb) {
     Message msg(req, kServerGroup);
     msg.set_key(keys);
     msg.add_value(vals);
@@ -24,14 +25,15 @@ class KVCache : public Customer {
   }
 
   inline int Pull(const Task& req, const SArray<K>& keys,
-                  const SArray<V>& vals, const Message::Callback& cb) {
+                  std::vector<V>* vals, std::vector<int>* vals_size,
+                  const Message::Callback& cb) {
     Message msg(req, kServerGroup);
     mu_.lock();
     int chl = chl_ ++;
     auto& kv = pull_data_[chl];
     mu_.unlock();
     kv.key = keys;
-    kv.value = vals;
+    // kv.value = vals;
     // LL << ts << " " << pull_data_[ts].key << " " << kv.value;
     msg.set_key(kv.key);
     if (cb) {
@@ -58,7 +60,11 @@ class KVCache : public Customer {
 
   void Slice(const Message& request, const std::vector<Range<Key>>& krs,
              std::vector<Message*>* msgs) {
-    SliceKOFVMessage<K>(request, krs, msgs);
+    if (request.task.param().dyn_val_size()) {
+      SliceDynValMessage<K>(request, krs, msgs);
+    } else {
+      SliceKOFVMessage<K>(request, krs, msgs);
+    }
   }
 
   void ProcessResponse(Message* msg) {

@@ -32,19 +32,14 @@ struct SyncOpts {
    * response from the parameter server
    */
   std::function<void()> callback;
-
   /**
    * \brief key-value filters to reduce communication cost
    */
   std::vector<Filter> filters;
-
   /**
    * \brief Sample usage: AddFilter(Filter::COMPRESSING);
    */
   Filter* AddFilter(Filter::Type type);
-
-  /** \brief Convert to a task */
-  void GetTask(Task* task) const;
 };
 
 /*!
@@ -65,6 +60,10 @@ class KVWorker {
   ~KVWorker() {
     delete cache_;
   }
+
+  /**************************************************************************
+   *                          Basic Push and Pull
+   **************************************************************************/
 
   /*!
    * \brief Pushes a list of key-value pairs into the parameter server
@@ -95,7 +94,9 @@ class KVWorker {
   int Push(const std::vector<Key>& keys,
            const std::vector<Val>& vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Push(Blob<const Key>(keys), Blob<const Val>(vals), opts);
+    // copy the data, then use the zero copy push
+    return ZPush(std::make_shared<std::vector<Key>>(keys),
+                 std::make_shared<std::vector<Val>>(vals), opts);
   }
 
   /*!
@@ -125,7 +126,8 @@ class KVWorker {
   int Pull(const std::vector<Key>& keys,
            std::vector<Val>* vals,
            const SyncOpts& opts = SyncOpts()) {
-    return Pull(Blob<const Key>(keys), Blob<Val>(vals), opts);
+    // copy the data, then use the zero copy pull
+    return ZPull(std::make_shared<std::vector<Key>>(keys), vals, opts);
   }
 
   /*!
@@ -142,6 +144,10 @@ class KVWorker {
     cache_->Wait(timestamp);
   }
 
+  /**************************************************************************
+   *                       Zero-copy Push and Pull
+   **************************************************************************/
+
   /**
    * \brief zero-copy synchronization. Keys (and values for ZPush) will not be
    * copied to reduce the communication delay. Therefore, it is the user's
@@ -151,55 +157,91 @@ class KVWorker {
   int ZPush(const std::shared_ptr<std::vector<Key> >& keys,
             const std::shared_ptr<std::vector<Val> >& vals,
             const SyncOpts& opts = SyncOpts()) {
-    return ZPush(SArray<Key>(keys), SArray<Val>(vals), opts);
+    return cache_->Push(GetTask(opts), SArray<Key>(keys),
+                        SArray<Val>(vals), SArray<int>(), opts.callback);
   }
 
   int ZPull(const std::shared_ptr<std::vector<Key> >& keys,
             std::vector<Val>* vals,
             const SyncOpts& opts = SyncOpts()) {
-    return ZPull(SArray<Key>(keys),
-                 SArray<Val>(vals->data(), vals->size(), EmptyDel<Val>()), opts);
+    return cache_->Pull(GetTask(opts), SArray<Key>(keys),
+                        CHECK_NOTNULL(vals), NULL, opts.callback);
   }
 
-  /*! \brief C-style Push and Pull */
-  int Push(Blob<const Key> keys, Blob<const Val> vals, const SyncOpts& opts) {
-    // copy data
-    SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
-    SArray<Val> s_vals; s_vals.CopyFrom(vals.data, vals.size);
-    return ZPush(s_keys, s_vals, opts);
-  }
-
-  int Pull(Blob<const Key> keys, Blob<Val> vals, const SyncOpts& opts) {
-    // copy data
-    SArray<Key> s_keys; s_keys.CopyFrom(keys.data, keys.size);
-    return ZPull(s_keys,
-                 SArray<Val>(vals.data, vals.size, EmptyDel<Val>()), opts);
-  }
-
-  int ZPush(const SArray<Key>& keys, const SArray<Val>& vals,
-            const SyncOpts& opts) {
-    Task req; opts.GetTask(&req);
-    return cache_->Push(req, keys, vals, opts.callback);
-  }
-
-
-  int ZPull(const SArray<Key>& keys, const SArray<Val>& vals,
-            const SyncOpts& opts) {
-    Task req; opts.GetTask(&req);
-    return cache_->Pull(req, keys, vals, opts.callback);
-  }
-
-  /*!
-   * \brief Increases the clock by delta
+  /**************************************************************************
+   *                Push and Pull with variable length values
+   **************************************************************************/
+  /**
+   * @brief Pushes a list of key-value pairs where value can be arbitary
+   * length.
+   *
+   * @param keys
+   * @param vals
+   * @param vals_size vals_size[i] stores the length of the i-th value
+   * @param opts
+   *
+   * @return
    */
-  void IncrClock(int delta = 1) {
-    cache_->exector()->IncrClock(delta);
+  int VPush(const std::vector<Key>& keys,
+            const std::vector<Val>& vals,
+            const std::vector<int>& vals_size,
+            const SyncOpts& opts = SyncOpts()) {
+    return ZVPush(std::make_shared<std::vector<Key>>(keys),
+                  std::make_shared<std::vector<Val>>(vals),
+                  std::make_shared<std::vector<int>>(vals_size), opts);
   }
+
+  /**
+   * @brief Pulls a list of key-value pairs where value can be arbitary
+   * length.
+   *
+   * @param keys
+   * @param vals
+   * @param vals_size
+   * @param opts
+   *
+   * @return
+   */
+  int VPull(const std::vector<Key>& keys,
+            std::vector<Val>* vals,
+            std::vector<int>* vals_size,
+            const SyncOpts& opts = SyncOpts()) {
+    return ZVPull(std::make_shared<std::vector<Key>>(keys),
+                  CHECK_NOTNULL(vals), CHECK_NOTNULL(vals_size), opts);
+  }
+
+  /**************************************************************************
+   *          Zero-copy Push and Pull with variable length values
+   **************************************************************************/
+
+  int ZVPush(const std::shared_ptr<std::vector<Key> >& keys,
+             const std::shared_ptr<std::vector<Val> >& vals,
+             const std::shared_ptr<std::vector<int> >& vals_size,
+             const SyncOpts& opts = SyncOpts()) {
+    return cache_->Push(GetTask(opts), SArray<Key>(keys), SArray<Val>(vals),
+                        SArray<int>(vals_size), opts.callback);
+  }
+
+  int ZVPull(const std::vector<Key>& keys,
+             std::vector<Val>* vals,
+             std::vector<int>* vals_size,
+             const SyncOpts& opts = SyncOpts()) {
+    return cache_->Pull(GetTask(opts), SArray<Key>(keys), CHECK_NOTNULL(vals),
+                        CHECK_NOTNULL(vals_size), opts.callback);
+  }
+
  private:
+  // /*!
+  //  * \brief Increases the clock by delta
+  //  */
+  // void IncrClock(int delta = 1) {
+  //   cache_->exector()->IncrClock(delta);
+  // }
+
+  Task GetTask(const SyncOpts& opts);
   KVCache<Key, Val>* cache_;
 };
 }  // namespace ps
-
 
 /**
  * \brief The main function for a worker node
