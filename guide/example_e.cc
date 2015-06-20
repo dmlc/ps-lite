@@ -1,16 +1,16 @@
 #include "ps.h"
+using Val = float;
+using Key = ps::Key;
 
-typedef float Val;
+using MyVal = std::vector<Val>;
 
-namespace ps {
-DECLARE_int32(num_workers);
-class MyHandle : ps::IOnlineHandle<Val, Val> {
+class MyHandle {
  public:
-  void SetCaller(void *obj) { obj_ = (Customer*)obj; }
+  void SetCaller(void *obj) { obj_ = (ps::Customer*)obj; }
 
   void Start(bool push, int timestamp, int cmd, void* msg) {
-    Message *m = (Message*) msg;
-    std::cout << "accept " << (push ? "push" : "pull") << " from " << m->sender
+    ps::Message *m = (ps::Message*) msg;
+    std::cout << "accepts " << (push ? "push" : "pull") << " from " << m->sender
               << " with timestamp " << timestamp
               << " and command " << cmd
               << std::endl;
@@ -18,47 +18,52 @@ class MyHandle : ps::IOnlineHandle<Val, Val> {
   }
 
   void Finish() {
-    std::cout << "finished " << obj_->NumDoneReceivedRequest(ts_, kWorkerGroup)
-              << " / " << FLAGS_num_workers << " on timestamp " << ts_ << std::endl;
+    std::cout << "finished " << obj_->NumDoneReceivedRequest(ts_, ps::kWorkerGroup)
+              << " / " << ps::NumWorkers() << " on timestamp " << ts_ << std::endl;
   }
 
-  void Init(Key key, Val& val) {
-    val = 1;
-    std::cout << "init (" << key << ", " << val << ") " << std::endl;
+  void Init(Key key, MyVal& val) {
+    std::cout << "init key" << key << std::endl;
   }
 
-  void Push(Key recv_key, Blob<const Val> recv_val, Val& my_val) {
-    for (const Val& v : recv_val) my_val += v;
-    std::cout << "handle push: key " << recv_key << " val " << recv_val << std::endl;
+  void Push(Key recv_key, ps::Blob<const Val> recv_val, MyVal& my_val) {
+    size_t n = recv_val.size;
+    if (my_val.empty()) my_val.resize(n);
+    CHECK_EQ(my_val.size(), n);
+    for (size_t i = 0; i < n; ++i) my_val[i] += recv_val[i];
+
+    std::cout << "handle push: key " << recv_key << ", val " << recv_val << std::endl;
   }
 
-  void Pull(Key recv_key, const Val& my_val, Blob<Val>& send_val) {
-    for (Val& v : send_val) v = my_val;
+  void Pull(Key recv_key, MyVal& my_val, ps::Blob<Val>& send_val) {
+    send_val.data = my_val.data();
+    send_val.size = my_val.size();
+
     std::cout << "handle pull: key " << recv_key << std::endl;
   }
  private:
-  Customer* obj_ = nullptr;
+  ps::Customer* obj_ = nullptr;
   int ts_ = 0;
 };
-}
 
 int CreateServerNode(int argc, char *argv[]) {
-  ps::OnlineServer<Val, Val, ps::MyHandle> server;
+  using Server = ps::OnlineServer<MyVal, Val, MyHandle>;
+  Server server(MyHandle(), Server::kDynamicSize);
   return 0;
 }
 
 int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
-  std::vector<Key> key = {1,    3,    5};
-  std::vector<Val> val = {1, 2, 3, 4, 5, 6};
+  std::vector<Key> key = {1, 3,       8    };
+  std::vector<Val> val = {1, 3, 4, 5, 9, 10};
+  std::vector<int> siz = {1, 3,       2    };
+
   std::vector<Val> recv_val;
+  std::vector<int> recv_siz;
 
   KVWorker<Val> wk;
-  int ts = wk.Push(key, val);
-  wk.Wait(ts);
-
-  ts = wk.Pull(key, &recv_val);
-  wk.Wait(ts);
+  wk.Wait(wk.VPush(key, val, siz));
+  wk.Wait(wk.VPull(key, &recv_val, &recv_siz));
 
   return 0;
 }

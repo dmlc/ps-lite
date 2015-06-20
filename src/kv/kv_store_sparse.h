@@ -105,7 +105,7 @@ class KVStoreSparse : public KVStore {
     {  // let os be destroied before delete fs
       dmlc::ostream os(fs);
       std::vector<V> val(k_);
-      for (const auto& it : data_) {
+      for (auto& it : data_) {
         K key = it.first;
         Blob<V> pull(val.data(), k_);
         handle_.Pull(key, it.second, pull);

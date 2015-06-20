@@ -48,7 +48,7 @@ message Task {
   // system control signals
   optional Control ctrl = 18;
 
-  optional int32 cmd = 19;
+  optional int32 cmd = 19 [default = -1];
 
   // parameters
   optional ParamCall param = 20;

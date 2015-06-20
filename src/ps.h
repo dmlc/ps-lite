@@ -225,7 +225,7 @@ class KVWorker {
                         SArray<int>(vals_size), opts.callback);
   }
 
-  int ZVPull(const std::vector<Key>& keys,
+  int ZVPull(const std::shared_ptr<std::vector<Key> >& keys,
              std::vector<Val>* vals,
              std::vector<int>* vals_size,
              const SyncOpts& opts = SyncOpts()) {
@@ -333,6 +333,7 @@ template <typename Val, typename SyncVal = Val,
           typename Handle = IOnlineHandle<Val, SyncVal> >
 class OnlineServer {
  public:
+  static const int kDynamicSize = -1;
   /**
    * @param pull_val_len the length of value pulled from server for each key. If
    * positive, then a fixed length SyncVal[pull_val_len] will be
@@ -350,6 +351,7 @@ class OnlineServer {
   ~OnlineServer() { }
 
   KVStore* server() { return server_; }
+
  private:
   KVStore* server_ = NULL;
 };
