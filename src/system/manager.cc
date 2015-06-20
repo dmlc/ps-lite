@@ -19,7 +19,6 @@ Manager::~Manager() {
   }
   delete node_assigner_;
   delete app_;
-  LOG(INFO) << "manager destroied";
 }
 
 void Manager::Init(int argc, char *argv[]) {
@@ -101,7 +100,7 @@ void Manager::Stop() {
     // run as a daemon until received the termination message
     while (!done_) usleep(50000);
   }
-  LOG(INFO) << "node stopped";
+  LOG(INFO) << van_.my_node().id() << " stopped";
 }
 
 
