@@ -39,8 +39,8 @@ message Task {
 
   // not so useful, remove it TODO
   // if true, the tasks will be packed into a single one during sending
-  optional bool more = 16 [default = false];
-  repeated Task task = 15;
+  // optional bool more = 16 [default = false];
+  // repeated Task task = 15;
 
   // the place to store a small amount of data
   optional bytes msg = 17;
@@ -62,14 +62,14 @@ message Control {
   enum Command {
     // a node => the scheduler
     REGISTER_NODE = 2;
-    REPORT_PERF = 3;
+    // REPORT_PERF = 3;
     READY_TO_EXIT = 4;
     READY_TO_RUN = 5;
 
     // the scheduler => a node
     ADD_NODE = 10;
-    UPDATE_NODE = 11;
-    REPLACE_NODE = 12;
+    // UPDATE_NODE = 11;
+    // REPLACE_NODE = 12;
     REMOVE_NODE = 13;
     EXIT = 14;
   }

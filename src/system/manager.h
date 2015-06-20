@@ -39,14 +39,10 @@ class Manager {
   void RemoveCustomer(int id);
   int NextCustomerID();
 
-  // workers and servers
-  bool WaitServersReady();
-  bool WaitWorkersReady();
-
   int num_workers() { return num_workers_; }
   int num_servers() { return num_servers_; }
 
-  // manage message TODO
+  // manage message. no fault tolerance yet...
   void AddRequest(Message* msg) { delete msg; }
   void AddResponse(Message* msg) { }
 
@@ -76,12 +72,13 @@ class Manager {
   int num_servers_ = 0;
 
   // the following two are only available for the scheduler
-  int num_ready_nodes_ = 0;
-  std::unordered_set<NodeID> unfinished_nodes_;
+  std::unordered_set<NodeID> active_nodes_;
+  std::unordered_set<NodeID> alive_nodes_;
 
   std::vector<NodeFailureHandler> node_failure_handlers_;
   bool is_my_node_inited_ = false;
 
+  bool inited_ = false;
   // only available at the scheduler node
   NodeAssigner* node_assigner_ = nullptr;
 

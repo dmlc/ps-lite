@@ -7,7 +7,6 @@ namespace ps {
 /**
  * @brief Van sends (receives) packages to (from) a node The current
  * implementation uses ZeroMQ
- *
  */
 class Van {
  public:
@@ -60,10 +59,3 @@ class Van {
 };
 
 } // namespace ps
-
-/// debug performance
-// double send_time_ = 0;
-// double recv_time_ = 0;
-// int num_call_ = 0;
-// auto tv = hwtic();
-// send_time_ += hwtoc(tv);

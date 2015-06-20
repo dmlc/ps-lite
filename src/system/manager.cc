@@ -8,7 +8,7 @@ DECLARE_int32(num_workers);
 DECLARE_int32(num_replicas);
 DECLARE_int32(report_interval);
 
-DEFINE_int32(connection_timeout, 10, "connection timeout in sec.");
+DEFINE_int32(sync_timeout, 10, "connection timeout in sec.");
 
 DEFINE_uint64(max_key, -1, "maximal global key");
 
@@ -19,6 +19,7 @@ Manager::~Manager() {
   }
   delete node_assigner_;
   delete app_;
+  LOG(INFO) << "manager destroied";
 }
 
 void Manager::Init(int argc, char *argv[]) {
@@ -34,14 +35,13 @@ void Manager::Init(int argc, char *argv[]) {
       LOG(INFO) << "Staring system. Logging into " << FLAGS_log_dir
                 << "/" << basename(argv[0]) <<".log.*";
     }
-
     if (FLAGS_max_key == (uint64)-1) {
       node_assigner_ = new NodeAssigner(FLAGS_num_servers, Range<Key>::All());
     } else {
       node_assigner_ = new NodeAssigner(FLAGS_num_servers, Range<Key>(0, FLAGS_max_key));
     }
 
-    // add my node into app_
+    // add my node directly rather than sending a REGISTER_NODE request
     AddNode(van_.my_node());
   } else {
     // ask the scheduler to broadcast this node to others
@@ -52,42 +52,18 @@ void Manager::Init(int argc, char *argv[]) {
 }
 
 void Manager::Run() {
-  // app_ is created by postoffice::recv_thread (except for the scheduler),
-  // while run() is called by the main thread, so here should be a thread
-  // synchronization.
-
-  // wait my node info is updated
-  while (!is_my_node_inited_) usleep(5000);
-
-  // wait all other nodes are ready
-  auto role = van_.my_node().role();
-  if (role == Node::SCHEDULER) {
-    LOG(INFO) << "waiting " << FLAGS_num_servers << " servers and "
-              << FLAGS_num_workers << " are ready";
-    int num_nodes = FLAGS_num_servers + FLAGS_num_workers;
-    if (Timeout(FLAGS_connection_timeout, [this, num_nodes](){
-          return num_ready_nodes_ < num_nodes;
-        })) {
-      LOG(ERROR) << "Timeout ("
-                 << FLAGS_connection_timeout
-                 << " sec) for the scheduler to wait all nodes ("
-                 << num_ready_nodes_ << "/" << num_nodes
-                 << ") ready. Exit.";
-      LOG(ERROR) << "You may want to set a larger timeout via -connection_timeout";
-      return;
-    }
-  } else {
-    if (role == Node::WORKER) {
-      WaitServersReady();
-    } else if (role == Node::SERVER) {
-      WaitWorkersReady();
-    }
-    Task task = NewControlTask(Control::READY_TO_RUN);
-    SendTask(van_.scheduler(), task);
+  if (Timeout(FLAGS_sync_timeout, [this] { return inited_; })) {
+    LOG(FATAL) << "Timeout ("
+               << FLAGS_sync_timeout
+               << " sec) to wait all other nodes initialized."
+               << " See commmets for more information";
+    // First check if all logs are normal. In default the logs are avaialable at
+    // /tmp/, you can specify the log directory by "-log_dir your_log_dir". If
+    // everything goes fine, then probably it's due to the cluster resource manager
+    // (such as yarn) is slow to start the jobs. You can increase the sync
+    // timeout value, such as waiting 1000 sec:  "-sync_timeout 1000"
   }
 
-
-  VLOG(1) << "run app..";
   CHECK_NOTNULL(app_)->Run();
 }
 
@@ -95,17 +71,29 @@ void Manager::Stop() {
   if (IsScheduler()) {
     // wait all other nodes are ready for exit. cannot set a timeout here, some
     // apps such as cxxnet has an empty scheduler
-    while (unfinished_nodes_.size() > 0) usleep(100000);
-
-    // broadcast the terminate signal
-    in_exit_ = true;
-    for (const auto& it : nodes_) {
-      Task task = NewControlTask(Control::EXIT);
-      SendTask(it.second, task);
+    while(true) {
+      Lock lk(nodes_mu_);
+      if (active_nodes_.size() == 0) break;
+      usleep(100000);
     }
-    // sleep .5 sec to let other nodes exit
-    usleep(500000);
-    LOG(INFO) << "System stopped";
+
+    // broadcast the terminate signal to all workers and servers
+    in_exit_ = true;
+    Task task = NewControlTask(Control::EXIT);
+    SendTask(kCompGroup, task);
+
+    // wait others are done
+    if (Timeout(FLAGS_sync_timeout, [this] {
+          Lock lk(nodes_mu_);
+          return alive_nodes_.empty();
+        })) {
+      LOG(ERROR) << "Timeout ("
+                 << FLAGS_sync_timeout
+                 << " sec) to wait all other nodes exited.";
+    }
+
+    // kill myself
+    SendTask(van_.my_node(), task);
   } else {
     Task task = NewControlTask(Control::READY_TO_EXIT);
     SendTask(van_.scheduler(), task);
@@ -113,6 +101,7 @@ void Manager::Stop() {
     // run as a daemon until received the termination message
     while (!done_) usleep(50000);
   }
+  LOG(INFO) << "node stopped";
 }
 
 
@@ -131,39 +120,36 @@ bool Manager::Process(Message* msg) {
     case Control::REGISTER_NODE: {
       CHECK(IsScheduler());
       CHECK_EQ(ctrl.node_size(), 1);
-      CHECK(van_.Connect(ctrl.node(0)));
       Node sender = ctrl.node(0);
+      // assign key range
       CHECK_NOTNULL(node_assigner_)->Assign(&sender);
       AddNode(sender);
       break;
     }
     case Control::READY_TO_RUN: {
-      CHECK(IsScheduler());
-      Lock lk(nodes_mu_);
-      unfinished_nodes_.insert(msg->sender);
-      ++ num_ready_nodes_;
-      break;
-    }
-    case Control::REPORT_PERF: {
-      CHECK(IsScheduler());
-      // TODO
+      if (IsScheduler()) {
+        Lock lk(nodes_mu_);
+        active_nodes_.insert(msg->sender);
+        if ((int)active_nodes_.size() >= FLAGS_num_workers + FLAGS_num_servers) {
+          Task task = NewControlTask(Control::READY_TO_RUN);
+          SendTask(kCompGroup, task);
+          inited_ = true;
+        }
+      } else {
+        inited_ = true;
+      }
       break;
     }
     case Control::READY_TO_EXIT: {
       CHECK(IsScheduler());
       Lock lk(nodes_mu_);
-      unfinished_nodes_.erase(msg->sender);
+      active_nodes_.erase(msg->sender);
       break;
     }
-    case Control::ADD_NODE:
-    case Control::UPDATE_NODE: {
+    case Control::ADD_NODE: {
       for (int i = 0; i < ctrl.node_size(); ++i) {
         AddNode(ctrl.node(i));
       } break;
-    }
-    case Control::REPLACE_NODE: {
-      // TODO
-      break;
     }
     case Control::REMOVE_NODE: {
       for (int i = 0; i < ctrl.node_size(); ++i) {
@@ -183,44 +169,49 @@ void Manager::AddNode(const Node& node) {
   // add to system
   nodes_mu_.lock();
   if (nodes_.find(node.id()) == nodes_.end()) {
-    if (!IsScheduler()) {
-      // the scheduler has already connect this node when processing REQUEST_APP
+    // if (!IsScheduler()) {
+    // the scheduler has already connect this node when processing REQUEST_APP
+    // }
+    if (node.role() != van_.my_node().role()) {
       CHECK(van_.Connect(node));
     }
     if (node.role() == Node::WORKER) ++ num_workers_;
     if (node.role() == Node::SERVER) ++ num_servers_;
   } else {
-    LOG(INFO) << "addnode: " << node.id() << " exits.";
+    LOG(ERROR) << "addnode: " << node.id() << " exits.";
   }
   nodes_[node.id()] = node;
+  alive_nodes_.insert(node.id());
   nodes_mu_.unlock();
+
+  net_usage_.AddNode(node);
 
   // add to app
   for (auto& it : customers_) {
     it.second.first->executor()->AddNode(node);
   }
 
-  if (IsScheduler() && node.id() != van_.my_node().id()) {
-    // send all existing nodes info to sender
-    Task add_node = NewControlTask(Control::ADD_NODE);
-    for (const auto& it : nodes_) {
-      *add_node.mutable_ctrl()->add_node() = it.second;
-    }
-    SendTask(node, add_node);
+  if (num_workers_ >= FLAGS_num_workers &&
+      num_servers_ >= FLAGS_num_servers) {
+    // this happens only if more nodes than expected are added. it may due to
+    // node failure. it's safe to have core dump here since i didn't test it too much.
+    CHECK(!inited_) << "didn't test yet, see comments.";
 
-    // broadcast this new sender info
-    for (const auto& it : nodes_) {
-      if (it.first == van_.my_node().id() || it.first == node.id()) {
-        continue;
+    if (IsScheduler()) {
+      // broadcast all nodes info
+      Task add_node = NewControlTask(Control::ADD_NODE);
+      for (const auto& it : nodes_) {
+        *add_node.mutable_ctrl()->add_node() = it.second;
       }
-      Task add_new_node = NewControlTask(Control::ADD_NODE);
-      *add_new_node.mutable_ctrl()->add_node() = node;
-      SendTask(it.second, add_new_node);
+      SendTask(kCompGroup, add_node);
+    } else {
+      // tell the scheduler that this node is already to run
+      Task task = NewControlTask(Control::READY_TO_RUN);
+      SendTask(van_.scheduler(), task);
     }
   }
 
-  if (node.id() == van_.my_node().id()) is_my_node_inited_ = true;
-  net_usage_.AddNode(node);
+  // if (node.id() == van_.my_node().id()) is_my_node_inited_ = true;
   VLOG(1) << "add node: " << node.ShortDebugString();
 }
 
@@ -233,7 +224,7 @@ void Manager::RemoveNode(const NodeID& node_id) {
   // van_.disconnect(node);
   if (node.role() == Node::WORKER) -- num_workers_;
   if (node.role() == Node::SERVER) -- num_servers_;
-  unfinished_nodes_.erase(node_id);
+  active_nodes_.erase(node_id);
   nodes_.erase(it);
   nodes_mu_.unlock();
 
@@ -265,6 +256,8 @@ void Manager::RemoveNode(const NodeID& node_id) {
 }
 
 void Manager::NodeDisconnected(const NodeID node_id) {
+  nodes_mu_.lock(); alive_nodes_.erase(node_id); nodes_mu_.unlock();
+
   // alreay in shutting down?
   if (in_exit_) return;
 
@@ -275,12 +268,7 @@ void Manager::NodeDisconnected(const NodeID node_id) {
     LOG(INFO) << node_id << " is disconnected";
     RemoveNode(node_id);
   } else {
-    // sleep a while, in case this node is already in terminating
-    for (int i = 0; i < 500; ++i) {
-      usleep(1000);
-      if (done_) return;
-    }
-    LOG(INFO) << van_.my_node().id() << ": the scheduler is died, exit";
+    LOG(ERROR) << van_.my_node().id() << ": the scheduler is died, exit";
     string kill = "kill -9 " + std::to_string(getpid());
     int ret = system(kill.c_str());
     if (ret != 0) LOG(INFO) << "failed to " << kill;
@@ -311,32 +299,6 @@ bool Manager::Timeout(int sec, const std::function<bool()>& pred) {
   }
   if (i == 0 && pred()) return true;
   return false;
-}
-
-bool Manager::WaitServersReady() {
-  if (Timeout(FLAGS_connection_timeout, [this](){
-        return num_servers_ < FLAGS_num_servers;
-      })) {
-    LOG(ERROR) << van_.my_node().id() << ": timeout ("
-               << FLAGS_connection_timeout
-               << " sec) for waiting servers ready. "
-               << num_servers_ << "/" << FLAGS_num_servers;
-    return false;
-  }
-  return true;
-}
-
-bool Manager::WaitWorkersReady() {
-  if (Timeout(FLAGS_connection_timeout, [this](){
-        return num_workers_ < FLAGS_num_workers;
-      })) {
-    LOG(ERROR) << van_.my_node().id() << ": timeout ("
-               << FLAGS_connection_timeout
-               << " sec) for waiting workers ready. "
-               << num_workers_ << "/" << FLAGS_num_workers;
-    return false;
-  }
-  return true;
 }
 
 // customers

@@ -402,10 +402,6 @@ inline std::string SchedulerID() {
   return Postoffice::instance().manager().van().scheduler().id();
 }
 
-inline int NextCustomerID() {
-  return Postoffice::instance().manager().NextCustomerID();
-}
-
 // The rank ID of this node in its group. Assume this a worker node in a worker
 // group with N workers. Then this node will be assigned an unique ID from 0,
 // ..., N. Similarly for server and scheduler.
@@ -417,17 +413,7 @@ inline int RankSize() {
 }
 
 inline int NumWorkers() { return FLAGS_num_workers; }
-
 inline int NumServers() { return FLAGS_num_servers; }
-// Wait until all FLAGS_num_servers servers are ready.
-inline bool WaitServersReady() {
-  return ps::Postoffice::instance().manager().WaitServersReady();
-}
-
-// Wait until all FLAGS_num_workers workers are ready.
-inline bool WaitWorkersReady() {
-  return ps::Postoffice::instance().manager().WaitWorkersReady();
-}
 
 inline void StartSystem(int* argc, char ***argv) {
   ps::Postoffice::instance().Run(argc, argv);

@@ -26,7 +26,7 @@ class Postoffice {
    * @param msg it will be DELETE by system after sent successfully. so do NOT
    * delete it before
    */
-  void Queue(Message* msg);
+  void Queue(Message* msg) { sending_queue_.push(msg); }
 
   Manager& manager() { return manager_; }
 
@@ -34,17 +34,12 @@ class Postoffice {
   Postoffice() { }
   void Send();
   void Recv();
-  bool Process(Message* msg);
+
   std::unique_ptr<std::thread> recv_thread_;
   std::unique_ptr<std::thread> send_thread_;
   ThreadsafeQueue<Message*> sending_queue_;
 
   Manager manager_;
-
-  // key: <sender, customer_id>, value: messages will be packed
-  std::map<std::pair<NodeID, int>, std::vector<Message*>> pack_;
-  std::mutex pack_mu_;
-
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 
