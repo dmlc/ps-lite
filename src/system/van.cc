@@ -223,7 +223,7 @@ bool Van::Recv(Message* msg, size_t* recv_bytes) {
       CHECK(msg->task.ParseFromArray(buf, size))
           << "failed to parse string from " << msg->sender
           << ". this is " << my_node_.id() << " " << size;
-      if (IsScheduler() && msg->task.control() &&
+      if (IsScheduler() && msg->task.has_control() &&
           msg->task.ctrl().cmd() == Control::REGISTER_NODE) {
         // it is the first time the scheduler receive message from the
         // sender. store the file desciptor of the sender for the monitor
