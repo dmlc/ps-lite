@@ -72,9 +72,9 @@ void Manager::Stop() {
     // wait all other nodes are ready for exit. cannot set a timeout here, some
     // apps such as cxxnet has an empty scheduler
     while(true) {
+      usleep(100000);
       Lock lk(nodes_mu_);
       if (active_nodes_.size() == 0) break;
-      usleep(100000);
     }
 
     // broadcast the terminate signal to all workers and servers
@@ -85,7 +85,7 @@ void Manager::Stop() {
     // wait others are done
     if (Timeout(FLAGS_sync_timeout, [this] {
           Lock lk(nodes_mu_);
-          return alive_nodes_.empty();
+          return alive_nodes_.size() == 1;
         })) {
       LOG(ERROR) << "Timeout ("
                  << FLAGS_sync_timeout
@@ -286,18 +286,30 @@ Task Manager::NewControlTask(Control::Command cmd) {
 }
 
 void Manager::SendTask(const NodeID& recver, const Task& task) {
-  Message* msg = new Message(task);
-  msg->recver = recver;
-  Postoffice::instance().Queue(msg);
+  if (recver == kCompGroup) {
+    // a hack..
+    for (const auto& it : nodes_) {
+      auto role = it.second.role();
+      if (role == Node::WORKER || role == Node::SERVER) {
+        Message* msg = new Message(task);
+        msg->recver = it.first;
+        Postoffice::instance().Queue(msg);
+      }
+    }
+  } else {
+    Message* msg = new Message(task);
+    msg->recver = recver;
+    Postoffice::instance().Queue(msg);
+  }
 }
 
 bool Manager::Timeout(int sec, const std::function<bool()>& pred) {
   int itv = 10000;
   int i =  sec * 1000000 / itv;
-  while (i > 0 && pred()) {
+  while (i > 0 && !pred()) {
     usleep(itv); --i;
   }
-  if (i == 0 && pred()) return true;
+  if (i == 0 && !pred()) return true;
   return false;
 }
 

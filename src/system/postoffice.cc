@@ -43,6 +43,7 @@ void Postoffice::Send() {
       delete msg;
     }
   }
+  LOG(INFO) << "sending thead stopped";
 }
 
 void Postoffice::Recv() {
@@ -66,6 +67,7 @@ void Postoffice::Recv() {
       manager_.customer(id)->executor()->Accept(msg);
     }
   }
+  LOG(INFO) << "recving thead stopped";
 }
 
 } // namespace ps
