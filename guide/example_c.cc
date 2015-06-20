@@ -10,17 +10,15 @@ int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
   auto key = std::make_shared<std::vector<Key>>();
   auto val = std::make_shared<std::vector<Val>>();
-  std::vector<Val> recv_val;
 
   *key = {1, 3, 5};
   *val = {1, 1, 1};
 
   KVWorker<Val> wk;
-  int ts = wk.ZPush(key, val);
-  wk.Wait(ts);
+  wk.Wait(wk.ZPush(key, val));
 
-  ts = wk.ZPull(key, &recv_val);
-  wk.Wait(ts);
+  std::vector<Val> recv_val;
+  wk.Wait(wk.ZPull(key, &recv_val));
 
   std::cout << "values pulled at " << MyNodeID() << ": "
             << Blob<const Val>(recv_val) << std::endl;

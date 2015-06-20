@@ -14,7 +14,7 @@ push a list of key-value pairs into servers and then pull the new values back.
 typedef float Val;
 
 int CreateServerNode(int argc, char *argv[]) {
-  ps::KVServer<Val> server; server.Run();
+  ps::OnlineServer<Val> server;
   return 0;
 }
 
@@ -22,7 +22,7 @@ int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
   std::vector<Key> key = {1, 3, 5};
   std::vector<Val> val = {1, 1, 1};
-  std::vector<Val> recv_val(3);
+  std::vector<Val> recv_val;
 
   KVWorker<Val> wk;
   int ts = wk.Push(key, val);
@@ -85,16 +85,17 @@ overhead is expensive, we can then use `ZPush` and `ZPull` to do zero-copy data
 communication ([example_c](example_c.cc)):
 
 ```c++
-  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>({1, 3, 5}));
-  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>({1, 1, 1}));
-  std::vector<Val> recv_val(3);
+  auto key = std::make_shared<std::vector<Key>>();
+  auto val = std::make_shared<std::vector<Val>>();
+
+  *key = {1, 3, 5};
+  *val = {1, 1, 1};
 
   KVWorker<Val> wk;
-  int ts = wk.ZPush(key, val);
-  wk.Wait(ts);
+  wk.Wait(wk.ZPush(key, val));
 
-  ts = wk.ZPull(key, &recv_val);
-  wk.Wait(ts);
+  std::vector<Val> recv_val;
+  wk.Wait(wk.ZPull(key, &recv_val));
 ```
 
 The system will maintain a copy of `key` and `val` to prevent release the memory
@@ -111,107 +112,114 @@ compression on values.
 
 ```c++
   int n = 1000000;
-  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>(n));
+  auto key = std::make_shared<std::vector<Key>>(n);
   for (int i = 0; i < n; ++i) (*key)[i] = kMaxKey / n * i;
-  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>(n, 1.0));
-  std::vector<Val> recv_val(n);
+  auto val = std::make_shared<std::vector<Val>>(n, 1.0);
 
   KVWorker<Val> wk;
-  int m = 100;
-  for (int i = 0; i < m; ++i) {
+  std::vector<Val> recv_val;
+  for (int i = 0; i < 100; ++i) {
     SyncOpts opts;
     opts.AddFilter(Filter::KEY_CACHING);
     opts.AddFilter(Filter::COMPRESSING);
-    int ts = wk.ZPush(key, val, opts);
-    wk.Wait(ts);
-
-    ts = wk.ZPull(key, &recv_val, opts);
-    wk.Wait(ts);
+    wk.Wait(wk.ZPush(key, val, opts));
+    wk.Wait(wk.ZPull(key, &recv_val, opts));
   }
+
 ```
 
 Using 4 workers and 4 servers (`./local.sh 4 4 ./example_d -logtostderr`), these
 two filters can reduce the total number of data sent by a worker from 2GB to
 20MB.
 
+### Vector value
+
+A value could be a vector rather than a scalar. For example, we can associate
+each key with a fixed length 2 value vector.
+
+```
+  std::vector<Key> key = {1,    3,    5};
+  std::vector<Val> val = {1, 2, 3, 4, 5, 6};
+  wk.Push(key, val);
+```
+Or a dynamic length value ([example_e](example_e))
+```
+  std::vector<Key> key = {1, 3,       8    };
+  std::vector<Val> val = {1, 3, 4, 5, 9, 10};
+  std::vector<int> siz = {1, 3,       2    };
+  wk.VPush(key, val);
+```
+
 ## Server APIs
 
-### Simple handle summing the data
+### User defined handle
 
-Example [e](example_e.cc) is similar to Example a, where servers sum the data
-pushed by workers. The main difference is we
-let the handle print some debug information to clearly see how the handle is
-called:
+The server nodes accept user defined handle. In example [e](example_e.cc), we
+show how to handle variable length values at server nodes.
+
 
 ```c++
+using MyVal = std::vector<Val>;
 class MyHandle {
  public:
-  void SetCaller(void *obj) { obj_ = (Customer*)obj; }
+  ...
+  void Push(Key recv_key, ps::Blob<const Val> recv_val, MyVal& my_val) {
+    size_t n = recv_val.size;
+    if (my_val.empty()) my_val.resize(n);
+    CHECK_EQ(my_val.size(), n);
+    for (size_t i = 0; i < n; ++i) my_val[i] += recv_val[i];
 
-  inline void Start(bool push, int timestamp, const std::string& worker) {
-    std::cout << "accept " << (push ? "push" : "pull") << " from " << worker
-              << " with timestamp " << timestamp << std::endl;
-    ts_ = timestamp;
+    std::cout << "handle push: key " << recv_key << ", val " << recv_val << std::endl;
   }
 
-  inline void Finish() {
-    std::cout << "finished " << obj_->NumDoneReceivedRequest(ts_, kWorkerGroup)
-              << " / " << FLAGS_num_workers << " on timestamp " << ts_ << std::endl;
-  }
+  void Pull(Key recv_key, MyVal& my_val, ps::Blob<Val>& send_val) {
+    send_val.data = my_val.data();
+    send_val.size = my_val.size();
 
-  inline void Init(Blob<const Key> keys,
-                   Blob<Val> vals) {
-    memset(vals.data, 0, vals.size*sizeof(Val));
-    std::cout << "init key " << keys << " val " << vals << std::endl;
+    std::cout << "handle pull: key " << recv_key << std::endl;
   }
-
-  inline void Push(Blob<const Key> recv_keys,
-                   Blob<const Val> recv_vals,
-                   Blob<Val> my_vals) {
-    for (size_t i = 0; i < recv_vals.size; ++i)
-      my_vals[i] += recv_vals[i];
-    std::cout << "handle push: key " << recv_keys << " val " << recv_vals << std::endl;
-  }
-
-  inline void Pull(Blob<const Key> recv_keys,
-                   Blob<const Val> my_vals,
-                   Blob<Val> send_vals) {
-    for (size_t i = 0; i < my_vals.size; ++i)
-      send_vals[i] = my_vals[i];
-    std::cout << "handle pull: key " << recv_keys << std::endl;
-  }
- private:
-  Customer* obj_ = nullptr;
-  int ts_;
 };
+
 ```
 
 A sample output after running `./local.sh 1 2 ./example_e`
 
 ```
-accept push from W1 with timestamp 0
-init key [1]: 1  val [1]: 0
-handle push: key [1]: 1  val [1]: 1
-init key [1]: 3  val [1]: 0
-handle push: key [1]: 3  val [1]: 1
-init key [1]: 5  val [1]: 0
-handle push: key [1]: 5  val [1]: 1
+-------
+accepts push from W0 with timestamp 0 and command -1
+init key1
+handle push: key 1, val [1]: 1
+init key3
+handle push: key 3, val [3]: 3 4 5
+init key8
+handle push: key 8, val [2]: 9 10
 finished 1 / 2 on timestamp 0
-accept pull from W1 with timestamp 1
-handle pull: key [1]: 1
-handle pull: key [1]: 3
-handle pull: key [1]: 5
-finished 1 / 2 on timestamp 1
-accept push from W0 with timestamp 0
-handle push: key [1]: 1  val [1]: 1
-handle push: key [1]: 3  val [1]: 1
-handle push: key [1]: 5  val [1]: 1
+-------
+-------
+accepts push from W1 with timestamp 0 and command -1
+handle push: key 1, val [1]: 1
+handle push: key 3, val [3]: 3 4 5
+handle push: key 8, val [2]: 9 10
 finished 2 / 2 on timestamp 0
-accept pull from W0 with timestamp 1
-handle pull: key [1]: 1
-handle pull: key [1]: 3
-handle pull: key [1]: 5
+-------
+-------
+accepts pull from W0 with timestamp 1 and command -1
+handle pull: key 1
+handle pull: key 3
+handle pull: key 8
+finished 1 / 2 on timestamp 1
+-------
+-------
+accepts pull from W1 with timestamp 1 and command -1
+handle pull: key 1
+handle pull: key 3
+handle pull: key 8
 finished 2 / 2 on timestamp 1
+-------
+values pulled at W0: [6]: 2 6 8 10 18 20
+[3]: 1 3 2
+values pulled at W1: [6]: 2 6 8 10 18 20
+[3]: 1 3 2
 ```
 
 See more online handles in [sgd_server_handle.h](https://github.com/dmlc/wormhole/blob/master/learn/linear/sgd/sgd_server_handle.h)

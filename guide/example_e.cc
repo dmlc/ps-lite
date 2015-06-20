@@ -10,7 +10,7 @@ class MyHandle {
 
   void Start(bool push, int timestamp, int cmd, void* msg) {
     ps::Message *m = (ps::Message*) msg;
-    std::cout << "accepts " << (push ? "push" : "pull") << " from " << m->sender
+    std::cout << "-------\naccepts " << (push ? "push" : "pull") << " from " << m->sender
               << " with timestamp " << timestamp
               << " and command " << cmd
               << std::endl;
@@ -19,7 +19,8 @@ class MyHandle {
 
   void Finish() {
     std::cout << "finished " << obj_->NumDoneReceivedRequest(ts_, ps::kWorkerGroup)
-              << " / " << ps::NumWorkers() << " on timestamp " << ts_ << std::endl;
+              << " / " << ps::NumWorkers() << " on timestamp " << ts_
+              << "\n-------" << std::endl;
   }
 
   void Init(Key key, MyVal& val) {
@@ -65,5 +66,8 @@ int WorkerNodeMain(int argc, char *argv[]) {
   wk.Wait(wk.VPush(key, val, siz));
   wk.Wait(wk.VPull(key, &recv_val, &recv_siz));
 
+  std::cout << "values pulled at " << MyNodeID() << ": "
+            << Blob<const Val>(recv_val) << "\n"
+            << Blob<const int>(recv_siz) << std::endl;
   return 0;
 }

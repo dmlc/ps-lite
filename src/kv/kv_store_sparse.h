@@ -33,7 +33,7 @@ class KVStoreSparse : public KVStore {
         Blob<V> pull(val_data, len);
         handle_.Pull(key_i, FindValue(key_i), pull);
         if (pull.data != val_data) {
-          while ((start + pull.size) < val.size()) val.resize(val.size()*2 + 5);
+          while ((start + pull.size) > val.size()) val.resize(val.size()*2 + 5);
           memcpy(val.data()+start, pull.data, sizeof(V)*pull.size);
         } else {
           CHECK_LE(pull.size, len);

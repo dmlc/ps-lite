@@ -12,21 +12,16 @@ int WorkerNodeMain(int argc, char *argv[]) {
   int n = 1000000;
   auto key = std::make_shared<std::vector<Key>>(n);
   for (int i = 0; i < n; ++i) (*key)[i] = kMaxKey / n * i;
-
   auto val = std::make_shared<std::vector<Val>>(n, 1.0);
 
-  std::vector<Val> recv_val;
-
   KVWorker<Val> wk;
+  std::vector<Val> recv_val;
   for (int i = 0; i < 100; ++i) {
     SyncOpts opts;
     opts.AddFilter(Filter::KEY_CACHING);
     opts.AddFilter(Filter::COMPRESSING);
-    int ts = wk.ZPush(key, val, opts);
-    wk.Wait(ts);
-
-    ts = wk.ZPull(key, &recv_val, opts);
-    wk.Wait(ts);
+    wk.Wait(wk.ZPush(key, val, opts));
+    wk.Wait(wk.ZPull(key, &recv_val, opts));
   }
   return 0;
 }
