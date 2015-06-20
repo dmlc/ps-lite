@@ -40,7 +40,7 @@ clean:
 
 ps: $(PS_LIB) $(PS_MAIN)
 
-ps_srcs	= $(wildcard src/*/*.cc)
+ps_srcs	= $(wildcard src/*.cc src/*/*.cc)
 ps_protos	= $(wildcard src/proto/*.proto)
 ps_objs	= $(patsubst src/%.proto, build/%.pb.o, $(ps_protos)) \
 			  $(patsubst src/%.cc, build/%.o, $(ps_srcs))

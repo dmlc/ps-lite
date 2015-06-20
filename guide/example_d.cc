@@ -10,14 +10,15 @@ int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
 
   int n = 1000000;
-  std::shared_ptr<std::vector<Key>> key(new std::vector<Key>(n));
+  auto key = std::make_shared<std::vector<Key>>(n);
   for (int i = 0; i < n; ++i) (*key)[i] = kMaxKey / n * i;
-  std::shared_ptr<std::vector<Val>> val(new std::vector<Val>(n, 1.0));
-  std::vector<Val> recv_val(n);
+
+  auto val = std::make_shared<std::vector<Val>>(n, 1.0);
+
+  std::vector<Val> recv_val;
 
   KVWorker<Val> wk;
-  int m = 100;
-  for (int i = 0; i < m; ++i) {
+  for (int i = 0; i < 100; ++i) {
     SyncOpts opts;
     opts.AddFilter(Filter::KEY_CACHING);
     opts.AddFilter(Filter::COMPRESSING);
