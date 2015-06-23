@@ -120,7 +120,7 @@ class Customer {
    * node. Each msgs[i] is already initilized by msgs[i]->task = request.task
    */
   virtual void Slice(const Message& request, const std::vector<Range<Key>>& krs,
-                     std::vector<Message*>* msgs) { }
+                     std::vector<Message*>* msgs) {}
 
   /**
    * @brief A user-defined function, which processes a request message received from "request->sender"

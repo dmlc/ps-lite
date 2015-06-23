@@ -374,8 +374,6 @@ int CreateServerNode(int argc, char *argv[]);
 ///                            Scheduler Node APIs                          ///
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO
-
 ///////////////////////////////////////////////////////////////////////////////
 ///                            More Advanced APIs                           ///
 ///////////////////////////////////////////////////////////////////////////////
@@ -399,7 +397,6 @@ inline int IsServerNode() { return MyNode().role() == Node::SERVER; }
 /*! \brief Return true if this node is a scheduler node. */
 inline int IsSchedulerNode() { return MyNode().role() == Node::SCHEDULER; }
 
-inline Range<Key> MyKeyRange() { return Range<Key>(MyNode().key()); }
 inline std::string SchedulerID() {
   return Postoffice::instance().manager().van().scheduler().id();
 }

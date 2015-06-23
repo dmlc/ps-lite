@@ -27,9 +27,9 @@ class KVStore : public Customer {
     } else {
       // a normal request
       if (push) {
-        SetValue(request);
+        HandlePush(request);
       } else {
-        GetValue(response);
+        HandlePull(response);
       }
     }
 
@@ -43,11 +43,11 @@ class KVStore : public Customer {
 
   /// @brief Fill "msg" with the values it requests, e.g.,
   ///   msg->value(0)[0] = my_val_[msg->key[0]];
-  virtual void GetValue(Message* msg) = 0;
+  virtual void HandlePull(Message* msg) = 0;
 
   /// @brief Set the values in "msg" into into my data strcuture, e.g..
   ///  my_val_[msg->key[0]] = msg->value(0)[0];
-  virtual void SetValue(const Message* msg) = 0;
+  virtual void HandlePush(const Message* msg) = 0;
 
   /// @brief the message contains the backup KV pairs sent by the master node of the key
   /// segment to its replica node. merge these pairs into my replica, say

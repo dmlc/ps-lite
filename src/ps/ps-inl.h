@@ -22,4 +22,9 @@ Task KVWorker<Val>::GetTask(const SyncOpts& opts) {
   return req;
 }
 
+inline int NextCustomerID() {
+  return Postoffice::instance().manager().NextCustomerID();
+}
+
+inline Range<Key> MyKeyRange() { return Range<Key>(MyNode().key()); }
 }  // namespace ps

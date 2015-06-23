@@ -8,7 +8,7 @@ class KVStoreSparse : public KVStore {
  public:
   KVStoreSparse(int id, Handle handle, int pull_val_len)
       : KVStore(id), handle_(handle),
-        k_(abs(pull_val_len)), dyn_pull_(pull_val_len < 0) {
+        k_(abs(pull_val_len)) {
     CHECK_NE(k_, 0);
     handle_.SetCaller(this);
   }
@@ -16,22 +16,25 @@ class KVStoreSparse : public KVStore {
   virtual ~KVStoreSparse() { }
 
   // process a pull message
-  void GetValue(Message* msg) {
+  void HandlePull(Message* msg) {
     int ts = msg->task.time();
     handle_.Start(false, ts, msg->task.cmd(), (void*)msg);
     SArray<K> key(msg->key);
     size_t n = key.size();
     SArray<V> val(n * k_);
-
-    if (dyn_pull_) {
+    bool dyn = msg->task.param().dyn_val_size();
+    if (dyn) {
       SArray<int> val_size(n);
       size_t start = 0;
       for (size_t i = 0; i < n; ++i) {
         K key_i = key[i];
         size_t len = val.size() - start;
+        while (len < (size_t)k_) {
+          val.resize(val.size()*2 + 5); len = val.size() - start;
+        }
         V* val_data = val.data() + start;
         Blob<V> pull(val_data, len);
-        handle_.Pull(key_i, FindValue(key_i), pull);
+        handle_.Pull(key_i, data_[key_i], pull);
         if (pull.data != val_data) {
           while ((start + pull.size) > val.size()) val.resize(val.size()*2 + 5);
           memcpy(val.data()+start, pull.data, sizeof(V)*pull.size);
@@ -49,7 +52,9 @@ class KVStoreSparse : public KVStore {
       for (size_t i = 0; i < n; ++i, val_data += k_) {
         K key_i = key[i];
         Blob<V> pull(val_data, k_);
-        handle_.Pull(key_i, FindValue(key_i), pull);
+        handle_.Pull(key_i, data_[key_i], pull);
+        CHECK_EQ(pull.data, val_data) << "use dyanmic pull";
+        CHECK_EQ(pull.size, (size_t)k_) << "use dyanmic pull";
       }
       msg->add_value(val);
     }
@@ -59,14 +64,15 @@ class KVStoreSparse : public KVStore {
   }
 
   // process a push message
-  void SetValue(const Message* msg) {
+  void HandlePush(const Message* msg) {
     int ts = msg->task.time();
     handle_.Start(true, ts, msg->task.cmd(), (void*)msg);
 
     SArray<K> key(msg->key);
     size_t n = key.size();
+    bool dyn = msg->task.param().dyn_val_size();
 
-    if (dyn_pull_) {
+    if (dyn) {
       CHECK_EQ(msg->value.size(), (size_t)2);
       SArray<V> val(msg->value[0]);
       SArray<int> val_size(msg->value[1]);
@@ -79,7 +85,8 @@ class KVStoreSparse : public KVStore {
       for (size_t i = 0; i < n; ++i) {
         K key_i = key[i];
         size_t k = val_size[i];
-        handle_.Push(key_i, Blob<const V>(val_data, k), FindValue(key_i));
+        if (k == 0) continue;
+        handle_.Push(key_i, Blob<const V>(val_data, k), data_[key_i]);
         val_data += k;
       }
     } else {
@@ -91,7 +98,7 @@ class KVStoreSparse : public KVStore {
       V* val_data = val.data();
       for (size_t i = 0; i < n; ++i, val_data += k) {
         K key_i = key[i];
-        handle_.Push(key_i, Blob<const V>(val_data, k), FindValue(key_i));
+        handle_.Push(key_i, Blob<const V>(val_data, k), data_[key_i]);
       }
     }
 
@@ -100,43 +107,44 @@ class KVStoreSparse : public KVStore {
   }
 
   void SaveModel(const std::string& file) {
-    std::string name = file + "_" + this->sys_.manager().van().my_node().id();
-    dmlc::Stream *fs = dmlc::Stream::Create(name.c_str(), "w");
-    {  // let os be destroied before delete fs
-      dmlc::ostream os(fs);
-      std::vector<V> val(k_);
-      for (auto& it : data_) {
-        K key = it.first;
-        Blob<V> pull(val.data(), k_);
-        handle_.Pull(key, it.second, pull);
+    // TODO
+    // std::string name = file + "_" + this->sys_.manager().van().my_node().id();
+    // dmlc::Stream *fs = dmlc::Stream::Create(name.c_str(), "w");
+    // {  // let os be destroied before delete fs
+    //   dmlc::ostream os(fs);
+    //   std::vector<V> val(k_);
+    //   for (auto& it : data_) {
+    //     K key = it.first;
+    //     Blob<V> pull(val.data(), k_);
+    //     handle_.Pull(key, it.second, pull);
 
-        bool save = false;
-        for (size_t i = 0; i < pull.size; ++i) if (pull[i] != 0) { save = true; break; }
-        if (!save) continue;
-        os << key;
-        if (dyn_pull_) os << "\t" << pull.size;
-        for (int i = 0; i < k_; ++i) { os << "\t" << val[i]; }
-        os << std::endl;
-      }
-    }
-    delete fs;
-    LOG(INFO) << "save model to " << name;
+    //     bool save = false;
+    //     for (size_t i = 0; i < pull.size; ++i) if (pull[i] != 0) { save = true; break; }
+    //     if (!save) continue;
+    //     os << key;
+    //     if (dyn_pull_) os << "\t" << pull.size;
+    //     for (int i = 0; i < k_; ++i) { os << "\t" << val[i]; }
+    //     os << std::endl;
+    //   }
+    // }
+    // delete fs;
+    // LOG(INFO) << "save model to " << name;
   }
 
  private:
-  inline E& FindValue(K key) {
-    auto it = data_.find(key);
-    if (it == data_.end()) {
-      E& val = data_[key];
-      handle_.Init(key, val);
-      return val;
-    }
-    return it->second;
-  }
+  // inline E& FindValue(K key) {
+  //   auto it = data_.find(key);
+  //   if (it == data_.end()) {
+  //     E& val = data_[key];
+  //     handle_.Init(key, val);
+  //     return val;
+  //   }
+  //   return it->second;
+  // }
+  // bool dyn_pull_;
 
   std::unordered_map<K, E> data_;
   Handle handle_;
   int k_;
-  bool dyn_pull_;
 };
 }  // namespace ps
