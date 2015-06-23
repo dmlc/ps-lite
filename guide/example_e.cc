@@ -49,12 +49,13 @@ class MyHandle {
 
 int CreateServerNode(int argc, char *argv[]) {
   using Server = ps::OnlineServer<MyVal, Val, MyHandle>;
-  Server server(MyHandle(), Server::kDynamicSize);
+  Server server(MyHandle());
   return 0;
 }
 
 int WorkerNodeMain(int argc, char *argv[]) {
   using namespace ps;
+  KVWorker<Val> wk;
   std::vector<Key> key = {1, 3,       8    };
   std::vector<Val> val = {1, 3, 4, 5, 9, 10};
   std::vector<int> siz = {1, 3,       2    };
@@ -62,7 +63,6 @@ int WorkerNodeMain(int argc, char *argv[]) {
   std::vector<Val> recv_val;
   std::vector<int> recv_siz;
 
-  KVWorker<Val> wk;
   wk.Wait(wk.VPush(key, val, siz));
   wk.Wait(wk.VPull(key, &recv_val, &recv_siz));
 

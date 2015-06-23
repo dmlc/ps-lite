@@ -333,12 +333,10 @@ template <typename Val, typename SyncVal = Val,
           typename Handle = IOnlineHandle<Val, SyncVal> >
 class OnlineServer {
  public:
-  static const int kDynamicSize = -1;
   /**
-   * @param pull_val_len the length of value pulled from server for each key. If
-   * positive, then a fixed length SyncVal[pull_val_len] will be
-   * pulled. Otherwise, the length is dynamic, and abs(pull_val_len) is the hint
-   * length.
+   * @param pull_val_len the length of value pulled from server for each
+   * key. For fixed length sync, the length of value should be equal to
+   * pull_val_len. While for dynamic length sync, it is just a hint size.
    * @param handle
    * @param id the unique identity. Negative IDs is preserved by system.
    */
