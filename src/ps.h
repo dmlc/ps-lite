@@ -309,9 +309,6 @@ class IOnlineHandle {
   inline void Pull(Key recv_key, const Val& my_val, Blob<SyncVal>& send_val) {
     for (Val& v : send_val) v = my_val;
   }
-
-  /** \brief Accepts the caller for advanced usage */
-  inline void SetCaller(void *obj) { }
 };
 
 

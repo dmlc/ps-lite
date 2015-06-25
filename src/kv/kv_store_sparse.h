@@ -7,10 +7,8 @@ template<typename K, typename E, typename V, typename Handle>
 class KVStoreSparse : public KVStore {
  public:
   KVStoreSparse(int id, Handle handle, int pull_val_len)
-      : KVStore(id), handle_(handle),
-        k_(abs(pull_val_len)) {
-    CHECK_NE(k_, 0);
-    handle_.SetCaller(this);
+      : KVStore(id), handle_(handle), k_(pull_val_len) {
+    CHECK_GT(k_, 0);
   }
 
   virtual ~KVStoreSparse() { }
