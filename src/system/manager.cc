@@ -101,6 +101,8 @@ void Manager::Stop() {
     while (!done_) usleep(50000);
   }
   LOG(INFO) << van_.my_node().id() << " stopped";
+
+  // exit(0);
 }
 
 
@@ -267,7 +269,7 @@ void Manager::NodeDisconnected(const NodeID node_id) {
     LOG(INFO) << node_id << " is disconnected";
     RemoveNode(node_id);
   } else {
-    LOG(ERROR) << van_.my_node().id() << ": the scheduler is died, exit";
+    LOG(WARNING) << van_.my_node().id() << ": the scheduler is died, exit";
     string kill = "kill -9 " + std::to_string(getpid());
     int ret = system(kill.c_str());
     if (ret != 0) LOG(INFO) << "failed to " << kill;

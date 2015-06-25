@@ -6,13 +6,14 @@ message Filter {
     KEY_CACHING = 1;
     // compress data by snappy
     COMPRESSING = 2;
-    // convert a float/double into a fixed-point integer
+    // convert a float/double into a fixed-point integer with random rounding
     FIXING_FLOAT = 3;
     // add noise to data
     NOISE = 4;
     // key[i] <- key[i+1] - key[i]
     DELTA_KEY = 5;
-
+    // truncate a float/double into an integer
+    TRUNCATE_FLOAT = 6;
   }
   required Type type = 1;
 

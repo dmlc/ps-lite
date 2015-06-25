@@ -4,6 +4,7 @@
 #include "filter/fixing_float.h"
 #include "filter/add_noise.h"
 #include "filter/delta_key.h"
+#include "filter/truncate_float.h"
 
 namespace ps {
 
@@ -19,6 +20,8 @@ IFilter* IFilter::create(const Filter& conf) {
       return new AddNoiseFilter();
     case Filter::DELTA_KEY:
       return new DeltaKeyFilter();
+    case Filter::TRUNCATE_FLOAT:
+      return new TruncateFloatFilter();
     default:
       CHECK(false) << "unknow filter type";
   }

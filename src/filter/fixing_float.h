@@ -1,10 +1,17 @@
 #pragma once
 #include "filter/filter.h"
 #include <time.h>
+#include <limits>
 namespace ps {
 
 class FixingFloatFilter : public IFilter {
  public:
+  FixingFloatFilter() {
+    CHECK_EQ(RAND_MAX, std::numeric_limits<int>::max());
+    srand(time(NULL));
+    pos_ = 0;
+    rand_ = rand();
+  }
   void Encode(Message* msg) {
     convert(msg, true);
   }
@@ -14,11 +21,6 @@ class FixingFloatFilter : public IFilter {
   }
 
  private:
-  // a fast random function
-  static bool boolrand(int* seed) {
-    *seed = (214013 * *seed + 2531011);
-    return ((*seed >> 16) & 0x1) == 0;
-  }
 
   // Decode / Encode a message
   void convert(Message* msg, bool Encode) {
@@ -80,11 +82,11 @@ class FixingFloatFilter : public IFilter {
       SArray<V> orig(array);
       SArray<uint8> code(orig.size() * nbytes);
       uint8* code_ptr = code.data();
-      int seed = time(NULL);
+      // int seed = time(NULL);
       for (size_t i = 0; i < orig.size(); ++i) {
         double proj = orig[i] > max_v ? max_v : orig[i] < min_v ? min_v : orig[i];
         double tmp = (proj - min_v) / bin * ratio;
-        uint64 r = static_cast<uint64>(floor(tmp)) + boolrand(&seed);
+        uint64 r = static_cast<uint64>(floor(tmp)) + boolrand();
         for (int j = 0; j < nbytes; ++j) {
           *(code_ptr++) = static_cast<uint8>(r & 0xFF);
           r = r >> 8;
@@ -105,6 +107,22 @@ class FixingFloatFilter : public IFilter {
       return SArray<char>(orig);
     }
   }
+
+  // a fast random function
+  bool boolrand() {
+    if (pos_ == 30) {
+      pos_ = 0;
+      rand_ = rand();
+    }
+    return ((rand_ >> (pos_++)) & 1);
+  }
+  int pos_;
+  int rand_;
 };
 
 } // namespace ps
+
+  // static bool boolrand(int* seed) {
+  //   *seed = (214013 * *seed + 2531011);
+  //   return ((*seed >> 16) & 0x1) == 0;
+  // }
