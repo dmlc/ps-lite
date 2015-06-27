@@ -105,7 +105,9 @@ bool Van::Connect(const Node& node) {
     return true;
   }
   void *sender = zmq_socket(context_, ZMQ_DEALER);
-  CHECK(sender != NULL) << zmq_strerror(errno);
+  CHECK(sender != NULL) << zmq_strerror(errno)
+                        << ". it often can be solved by \"sudo ulimit -n 65536\" or edit /etc/security/limits.conf";
+
   string my_id = my_node_.id(); // address(my_node_);
   zmq_setsockopt (sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
 
