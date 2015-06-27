@@ -11,11 +11,13 @@ class KeyCachingFilter : public IFilter {
     // if (!msg->task.has_key_range()) return;
     auto conf = Find(Filter::KEY_CACHING, msg);
     if (!conf) return;
-    if (!msg->has_key()) {
+
+    const auto& key = msg->key;
+    if (key.size() < min_len_) {
       conf->clear_signature();
       return;
     }
-    const auto& key = msg->key;
+
     uint64 sig = FastHash(key);
     conf->set_signature(sig);
 
@@ -75,6 +77,7 @@ class KeyCachingFilter : public IFilter {
 
   std::unordered_map<uint64, SArray<char>> cache_;
 
+  const size_t min_len_ = 64;
   const size_t max_sig_len_ = 4096;
   std::mutex mu_;
 };

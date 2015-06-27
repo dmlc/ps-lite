@@ -70,7 +70,7 @@ class KVStoreSparse : public KVStore {
     size_t n = key.size();
     bool dyn = msg->task.param().dyn_val_size();
 
-    if (dyn) {
+    if (dyn && n) {
       CHECK_EQ(msg->value.size(), (size_t)2);
       SArray<V> val(msg->value[0]);
       SArray<int> val_size(msg->value[1]);
@@ -87,7 +87,7 @@ class KVStoreSparse : public KVStore {
         handle_.Push(key_i, Blob<const V>(val_data, k), data_[key_i]);
         val_data += k;
       }
-    } else {
+    } else if (!dyn && n) {
       CHECK_EQ(msg->value.size(), (size_t)1);
       SArray<V> val(msg->value[0]);
       size_t k = val.size() / n;
