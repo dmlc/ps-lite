@@ -9,7 +9,6 @@ namespace ps {
 
 DEFINE_int32(num_servers, 0, "number of servers");
 DEFINE_int32(num_workers, 0, "number of clients");
-DEFINE_int32(num_threads, 2, "number of computational threads");
 DEFINE_int32(num_replicas, 0, "number of replicas per server node");
 
 DEFINE_string(my_node, "role:SCHEDULER,hostname:'127.0.0.1',port:8000,id:'H'", "my node");

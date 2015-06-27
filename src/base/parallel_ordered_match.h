@@ -62,7 +62,7 @@ size_t ParallelOrderedMatch(
     SArray<V>* dst_val,        // destination values
     int k = 1,                 // the size of a value entry = k * sizeof(V)
     AssignOpType op = AssignOpType::ASSIGN, // assignment operator
-    int num_threads = FLAGS_num_threads) {
+    int num_threads = 2) {
   // do check
   CHECK_GT(num_threads, 0);
   CHECK_EQ(src_key.size() * k, src_val.size());
@@ -91,7 +91,7 @@ size_t ParallelOrderedMatch(
     std::vector<V>* dst_val,   // destination values
     int k = 1,                 // the size of a value entry = k * sizeof(V)
     AssignOpType op = AssignOpType::ASSIGN, // assignment operator
-    int num_threads = FLAGS_num_threads) {
+    int num_threads = 2) {
   if (CHECK_NOTNULL(dst_val)->empty()) {
     dst_val->resize(dst_key.size()*k);
   }
@@ -112,7 +112,7 @@ void ParallelUnion(
     SArray<V>* joined_val,  // = val1 U val2
     int k = 1,              // the size of a value entry = k * sizeof(V)
     AssignOpType op = AssignOpType::PLUS,  // assignment operator
-    int num_threads = FLAGS_num_threads) {
+    int num_threads = 2) {
 
   // join keys
   *CHECK_NOTNULL(joined_key) = key1.setUnion(key2);
