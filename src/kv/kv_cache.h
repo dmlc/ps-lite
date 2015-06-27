@@ -54,9 +54,11 @@ class KVCache : public Customer {
         if (kv.matched_num != kv.key.size()) {
           LOG(ERROR) << "invalid pull probably due to server failure..";
         }
-        size_t len = 0;
-        for (int i : *(kv.val_size)) len += i;
-        CHECK_EQ(len, kv.val->size());
+        if (kv.val->size()) {
+          size_t len = 0;
+          for (int i : *(kv.val_size)) len += i;
+          CHECK_EQ(len, kv.val->size());
+        }
       }
       if (cb) cb();
       mu_.lock();
