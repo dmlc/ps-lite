@@ -61,6 +61,12 @@ class Manager {
 
   bool Timeout(int sec, const std::function<bool()>& pred);
 
+  void ForceExit() {
+    string kill = "kill -9 " + std::to_string(getpid());
+    int ret = system(kill.c_str());
+    if (ret != 0) LOG(INFO) << "failed to " << kill;
+  }
+
   // the app
   App* app_ = nullptr;
 

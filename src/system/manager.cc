@@ -253,6 +253,10 @@ void Manager::RemoveNode(const NodeID& node_id) {
     }
   }
 
+  if (!IsScheduler() && node.role() == Node::SERVER) {
+    LOG(WARNING) << "server node " << node.id() << " died, exit";
+    ForceExit();
+  }
   VLOG(1) << "remove node: " << node.ShortDebugString();
 }
 
@@ -269,10 +273,8 @@ void Manager::NodeDisconnected(const NodeID node_id) {
     LOG(INFO) << node_id << " is disconnected";
     RemoveNode(node_id);
   } else {
-    LOG(WARNING) << van_.my_node().id() << ": the scheduler is died, exit";
-    string kill = "kill -9 " + std::to_string(getpid());
-    int ret = system(kill.c_str());
-    if (ret != 0) LOG(INFO) << "failed to " << kill;
+    LOG(WARNING) << "the scheduler is died, exit";
+    ForceExit();
   }
 }
 
