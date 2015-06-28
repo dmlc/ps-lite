@@ -83,23 +83,25 @@ class KVCache : public Customer {
     if (msg->task.param().push()) return;
 
     // received kv
-    SArray<K> recv_key(msg->key);
-    if (recv_key.empty()) return;
-
     mu_.lock();
     auto& kv = pull_data_[msg->task.key_channel()];
     mu_.unlock();
 
-    if (msg->task.param().dyn_val_size()) {
-      CHECK_EQ(msg->value.size(), (size_t)2);
-      SArray<int> recv_size(msg->value[1]);
-      size_t n = ParallelOrderedMatch(
-          recv_key, recv_size, kv.key, kv.val_size, 1, AssignOpType::ASSIGN);
-      CHECK_EQ(n, recv_size.size());
-      kv.matched_num += n;
-      kv.recv.push_back(std::make_pair(recv_key[0], SArray<V>(msg->value[0])));
 
-      if ((int)kv.recv.size() != sys_.manager().num_servers()) return;
+    if (msg->task.param().dyn_val_size()) {
+      kv.recv_num ++;
+      SArray<K> recv_key(msg->key);
+      if (recv_key.size()) {
+        CHECK_EQ(msg->value.size(), (size_t)2);
+        SArray<int> recv_size(msg->value[1]);
+        size_t n = ParallelOrderedMatch(
+            recv_key, recv_size, kv.key, kv.val_size, 1, AssignOpType::ASSIGN);
+        CHECK_EQ(n, recv_size.size());
+        kv.matched_num += n;
+        kv.recv.push_back(std::make_pair(recv_key[0], SArray<V>(msg->value[0])));
+      }
+
+      if (kv.recv_num != sys_.manager().num_servers()) return;
 
       CHECK_EQ(kv.matched_num, kv.key.size());
       std::sort(kv.recv.begin(), kv.recv.end(), [](
@@ -110,13 +112,15 @@ class KVCache : public Customer {
       for (const auto& l : kv.recv) len += l.second.size();
       kv.val->resize(len);
       V* ptr = kv.val->data();
-
       for (const auto& l : kv.recv) {
         memcpy(ptr, l.second.data(), l.second.size() * sizeof(V));
         ptr += l.second.size();
       }
       kv.recv.clear();
     } else {
+      SArray<K> recv_key(msg->key);
+      if (recv_key.empty()) return;
+
       CHECK_EQ(msg->value.size(), (size_t)1);
       SArray<V> recv_data(msg->value[0]);
       int k = recv_data.size() / recv_key.size();
@@ -140,6 +144,8 @@ class KVCache : public Customer {
 
     // for match dynamic vals
     std::vector<std::pair<K, SArray<V>>> recv;
+
+    int recv_num = 0;
     // std::vector<K> recv_key;
     size_t matched_num = 0;
   };
