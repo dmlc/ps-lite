@@ -1,6 +1,5 @@
 #pragma once
 #include "kv/kv_store.h"
-#include "dmlc/io.h"
 namespace ps {
 
 template<typename K, typename E, typename V, typename Handle>
@@ -104,43 +103,23 @@ class KVStoreSparse : public KVStore {
     handle_.Finish();
   }
 
-  void SaveModel(const std::string& file) {
-    // TODO
-    // std::string name = file + "_" + this->sys_.manager().van().my_node().id();
-    // dmlc::Stream *fs = dmlc::Stream::Create(name.c_str(), "w");
-    // {  // let os be destroied before delete fs
-    //   dmlc::ostream os(fs);
-    //   std::vector<V> val(k_);
-    //   for (auto& it : data_) {
-    //     K key = it.first;
-    //     Blob<V> pull(val.data(), k_);
-    //     handle_.Pull(key, it.second, pull);
+  virtual void Load(dmlc::Stream *fi) {
+    handle_.Load(fi);
+    K key;
+    while (fi->Read(&key, sizeof(K))) {
+      data_[key].Load(fi);
+    }
+  }
 
-    //     bool save = false;
-    //     for (size_t i = 0; i < pull.size; ++i) if (pull[i] != 0) { save = true; break; }
-    //     if (!save) continue;
-    //     os << key;
-    //     if (dyn_pull_) os << "\t" << pull.size;
-    //     for (int i = 0; i < k_; ++i) { os << "\t" << val[i]; }
-    //     os << std::endl;
-    //   }
-    // }
-    // delete fs;
-    // LOG(INFO) << "save model to " << name;
+  virtual void Save(dmlc::Stream *fo) const {
+    handle_.Save(fo);
+    for (const auto& it : data_) {
+      fo->Write(&it.first, sizeof(K));
+      it.second.Save(fo);
+    }
   }
 
  private:
-  // inline E& FindValue(K key) {
-  //   auto it = data_.find(key);
-  //   if (it == data_.end()) {
-  //     E& val = data_[key];
-  //     handle_.Init(key, val);
-  //     return val;
-  //   }
-  //   return it->second;
-  // }
-  // bool dyn_pull_;
-
   std::unordered_map<K, E> data_;
   Handle handle_;
   int k_;

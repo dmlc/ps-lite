@@ -1,9 +1,10 @@
 #pragma once
 #include "ps/app.h"
 #include "proto/param.pb.h"
+#include "dmlc/io.h"
 namespace ps {
 
-class KVStore : public Customer {
+class KVStore : public Customer, public dmlc::Serializable {
  public:
   KVStore(int id) : Customer(id) { }
   virtual ~KVStore() { }
@@ -19,11 +20,11 @@ class KVStore : public Customer {
 
     if (call.replica()) {
       // a replication request
-      // if (push) {
-      //   SetReplica(request);
-      // } else {
-      //   GetReplica(response);
-      // }
+      if (push) {
+        SetReplica(request);
+      } else {
+        GetReplica(response);
+      }
     } else {
       // a normal request
       if (push) {
@@ -35,8 +36,6 @@ class KVStore : public Customer {
 
     if (response) Reply(request, response);
   }
-
-  virtual void SaveModel(const std::string& file) { }
 
  protected:
   /// User-defineded functions ////
