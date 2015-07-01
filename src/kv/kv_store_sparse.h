@@ -109,6 +109,7 @@ class KVStoreSparse : public KVStore {
     while (fi->Read(&key, sizeof(K))) {
       data_[key].Load(fi);
     }
+    LOG(INFO) << "loaded " << data_.size() << " kv pairs";
   }
 
   virtual void Save(dmlc::Stream *fo) const {
@@ -117,6 +118,7 @@ class KVStoreSparse : public KVStore {
       fo->Write(&it.first, sizeof(K));
       it.second.Save(fo);
     }
+    LOG(INFO) << "saved " << data_.size() << " kv pairs";
   }
 
  private:
