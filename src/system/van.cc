@@ -104,6 +104,11 @@ bool Van::Connect(const Node& node) {
   if (senders_.find(id) != senders_.end()) {
     return true;
   }
+
+  if (node.role() == my_node_.role()) {
+    return true;
+  }
+
   void *sender = zmq_socket(context_, ZMQ_DEALER);
   CHECK(sender != NULL) << zmq_strerror(errno)
                         << ". it often can be solved by \"sudo ulimit -n 65536\" or edit /etc/security/limits.conf";

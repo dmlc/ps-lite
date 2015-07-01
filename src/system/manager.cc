@@ -173,9 +173,7 @@ void Manager::AddNode(const Node& node) {
     // if (!IsScheduler()) {
     // the scheduler has already connect this node when processing REQUEST_APP
     // }
-    if (node.role() != van_.my_node().role()) {
-      CHECK(van_.Connect(node));
-    }
+    CHECK(van_.Connect(node));
     if (node.role() == Node::WORKER) ++ num_workers_;
     if (node.role() == Node::SERVER) ++ num_servers_;
   } else {
