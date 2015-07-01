@@ -170,9 +170,6 @@ void Manager::AddNode(const Node& node) {
   // add to system
   nodes_mu_.lock();
   if (nodes_.find(node.id()) == nodes_.end()) {
-    // if (!IsScheduler()) {
-    // the scheduler has already connect this node when processing REQUEST_APP
-    // }
     CHECK(van_.Connect(node));
     if (node.role() == Node::WORKER) ++ num_workers_;
     if (node.role() == Node::SERVER) ++ num_servers_;
