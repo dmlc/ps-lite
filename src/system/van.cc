@@ -105,7 +105,7 @@ bool Van::Connect(const Node& node) {
     return true;
   }
 
-  if (node.role() == my_node_.role()) {
+  if ((node.role() == my_node_.role()) && (node.role() != Node::SCHEDULER)) {
     return true;
   }
 
