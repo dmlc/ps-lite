@@ -309,6 +309,17 @@ class IOnlineHandle {
   inline void Pull(Key recv_key, const Val& my_val, Blob<SyncVal>& send_val) {
     for (Val& v : send_val) v = my_val;
   }
+
+
+  /**
+   * \brief Load from disk
+   */
+  inline void Load(dmlc::Stream *fi) { }
+
+  /**
+   * \brief Save to disk
+   */
+  inline void Save(dmlc::Stream *fo) const { }
 };
 
 
