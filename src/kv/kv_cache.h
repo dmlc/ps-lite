@@ -52,7 +52,7 @@ class KVCache : public Customer {
         auto& kv = pull_data_[chl];
         mu_.unlock();
         if (kv.matched_num != kv.key.size()) {
-          LOG(ERROR) << "invalid pull probably due to server failure..";
+          LOG(WARNING) << "unmatched " << kv.matched_num << " vs " << kv.key.size();
         }
         if (kv.val->size()) {
           size_t len = 0;
@@ -103,7 +103,7 @@ class KVCache : public Customer {
 
       if (kv.recv_num != sys_.manager().num_servers()) return;
 
-      CHECK_EQ(kv.matched_num, kv.key.size());
+      // CHECK_EQ(kv.matched_num, kv.key.size());
       std::sort(kv.recv.begin(), kv.recv.end(), [](
           const std::pair<K, SArray<V>>& a, const std::pair<K, SArray<V>>& b) {
                   return a.first < b.first;
