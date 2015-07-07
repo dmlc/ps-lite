@@ -4,10 +4,10 @@
 # if install_dir is not specified, it will install all deps in $ROOT/deps,
 #
 
-if [$# -ne 1]; then
+if [ $# -ne 1 ]; then
     install_dir=$PWD/`dirname $0`/../deps
 else
-    install_dir=$1
+    install_dir=$PWD/`dirname $0`/$1
 fi
 
 mkdir -p $install_dir
