@@ -25,7 +25,7 @@ PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
 
 all: ps
-	echo $(CXX)
+
 clean:
 	rm -rf build
 	find src -name "*.pb.[ch]*" -delete
