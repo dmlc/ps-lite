@@ -7,7 +7,7 @@
 if [ $# -ne 1 ]; then
     install_dir=$PWD/`dirname $0`/../deps
 else
-    install_dir=$PWD/`dirname $0`/$1
+    install_dir=$1
 fi
 
 mkdir -p $install_dir
