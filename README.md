@@ -2,6 +2,8 @@
 
 <!-- [xx](http://parameterserver.org/images/parameterserver.png) -->
 
+[![Build Status](https://travis-ci.org/dmlc/ps-lite.svg?branch=master)](https://travis-ci.org/dmlc/ps-lite)
+
 The parameter server is a distributed system scaling to industry size machine
 learning problems. It provides asynchronous and zero-copy key-value pair
 communications between worker machines and server machines. It also supports
