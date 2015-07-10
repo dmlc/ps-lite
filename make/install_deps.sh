@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # usage: install_deps.sh install_dir
 #
 # if install_dir is not specified, it will install all deps in $ROOT/deps,
