@@ -50,8 +50,10 @@ class KVStoreSparse : public KVStore {
         K key_i = key[i];
         Blob<V> pull(val_data, k_);
         handle_.Pull(key_i, data_[key_i], pull);
-        CHECK_EQ(pull.data, val_data) << "use dyanmic pull";
         CHECK_EQ(pull.size, (size_t)k_) << "use dyanmic pull";
+        if (pull.data != val_data) {
+          memcpy(val_data, pull.data, sizeof(V)*k_);
+        }
       }
       msg->add_value(val);
     }
