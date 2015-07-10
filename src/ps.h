@@ -12,6 +12,7 @@
 #include "kv/kv_cache.h"
 #include "kv/kv_store_sparse.h"
 #include "proto/filter.pb.h"
+#include "dmlc/io.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 ///                              Worker node APIs                           ///
@@ -258,10 +259,25 @@ int WorkerNodeMain(int argc, char *argv[]);
 ///                             Server node APIs                            ///
 ///////////////////////////////////////////////////////////////////////////////
 namespace ps {
+
+/**
+ * \brief An example of the value entry stored on server nodes. It should
+ * support load from (save to) disk.
+ */
+template <typename Val>
+struct IVal {
+  /** \brief value */
+  Val w = 0;
+  /** \brief Load from disk */
+  inline void Load(dmlc::Stream *fi) { fi->Read(&w, sizeof(Val)); }
+  /** \brief Save to disk */
+  inline void Save(dmlc::Stream *fo) const { fo->Write(&w, sizeof(Val)); }
+};
+
 /**
  * \brief An example of user-defined online handle.
  */
-template <typename Val, typename SyncVal>
+template <typename SyncV>
 class IOnlineHandle {
  public:
   IOnlineHandle() { }
@@ -283,20 +299,15 @@ class IOnlineHandle {
   inline void Finish() { }
 
   /**
-   * \brief Handle initialization, which only called once when allocating these
-   * key-value pairs
-   */
-  inline void Init(Key key, Val& val) { }
-
-  /**
    * \brief Handle PUSH requests from worker nodes
    *
    * @param recv_keys the keys received from a worker node
    * @param recv_vals the corresponding values received from the worker node
    * @param my_vals the corresponding local values
    */
-  inline void Push(Key recv_key, Blob<const SyncVal> recv_val, Val& my_val) {
-    for (const Val& v : recv_val) my_val += v;
+  inline void Push(
+      Key recv_key, Blob<const SyncV> recv_val, IVal<SyncV>& my_val) {
+    for (const SyncV& v : recv_val) my_val.w += v;
   }
 
   /**
@@ -306,21 +317,18 @@ class IOnlineHandle {
    * @param my_vals the corresponding local values
    * @param sent_vals the corresponding values will send to the worker node
    */
-  inline void Pull(Key recv_key, const Val& my_val, Blob<SyncVal>& send_val) {
-    for (Val& v : send_val) v = my_val;
+  inline void Pull(
+      Key recv_key, const IVal<SyncV>& my_val, Blob<SyncV>& send_val) {
+    for (SyncV& v : send_val) v = my_val.w;
   }
 
-
-  /**
-   * \brief Load from disk
-   */
+  /** \brief Load from disk */
   inline void Load(dmlc::Stream *fi) { }
 
-  /**
-   * \brief Save to disk
-   */
+  /** \brief Save to disk */
   inline void Save(dmlc::Stream *fo) const { }
 };
+
 
 
 /*!
@@ -332,13 +340,14 @@ class IOnlineHandle {
  * during running, such as SGD/online learning algorithms. However, both read
  * and write could be 5x slower comparing to BatchServer
  *
- * @tparam Val the value type
- * @tparam SyncVal the data type for synchronization, which should be primitive
+ * @tparam SyncV the data type for synchronization, which should be primitive
  * types such as int, float, ...
+ * @tparam Val the value entry stored in server
  * @Handle User-defined handles (or model updater)
  */
-template <typename Val, typename SyncVal = Val,
-          typename Handle = IOnlineHandle<Val, SyncVal> >
+template <typename SyncV,
+          typename Val = IVal<SyncV>,
+          typename Handle = IOnlineHandle<SyncV> >
 class OnlineServer {
  public:
   /**
@@ -350,7 +359,7 @@ class OnlineServer {
    */
   OnlineServer(
       const Handle& handle = Handle(), int pull_val_len = 1, int id = 0) {
-    server_ = new KVStoreSparse<Key, Val, SyncVal, Handle>(
+    server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
         id, handle, pull_val_len);
     Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
   }

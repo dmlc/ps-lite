@@ -2,12 +2,14 @@
 using Val = float;
 using Key = ps::Key;
 
-using MyVal = std::vector<Val>;
+struct MyVal {
+  std::vector<Val> w;
+  inline void Load(dmlc::Stream *fi) { fi->Read(&w); }
+  inline void Save(dmlc::Stream *fo) const { fo->Write(w); }
+};
 
 class MyHandle {
  public:
-  void SetCaller(void *obj) { obj_ = (ps::Customer*)obj; }
-
   void Start(bool push, int timestamp, int cmd, void* msg) {
     ps::Message *m = (ps::Message*) msg;
     std::cout << "-------\naccepts " << (push ? "push" : "pull") << " from " << m->sender
@@ -18,38 +20,35 @@ class MyHandle {
   }
 
   void Finish() {
-    std::cout << "finished " << obj_->NumDoneReceivedRequest(ts_, ps::kWorkerGroup)
-              << " / " << ps::NumWorkers() << " on timestamp " << ts_
+    std::cout << "finished timestamp " << ts_
               << "\n-------" << std::endl;
-  }
-
-  void Init(Key key, MyVal& val) {
-    std::cout << "init key" << key << std::endl;
   }
 
   void Push(Key recv_key, ps::Blob<const Val> recv_val, MyVal& my_val) {
     size_t n = recv_val.size;
-    if (my_val.empty()) my_val.resize(n);
-    CHECK_EQ(my_val.size(), n);
-    for (size_t i = 0; i < n; ++i) my_val[i] += recv_val[i];
+    auto& w = my_val.w;
+    if (w.empty()) w.resize(n);
+    for (size_t i = 0; i < n; ++i) w[i] += recv_val[i];
 
     std::cout << "handle push: key " << recv_key << ", val " << recv_val << std::endl;
   }
 
   void Pull(Key recv_key, MyVal& my_val, ps::Blob<Val>& send_val) {
-    send_val.data = my_val.data();
-    send_val.size = my_val.size();
+    send_val.data = my_val.w.data();
+    send_val.size = my_val.w.size();
 
     std::cout << "handle pull: key " << recv_key << std::endl;
   }
+
+  inline void Load(dmlc::Stream *fi) { }
+  inline void Save(dmlc::Stream *fo) const { }
  private:
-  ps::Customer* obj_ = nullptr;
   int ts_ = 0;
 };
 
 int CreateServerNode(int argc, char *argv[]) {
-  using Server = ps::OnlineServer<MyVal, Val, MyHandle>;
-  Server server(MyHandle());
+  using Server = ps::OnlineServer<Val, MyVal, MyHandle>;
+  Server server;
   return 0;
 }
 

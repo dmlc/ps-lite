@@ -1,6 +1,6 @@
 #!/bin/bash
 # set -x
-# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:../third_party/lib
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:../deps/lib
 if [ $# -lt 3 ]; then
     echo "usage: $0 num_servers num_workers bin [args..]"
     exit -1;
