@@ -24,7 +24,7 @@ CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
 
-all: ps guide
+all: ps
 
 clean:
 	rm -rf build
