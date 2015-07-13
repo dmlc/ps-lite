@@ -65,8 +65,15 @@ class FixingFloatFilter : public IFilter {
           min_v = v < min_v ? v : min_v;
           max_v = v > max_v ? v : max_v;
         }
+        // make it symmetric so it will not bias from 0 too much
+        if (min_v * max_v < 0) {
+          if (min_v > - max_v) min_v = - max_v;
+          if (max_v < - min_v) max_v = - min_v;
+        }
+        // to avoid be divided by 0
+        if (max_v == min_v) max_v = min_v + 1e-6;
         conf->set_min_value(min_v);
-        conf->set_max_value(max_v + 1e-6); // to avoid max_v == min_v
+        conf->set_max_value(max_v);
       }
     }
 
