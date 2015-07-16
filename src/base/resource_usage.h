@@ -9,6 +9,12 @@
 #include <ratio>
 #include <chrono>
 
+
+#ifdef __MACH__
+#include <mach/clock.h>
+#include <mach/mach.h>
+#endif
+
 namespace ps {
 
 using std::chrono::system_clock;
@@ -32,13 +38,22 @@ static double milliToc(system_clock::time_point start) {
 
 inline struct timespec hwtic() {
   struct timespec tv;
+#ifdef __MACH__
+  clock_serv_t cclock;
+  mach_timespec_t mts;
+  host_get_clock_service(mach_host_self(), SYSTEM_CLOCK, &cclock);
+  clock_get_time(cclock, &mts);
+  mach_port_deallocate(mach_task_self(), cclock);
+  tv.tv_sec = mts.tv_sec;
+  tv.tv_nsec = mts.tv_nsec;
+#else
   clock_gettime(CLOCK_MONOTONIC_RAW, &tv);
+#endif
   return tv;
 }
 
 inline double hwtoc(struct timespec tv) {
-  struct timespec curr;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &curr);
+  struct timespec curr = hwtic();
   return  (double) ((curr.tv_sec - tv.tv_sec) +
                         (curr.tv_nsec -tv.tv_nsec)*1e-9);
 }

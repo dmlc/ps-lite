@@ -2,6 +2,10 @@
 #include "filter/filter.h"
 #include <lz4.h>
 
+#if __LZ4_VERSION_MINOR__ < 7
+#define LZ4_compress_default LZ4_compress_limitedOutput
+#endif
+
 namespace ps {
 
 class CompressingFilter : public IFilter {

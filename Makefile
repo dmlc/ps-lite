@@ -17,8 +17,12 @@ ifndef DEPS_PATH
 DEPS_PATH = $(shell pwd)/deps
 endif
 
+ifndef PROTOC
+PROTOC = ${DEPS_PATH}/bin/protoc
+endif
+
 WARN = -Wall -finline-functions
-INCPATH = -I./src -I$(DEPS_PATH)/include
+INCPATH = -I./src -I$(DEPS_PATH)/include $(EXTRA_INCLUDES)
 CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
 
 PS_LIB = build/libps.a
@@ -49,7 +53,7 @@ build/%.o: src/%.cc
 	$(CXX) $(CFLAGS) -c $< -o $@
 
 %.pb.cc %.pb.h : %.proto
-	${DEPS_PATH}/bin/protoc --cpp_out=./src --proto_path=./src $<
+	$(PROTOC) --cpp_out=./src --proto_path=./src $<
 
 -include build/*/*.d
 -include build/*/*/*.d
