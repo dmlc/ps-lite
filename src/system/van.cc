@@ -8,6 +8,11 @@
 #include "ps/shared_array.h"
 #include "system/manager.h"
 #include "system/postoffice.h"
+
+#ifndef ZMQ_IDENTITY_FD
+#define ZMQ_IDENTITY_FD ZMQ_FD
+#endif
+
 namespace ps {
 DEFINE_int32(bind_to, 0, "binding port");
 DEFINE_bool(local, false, "run in local");

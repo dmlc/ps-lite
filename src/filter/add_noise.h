@@ -1,5 +1,9 @@
 #pragma once
 #include "filter/filter.h"
+#ifdef __MACH__
+#include <random>
+#endif
+
 namespace ps {
 
 /**
