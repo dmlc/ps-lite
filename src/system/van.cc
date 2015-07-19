@@ -9,10 +9,6 @@
 #include "system/manager.h"
 #include "system/postoffice.h"
 
-#ifndef ZMQ_IDENTITY_FD
-#define ZMQ_IDENTITY_FD ZMQ_FD
-#endif
-
 namespace ps {
 DEFINE_int32(bind_to, 0, "binding port");
 DEFINE_bool(local, false, "run in local");
@@ -235,22 +231,25 @@ bool Van::Recv(Message* msg, size_t* recv_bytes) {
       CHECK(msg->task.ParseFromArray(buf, size))
           << "failed to parse string from " << msg->sender
           << ". this is " << my_node_.id() << " " << size;
-      if (IsScheduler() && msg->task.has_ctrl() &&
-          msg->task.ctrl().cmd() == Control::REGISTER_NODE) {
-        // it is the first time the scheduler receive message from the
-        // sender. store the file desciptor of the sender for the monitor
-        int val[64]; size_t val_len = msg->sender.size();
-        CHECK_LT(val_len, 64*sizeof(int));
-        memcpy(val, msg->sender.data(), val_len);
-        CHECK(!zmq_getsockopt(
-            receiver_,  ZMQ_IDENTITY_FD, (char*)val, &val_len))
-            << "failed to get the file descriptor of " << msg->sender;
-        CHECK_EQ(val_len, (size_t)4);
-        int fd = val[0];
-        VLOG(1) << "node [" << msg->sender << "] is on file descriptor " << fd;
-        Lock l(fd_to_nodeid_mu_);
-        fd_to_nodeid_[fd] = msg->sender;
-      }
+      // ZMQ_IDENTITY_FD is not availabe after zmq-4.0.1-rc1
+      // if (IsScheduler() && msg->task.has_ctrl() &&
+      //     msg->task.ctrl().cmd() == Control::REGISTER_NODE) {
+      //   // it is the first time the scheduler receive message from the
+      //   // sender. store the file desciptor of the sender for the monitor
+      //   int val[64]; size_t val_len = msg->sender.size();
+      //   CHECK_LT(val_len, 64*sizeof(int));
+      //   memcpy(val, msg->sender.data(), val_len);
+      //   CHECK(!zmq_getsockopt(
+      //       receiver_,  ZMQ_IDENTITY_FD, (char*)val, &val_len))
+      //       << "failed to get the file descriptor of " << msg->sender
+      //       << ". error: " << errno << " " << zmq_strerror(errno);
+      //   CHECK_EQ(val_len, (size_t)4);
+      //   int fd = val[0];
+
+      //   VLOG(1) << "node [" << msg->sender << "] is on file descriptor " << fd;
+      //   Lock l(fd_to_nodeid_mu_);
+      //   fd_to_nodeid_[fd] = msg->sender;
+      // }
       zmq_msg_close(zmsg);
       if (!zmq_msg_more(zmsg)) break;
       delete zmsg;
@@ -300,6 +299,7 @@ void Van::Monitor() {
   void *s = CHECK_NOTNULL(zmq_socket (context_, ZMQ_PAIR));
   CHECK(!zmq_connect (s, "inproc://monitor"));
   while (true) {
+    //  First frame in message contains event number and value
     zmq_msg_t msg;
     zmq_msg_init(&msg);
     if (zmq_msg_recv(&msg, s, 0) == -1) {
@@ -310,12 +310,23 @@ void Van::Monitor() {
     int event = *(uint16_t *)(data);
     int value = *(uint32_t *)(data + 2);
 
+    //  Second frame in message contains event address. it's just the router's
+    // address. no help
+    // zmq_msg_init(&msg);
+    // if (zmq_msg_recv(&msg, s, 0) == -1) {
+    //   if (errno == EINTR) continue;
+    //   break;
+    // }
+    // std::string address((char*)zmq_msg_data(&msg), zmq_msg_size(&msg));
+    // LOG(INFO) << event << " " << value << " " << address;
+
     if (event == ZMQ_EVENT_DISCONNECTED) {
       auto& manager = Postoffice::instance().manager();
       if (IsScheduler()) {
         Lock l(fd_to_nodeid_mu_);
         if (fd_to_nodeid_.find(value) == fd_to_nodeid_.end()) {
-          LOG(WARNING) << "cannot find the node id for FD = " << value;
+          LOG(WARNING) << "cannot find the node id for FD = " << value
+                       << " (because the newer zmq doesn't support ZMQ_IDENTITY_FD)";
           continue;
         }
         manager.NodeDisconnected(fd_to_nodeid_[value]);
