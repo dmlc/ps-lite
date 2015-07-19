@@ -27,7 +27,6 @@ before_install:
 
 install:
   - pip install cpplint pylint --user `whoami`
-  - make/install_deps.sh ${HOME}/.cache/usr
 
 
 script: ${TRAVIS}/travis_script.sh

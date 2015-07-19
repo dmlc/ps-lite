@@ -28,11 +28,13 @@ CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
 
-all: ps
+all: deps ps guide
 
 clean:
 	rm -rf build
 	find src -name "*.pb.[ch]*" -delete
+
+
 
 ps: $(PS_LIB) $(PS_MAIN)
 
@@ -59,3 +61,8 @@ build/%.o: src/%.cc
 -include build/*/*/*.d
 -include test/ps_test.mk
 -include guide/ps_guide.mk
+
+# deps
+include make/deps.mk
+
+deps: gflags glog protobuf zmq lz4 cityhash

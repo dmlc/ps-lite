@@ -44,7 +44,7 @@ Then
 
 ```bash
 git clone https://github.com/dmlc/ps-lite
-cd ps-lite && make -j8
+cd ps-lite && make deps -j4 && make -j4
 ```
 
 ## More examples
