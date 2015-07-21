@@ -80,6 +80,7 @@ class Manager {
   // the following two are only available for the scheduler
   std::unordered_set<NodeID> active_nodes_;
   std::unordered_set<NodeID> alive_nodes_;
+  size_t unknown_dead_nodes_ = 0;
 
   std::vector<NodeFailureHandler> node_failure_handlers_;
   bool is_my_node_inited_ = false;

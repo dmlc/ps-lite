@@ -323,13 +323,13 @@ void Van::Monitor() {
     if (event == ZMQ_EVENT_DISCONNECTED) {
       auto& manager = Postoffice::instance().manager();
       if (IsScheduler()) {
+
         Lock l(fd_to_nodeid_mu_);
         if (fd_to_nodeid_.find(value) == fd_to_nodeid_.end()) {
-          LOG(WARNING) << "cannot find the node id for FD = " << value
-                       << " (because the newer zmq doesn't support ZMQ_IDENTITY_FD)";
-          continue;
+          manager.NodeDisconnected("JUST_A_UNKNOWN_NODE");
+        } else {
+          manager.NodeDisconnected(fd_to_nodeid_[value]);
         }
-        manager.NodeDisconnected(fd_to_nodeid_[value]);
       } else {
         manager.NodeDisconnected(scheduler_.id());
       }

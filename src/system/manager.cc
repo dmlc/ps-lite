@@ -84,7 +84,7 @@ void Manager::Stop() {
     // wait others are done
     if (Timeout(FLAGS_sync_timeout, [this] {
           Lock lk(nodes_mu_);
-          return alive_nodes_.size() == 1;
+          return alive_nodes_.size() == unknown_dead_nodes_ + 1;
         })) {
       LOG(ERROR) << "Timeout ("
                  << FLAGS_sync_timeout
@@ -256,7 +256,14 @@ void Manager::RemoveNode(const NodeID& node_id) {
 }
 
 void Manager::NodeDisconnected(const NodeID node_id) {
-  nodes_mu_.lock(); alive_nodes_.erase(node_id); nodes_mu_.unlock();
+  nodes_mu_.lock();
+  auto it = alive_nodes_.find(node_id);
+  if (it != alive_nodes_.end()) {
+    alive_nodes_.erase(it);
+  } else {
+    ++ unknown_dead_nodes_;
+  }
+  nodes_mu_.unlock();
 
   // alreay in shutting down?
   if (in_exit_) return;
