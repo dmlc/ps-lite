@@ -35,7 +35,7 @@ install them via
 ```
 sudo apt-get update && sudo apt-get install -y build-essential git
 ```
-on Ubuntu >= 13.10. On
+on Ubuntu >= 13.10. For
 [older Ubuntu](http://ubuntuhandbook.org/index.php/2013/08/install-gcc-4-8-via-ppa-in-ubuntu-12-04-13-04/),
 [Centos](http://linux.web.cern.ch/linux/devtoolset/),
 [Mac Os X](http://hpc.sourceforge.net/).
