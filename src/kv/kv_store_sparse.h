@@ -108,19 +108,25 @@ class KVStoreSparse : public KVStore {
   virtual void Load(dmlc::Stream *fi) {
     handle_.Load(fi);
     K key;
-    while (fi->Read(&key, sizeof(K))) {
-      data_[key].Load(fi);
+    while (true) {
+      E ent;
+      if (!ent.Load(fi)) break;
+      CHECK(fi->Read(&key, sizeof(K)));
+      data_[key] = std::move(ent);
     }
     LOG(INFO) << "loaded " << data_.size() << " kv pairs";
   }
 
   virtual void Save(dmlc::Stream *fo) const {
     handle_.Save(fo);
+    int saved = 0;
     for (const auto& it : data_) {
-      fo->Write(&it.first, sizeof(K));
-      it.second.Save(fo);
+      if (it.second.Save(fo)) {
+        fo->Write(&it.first, sizeof(K));
+        ++ saved;
+      }
     }
-    LOG(INFO) << "saved " << data_.size() << " kv pairs";
+    LOG(INFO) << "saved " << saved << " kv pairs";
   }
 
  private:

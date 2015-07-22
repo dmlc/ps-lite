@@ -4,11 +4,16 @@
 #include "dmlc/io.h"
 namespace ps {
 
-class KVStore : public Customer, public dmlc::Serializable {
+class KVStore : public Customer {
  public:
   KVStore(int id) : Customer(id) { }
   virtual ~KVStore() { }
 
+  // load and save
+  virtual void Load(dmlc::Stream *fi) = 0;
+  virtual void Save(dmlc::Stream *fo) const = 0;
+
+  // handle system call
   void ProcessRequest(Message* request) {
     const auto& call = request->task.param();
     Message* response = nullptr;

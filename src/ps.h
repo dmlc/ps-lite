@@ -269,9 +269,14 @@ struct IVal {
   /** \brief value */
   Val w = 0;
   /** \brief Load from disk */
-  inline void Load(dmlc::Stream *fi) { fi->Read(&w, sizeof(Val)); }
+  inline bool Load(dmlc::Stream *fi) {
+    return fi->Read(&w, sizeof(Val)) == sizeof(Val);
+  }
   /** \brief Save to disk */
-  inline void Save(dmlc::Stream *fo) const { fo->Write(&w, sizeof(Val)); }
+  inline void Save(dmlc::Stream *fo) const {
+    if (w == 0) return false;
+    fo->Write(&w, sizeof(Val)); return true;
+  }
 };
 
 /**
