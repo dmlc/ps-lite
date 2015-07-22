@@ -273,7 +273,7 @@ struct IVal {
     return fi->Read(&w, sizeof(Val)) == sizeof(Val);
   }
   /** \brief Save to disk */
-  inline void Save(dmlc::Stream *fo) const {
+  inline bool Save(dmlc::Stream *fo) const {
     if (w == 0) return false;
     fo->Write(&w, sizeof(Val)); return true;
   }
