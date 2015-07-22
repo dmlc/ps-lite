@@ -147,7 +147,7 @@ template <typename K> void SliceMessage(
 
   // slice value and key
   if (dyn_val) {
-    CHECK_EQ(msg.value.size() % 2, 0);
+    CHECK_EQ(msg.value.size() % 2, (size_t)0);
     for (size_t j = 0; j < msg.value.size(); j += 2) {
       std::vector<size_t> val_pos(n+1);
       SArray<int> val_len(msg.value[j+1]);
