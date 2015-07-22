@@ -17,10 +17,10 @@ gflags: | ${DEPS_PATH}/include/google/gflags.h
 # glog
 
 ${DEPS_PATH}/include/glog/logging.h: | ${DEPS_PATH}/include/google/gflags.h
-	$(eval FILE=glog-0.3.3.tar.gz)
-	$(eval DIR=glog-0.3.3)
+	$(eval FILE=v0.3.4.tar.gz)
+	$(eval DIR=glog-0.3.4)
 	rm -rf $(FILE) $(DIR)
-	wget $(URL)/$(FILE) && tar -zxf $(FILE)
+	wget https://github.com/google/glog/archive/$(FILE) && tar -zxf $(FILE)
 	cd $(DIR) && ./configure -prefix=$(DEPS_PATH) --with-gflags=$(DEPS_PATH) && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
