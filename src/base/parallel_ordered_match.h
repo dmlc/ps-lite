@@ -95,8 +95,8 @@ size_t ParallelOrderedMatch(
   if (CHECK_NOTNULL(dst_val)->empty()) {
     dst_val->resize(dst_key.size()*k);
   }
-  SArray<V>* val = new SArray<V>(dst_val->data(), dst_val->size(), EmptyDel<V>());
-  return ParallelOrderedMatch(src_key, src_val, dst_key, val, k, op, num_threads);
+  SArray<V> val(dst_val->data(), dst_val->size(), EmptyDel<V>());
+  return ParallelOrderedMatch(src_key, src_val, dst_key, &val, k, op, num_threads);
 }
 
 
