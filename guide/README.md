@@ -1,12 +1,12 @@
 # Tutorial of the Parameter Server
 
-Here we show several examples on how to use the simplified parameter server API [ps.h](../src/ps.h).
+Here we show several examples of how to use the simplified parameter server API [ps.h](../src/ps.h).
 
 ## Worker APIs
 
 ### Simple `Push` and `Pull`
-On the first [example](example_a.cc), we define worker nodes and server nodes by
-`CreateServerNode` and `WorkerNodeMain`, respectively. Next ask workers to
+In the first [example](example_a.cc), we define worker nodes and server nodes by
+`CreateServerNode` and `WorkerNodeMain`, respectively. We next ask workers to
 push a list of key-value pairs into servers and then pull the new values back.
 
 ```c++
@@ -37,9 +37,9 @@ int WorkerNodeMain(int argc, char *argv[]) {
 }
 ```
 
-This example can be compiled by `make -C .. guide` and run using 4 worker nodes
-and 1 server node in local machine by `./local.sh 1 4 ./example_a`. A possible
-output is
+Tis example can be compiled by executing `make -C .. guide` from inside the guide directory.
+It can be run using 4 worker nodes and 1 server node on the local machine by using `./local.sh 1 4 ./example_a`. 
+A possible output is
 ```
 values pulled at W3: [3]: 2 2 2
 values pulled at W0: [3]: 2 2 2
@@ -51,16 +51,16 @@ Other information is logged in the `log/` directory.
 
 ### Time dependency and callback
 
-Note that we called `Wait` after each `Push` and `Pull` to wait these two
-asynchronous functions actually finished the data communication. Besides
-`Wait` we can move the dependency that "My pulled results should at least have
+Note that we called `Wait` after each `Push` and `Pull` to wait for these
+asynchronous functions to complete their data communication. Besides
+`Wait` we can add the dependency that "My pulled results should at least have
 the data I pushed previously" into servers node by specifying the `deps`
 options.
 
 ![deps](deps.png)
 
 Furthermore, we can execute `std::cout` in a callback function. The following
-codes ([example_b](example_b.cc)) are equal to above.
+codes ([example_b](example_b.cc)) shows the above steps.
 
 
 ```c++
@@ -80,8 +80,8 @@ codes ([example_b](example_b.cc)) are equal to above.
 ### Zero-copy communication
 
 In default, both `Push` and `Pull` will first copy the data so that the user
-program can write or delete data immediately. In some situation, the memcpy
-overhead is expensive, we can then use `ZPush` and `ZPull` to do zero-copy data
+program can write or delete data immediately. In situations where the overhead of
+memcpy is expensive, we can then use `ZPush` and `ZPull` to do zero-copy data
 communication ([example_c](example_c.cc)):
 
 ```c++
@@ -98,16 +98,16 @@ communication ([example_c](example_c.cc)):
   wk.Wait(wk.ZPull(key, &recv_val));
 ```
 
-The system will maintain a copy of `key` and `val` to prevent release the memory
-before the `Push` and `Pull` are finished. It's safe to destroy `key` and `val`
-on the user codes. However, change the content of `key` and `val` may affect the
-actualy data sent out.
+The system will maintain a copy of `key` and `val` to prevent the release of memory
+before the `Push` and `Pull` are finished. It's safe to destroy the `key` and `val`
+shared pointers in user codes. However, changing the content of `key` and `val` may
+affect the actualy data sent out.
 
 ### Filters
 
 We can apply filters to reduce the data communication volume. In the following
 example ([example_d](example_d.cc)), we first let both worker and server cache
-the keys list to avoid sending the same key list twice, and then apply lossness
+the keys list to avoid sending the same key list twice, and then apply lossless
 compression on values.
 
 ```c++
@@ -142,7 +142,13 @@ each key with a fixed length 2 value vector.
   std::vector<Val> val = {1, 2, 3, 4, 5, 6};
   wk.Push(key, val);
 ```
-Or a dynamic length value ([example_e](example_e))
+Note that when using the default `OnlineServer`, multiple pushed values with the same key are summed. 
+For the example above, the resulting keys and values would be `1 => 3, 3 => 7, 5 => 11`. However,
+([example_e](example_e)) shows an server with a custom handler that stores the individual vectors
+associated with each key (e.g. `1 => [1,2], 3 => [3,4], 5 => [5,6]`). More about this below.
+
+
+Dynamic length values may also be passed to the server ([example_e](example_e))
 ```
   std::vector<Key> key = {1, 3,       8    };
   std::vector<Val> val = {1, 3, 4, 5, 9, 10};
@@ -154,9 +160,8 @@ Or a dynamic length value ([example_e](example_e))
 
 ### User defined handle
 
-The server nodes accept user defined handle. In example [e](example_e.cc), we
-show how to handle variable length values at server nodes.
-
+The server nodes accepts a user defined handle. In example [e](example_e.cc), we
+show how to accept and store variable length values at server nodes.
 
 ```c++
 struct MyVal {
