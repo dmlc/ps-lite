@@ -4,9 +4,7 @@
 
 namespace ps {
 
-/**
- * \brief The interface of a filter
- */
+/// \brief The interface of a filter
 class IFilter {
  public:
   IFilter() { }

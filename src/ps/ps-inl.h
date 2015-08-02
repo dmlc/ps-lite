@@ -18,7 +18,7 @@ Task KVWorker<Val>::GetTask(const SyncOpts& opts) {
   req.set_request(true);
   for (int l : opts.deps) req.add_wait_time(l);
   for (const auto& f : opts.filters) req.add_filter()->CopyFrom(f);
-  if (opts.cmd != -1) req.set_cmd(opts.cmd);
+  if (opts.cmd != 0) req.set_cmd(opts.cmd);
   return req;
 }
 

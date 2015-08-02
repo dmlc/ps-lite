@@ -19,145 +19,198 @@
 ///////////////////////////////////////////////////////////////////////////////
 namespace ps {
 
-/** \brief Push and Pull options */
-struct SyncOpts {
-  /**
-   * \brief the timestamp of the depended requests. This request will be
-   * processed by the parameter servers only after the depended requests have
-   * been processed.
-   */
-  std::vector<int> deps;
-  /**
-   * \brief the function will be executed after received the
-   * response from the parameter server
-   */
-  std::function<void()> callback;
-  /**
-   * \brief key-value filters to reduce communication cost
-   */
-  std::vector<Filter> filters;
-  /**
-   * \brief Sample usage: AddFilter(Filter::COMPRESSING);
-   */
-  Filter* AddFilter(Filter::Type type);
-  /**
-   * \brief The command sent to the server. -1 means no command.
-   */
-  int cmd = -1;
-};
-
-/*!
- * \brief key-value cache for sending (receiving) key-value pairs to (from) servers
- *
- * @tparam Val the type of value
- */
+/// \brief Provides Push and Pull for worker nodes
+///
+/// This class provides \ref Push and \ref Pull with several variants for worker
+/// nodes.
+///
+/// \tparam Val the type of value, only POD types such as int32_t and float
+/// are supported
 template<typename Val>
 class KVWorker {
  public:
-  /**
-   * @param id the unique identity which is used to find the KVStore at the
-   * parameter server. Negative IDs is preserved by system.
-   */
+  /// \brief Creates with an unique identity
+  ///
+  /// A worker node can have multiple \ref KVWorker. They are distinguished with
+  /// each other via the identities. Furthermore, it communicates with the
+  /// object (such as \ref OnlineServer) on a remote node with the same
+  /// identity. If such object does not exist on the receiver node, the system
+  /// will produce a fatal message.
+  ///
+  /// \param id the unique identity, negative IDs are preserved by system.
   explicit KVWorker(int id = 0) {
     cache_ = CHECK_NOTNULL((new KVCache<Key, Val>(id)));
   }
-  ~KVWorker() {
-    delete cache_;
-  }
 
-  /**************************************************************************
-   *                          Basic Push and Pull
-   **************************************************************************/
+  ~KVWorker() { delete cache_; }
 
-  /*!
-   * \brief Pushes a list of key-value pairs into the parameter server
-   *
-   * It's a non-blocking call, which returns immediately once the message is
-   * queued in the system's sending buffer. The actual push is finished only
-   * after Wait(the_returned_timestamp) returns or the provided callback is called.
-   *
-   * Both keys and values will be copied, using ZPush for zero-copy
-   * pushing.
-   *
-   * Sample usage: assume we have two key-value pairs {1, (1.1, 1.2)}, {3,
-   * (3.1,3.2)}, where the value is a 2-length float vector. We then can push these
-   * two pairs into the server nodes:
-   \code
-     KVWorker<float> ps(0);
-     std::vector<Key> keys = {1, 3};
-     std::vector<float> vals = {1.1, 1.2, 3.1, 3.2};
-     ps.Push(keys, vals);
-   \endcode
-   *
-   * @param keys a list of keys
-   * @param vals a list of values, whose size should be an integer multiple
-   * the key size
-   *
-   * @return the timestamp of this request.
-   */
+  /// \brief Pushes a list of key-value pairs to all server nodes.
+  ///
+  /// This function pushes a KV list specified by \a keys and \a vals to all
+  /// server nodes. The length of a value,  which is
+  /// determined by `k=vals.size()/keys.size()`, can be more than one but should
+  /// be a constant. The \a i-th KV pair is
+  ///
+  /// \verbatim {keys[i], (vals[i*k], ..., vals[(i+1)*k-1])} \endverbatim
+  ///
+  /// This list may be sliced according to the key ranges server nodes
+  /// handling and be pushed to multiple servers
+  ///
+  /// This function is a non-blocking call, which returns immediately once the
+  /// message is queued in the system's sending buffer. The actual pushing is
+  /// finished only if \ref Wait returns or the callback specified in \ref
+  /// opts is called.
+  ///
+  ///
+  /// Sample usage: the following codes push two KV pairs `{1, (1.1, 1.2)}` and `{3,
+  /// (3.1,3.2)}` to server nodes, where the value is a length-2 float vector
+  /// \code
+  ///   KVWorker<float> w;
+  ///   std::vector<Key> keys = {1, 3};
+  ///   std::vector<float> vals = {1.1, 1.2, 3.1, 3.2};
+  ///   w.Push(keys, vals);
+  /// \endcode
+  ///
+  /// @param keys a list of keys, which must be sorted
+  /// @param vals the according values
+  /// @param opts push options
+  /// @return the timestamp of this request
+  ///
+  /// \note Both keys and values will be copied into a system buffer, the
+  /// zero-copy version \ref ZPush might be more efficient
+  /// \note Use \ref VPush to push dynamic length values
+
   int Push(const std::vector<Key>& keys,
            const std::vector<Val>& vals,
            const SyncOpts& opts = SyncOpts()) {
-    // copy the data, then use the zero copy push
+    // copy the data, then call the zero-copy push
     return ZPush(std::make_shared<std::vector<Key>>(keys),
                  std::make_shared<std::vector<Val>>(vals), opts);
   }
 
-  /*!
-   * \brief Pulls the values associated with the keys from the parameter server
-   *
-   * It's a non-blocking call, which returns immediately once the message is
-   * queued in the system's sending buffer. The actual push is finished only
-   * after Wait(the_returned_timestamp) returns or the provided callback is called.
-   *
-   * Keys will be copied, using ZPull for zero-copy pull.
-   *
-   * Sample usage: again assume each key is associated with a 2-length float
-   * vector value. We then can pull the newest value from the parameter server:
-   \code
-     KVWorker<float> ps(0);
-     std::vector<Key> keys = {1, 3};
-     std::vector<float> vals(4);
-     ps.Pull(keys, &vals);
-   \endcode
-   *
-   * @param keys a list of keys
-   * @param vals the buffer for the pulled values, which should be
-   * pre-allocated and not changed before the pulling is finished.
-   *
-   * @return the timestamp of this request
-   */
+  /// \brief Pulls the values associated with the keys from the server nodes
+  ///
+  /// This function pulls the values of the keys specified in \a keys from the
+  /// server nodes.
+  ///
+  /// It's a non-blocking call, which returns immediately once the message is
+  /// queued in the system's sending buffer. The actual pulling is finished,
+  /// namely \a vals is filled with pulled values, only
+  /// if \ref Wait returns or the callback specified in opts is called.
+  ///
+  /// Sample usage: the following codes pull the values of keys \a 1 and \a 3
+  /// from the server nodes.
+  /// \code
+  ///   KVWorker<float> w;
+  ///   std::vector<Key> keys = {1, 3};
+  ///   std::vector<float> vals;
+  ///   ps.Pull(keys, &vals);
+  /// \endcode
+  ///
+  /// @param keys a list of keys, which must be sorted
+  /// @param vals the buffer for the pulled values. It can be empty.
+  /// @param opts pull options
+  /// @return the timestamp of this request
+  ///
+  /// \note Both keys and values will be copied into a system buffer, the
+  /// zero-copy version \ref ZPull might be more efficient
+  /// \note Use \ref VPull to pull dynamic length values
+
   int Pull(const std::vector<Key>& keys,
            std::vector<Val>* vals,
            const SyncOpts& opts = SyncOpts()) {
-    // copy the data, then use the zero copy pull
+    // copy the data, then use the zero-copy pull
     return ZPull(std::make_shared<std::vector<Key>>(keys), vals, opts);
   }
 
-  /*!
-   * \brief Waits until a request has been finished
-   *
-   * Sample usage:
-   \code
-     int ts = ps.Pull(keys, &vals);
-     Wait(ts);
-     // now vals is ready for use
-   \endcode
-   */
-  void Wait(int timestamp) {
-    cache_->Wait(timestamp);
+  /// \brief Waits until a push or pull has been finished
+  ///
+  /// Sample usage:
+  /// \code
+  ///   int ts = w.Pull(keys, &vals);
+  ///   Wait(ts);
+  ///   // now vals is ready for use
+  /// \endcode
+  ///
+  /// \param timestamp the timestamp of the request waiting for
+
+  void Wait(int timestamp) { cache_->Wait(timestamp); }
+
+  /// @brief Extends \ref Push to dynamic length values
+  ///
+  /// This function is similar to \ref Push except that there is additional \a
+  /// vals_size where `vals_size[i]` stores the value length of the \a i-th KV
+  /// pair. In other words, assume `n = vals_size[0] + .. + vals_size[i-1]`,
+  /// then the \a i-th KV pair is presented as
+  ///
+  /// \verbatim {keys[i], (vals[n], ..., vals[vals_size[i]+n-1])} \endverbatim
+  ///
+  /// @param keys a list of keys, which must be sorted
+  /// @param vals the according values
+  /// @param vals_size vals_size[i] stores the value length of the \a i-th KV pair
+  /// @param opts push options
+  /// @return the timestamp of this request
+  ///
+  /// \note Both keys and values will be copied into a system buffer, the
+  /// zero-copy version \ref ZVPush might be more efficient
+
+  int VPush(const std::vector<Key>& keys,
+            const std::vector<Val>& vals,
+            const std::vector<int>& vals_size,
+            const SyncOpts& opts = SyncOpts()) {
+    // copy data, then call the zero-copy push
+    return ZVPush(std::make_shared<std::vector<Key>>(keys),
+                  std::make_shared<std::vector<Val>>(vals),
+                  std::make_shared<std::vector<int>>(vals_size), opts);
   }
 
-  /**************************************************************************
-   *                       Zero-copy Push and Pull
-   **************************************************************************/
+  /// @brief Extends \ref Pull to dynamic length values
+  ///
+  /// This function is similar to \ref Pull except that an additional \a
+  /// vals_size is pulled, where `vals_size[i]` stores the value length of the
+  /// \a i-th KV pair
+  ///
+  /// @param keys a list of keys, which must be sorted
+  /// @param vals the buffer for the pulled values. It can be empty.
+  /// @param vals_size the buffer for the pulled value lengths. It can be empty.
+  /// @param opts pull options
+  /// @return the timestamp of this request
+  ///
+  /// \note Both keys and values will be copied into a system buffer, the
+  /// zero-copy version \ref ZVPull might be more efficient
 
-  /**
-   * \brief zero-copy synchronization. Keys (and values for ZPush) will not be
-   * copied to reduce the communication delay. Therefore, it is the user's
-   * responsibility to keep the keys and values unchanged until the request is
-   * finished, namely Wait(ts) returns or the callback is called.
-   */
+  int VPull(const std::vector<Key>& keys,
+            std::vector<Val>* vals,
+            std::vector<int>* vals_size,
+            const SyncOpts& opts = SyncOpts()) {
+    // copy data, then call the zero-copy pull
+    return ZVPull(std::make_shared<std::vector<Key>>(keys),
+                  CHECK_NOTNULL(vals), CHECK_NOTNULL(vals_size), opts);
+  }
+
+  /// \brief The zero-copy version of \ref Push
+  ///
+  /// This function is similar to \ref Push except that both \a keys and \a vals
+  /// will not be copied to avoid the possible overhead of `memcpy`. It is
+  /// achieved via 'std::shared_ptr'. The system will store a copy of the shared
+  /// points until the push has been finished. Before that, it is the caller's
+  /// responsibility to keep the content to be not changed.
+  ///
+  /// Sample usage:
+  /// \code
+  /// using namespace std;
+  /// auto keys = new vector<Key>{1, 3};
+  /// auto vals = new vector<float>{1.1, 1.2, 3.1, 3.2};
+  /// KVWorker<float> w;
+  /// w.ZPush(shared_ptr<vector<Key>>(keys), shared_ptr<vector<float>>(vals));
+  /// // the system will delete keys and vals
+  /// \endcode
+  ///
+  /// @param keys a list of keys, which must be sorted
+  /// @param vals the according values
+  /// @param opts push options
+  /// @return the timestamp of this request
+
   int ZPush(const std::shared_ptr<std::vector<Key> >& keys,
             const std::shared_ptr<std::vector<Val> >& vals,
             const SyncOpts& opts = SyncOpts()) {
@@ -165,6 +218,29 @@ class KVWorker {
                         SArray<Val>(vals), SArray<int>(), opts.callback);
   }
 
+  /// \brief The zero-copy version of \ref Pull
+  ///
+  /// This function is similar to \ref Pull except that \a keys
+  /// will not be copied to avoid the possible overhead of `memcpy`. It is
+  /// achieved via 'std::shared_ptr'. The system will store a copy of the shared
+  /// points until the pull has been finished. Before that, it is the caller's
+  /// responsibility to keep the content to be not changed.
+  ///
+  /// Sample usage:
+  /// \code
+  /// using namespace std;
+  /// auto keys = new vector<Key>{1, 3};
+  /// auto vals = new vector<float>();
+  /// KVWorker<float> w;
+  /// w.ZPush(shared_ptr<vector<Key>>(keys), vals);
+  /// // the system will delete keys
+  /// \endcode
+  ///
+  /// @param keys a list of keys, which must be sorted
+  /// @param vals the buffer for the pulled values. It can be empty.
+  /// @param opts pull options
+  /// @return the timestamp of this request
+  ///
   int ZPull(const std::shared_ptr<std::vector<Key> >& keys,
             std::vector<Val>* vals,
             const SyncOpts& opts = SyncOpts()) {
@@ -172,52 +248,8 @@ class KVWorker {
                         CHECK_NOTNULL(vals), NULL, opts.callback);
   }
 
-  /**************************************************************************
-   *                Push and Pull with variable length values
-   **************************************************************************/
-  /**
-   * @brief Pushes a list of key-value pairs where value can be arbitary
-   * length.
-   *
-   * @param keys
-   * @param vals
-   * @param vals_size vals_size[i] stores the length of the i-th value
-   * @param opts
-   *
-   * @return
-   */
-  int VPush(const std::vector<Key>& keys,
-            const std::vector<Val>& vals,
-            const std::vector<int>& vals_size,
-            const SyncOpts& opts = SyncOpts()) {
-    return ZVPush(std::make_shared<std::vector<Key>>(keys),
-                  std::make_shared<std::vector<Val>>(vals),
-                  std::make_shared<std::vector<int>>(vals_size), opts);
-  }
 
-  /**
-   * @brief Pulls a list of key-value pairs where value can be arbitary
-   * length.
-   *
-   * @param keys
-   * @param vals
-   * @param vals_size
-   * @param opts
-   *
-   * @return
-   */
-  int VPull(const std::vector<Key>& keys,
-            std::vector<Val>* vals,
-            std::vector<int>* vals_size,
-            const SyncOpts& opts = SyncOpts()) {
-    return ZVPull(std::make_shared<std::vector<Key>>(keys),
-                  CHECK_NOTNULL(vals), CHECK_NOTNULL(vals_size), opts);
-  }
-
-  /**************************************************************************
-   *          Zero-copy Push and Pull with variable length values
-   **************************************************************************/
-
+  /// \brief The zero-copy version of \ref VPush
   int ZVPush(const std::shared_ptr<std::vector<Key> >& keys,
              const std::shared_ptr<std::vector<Val> >& vals,
              const std::shared_ptr<std::vector<int> >& vals_size,
@@ -226,6 +258,7 @@ class KVWorker {
                         SArray<int>(vals_size), opts.callback);
   }
 
+  /// \brief The zero-copy version of \ref VPull
   int ZVPull(const std::shared_ptr<std::vector<Key> >& keys,
              std::vector<Val>* vals,
              std::vector<int>* vals_size,
@@ -235,23 +268,67 @@ class KVWorker {
   }
 
  private:
-  // /*!
-  //  * \brief Increases the clock by delta
-  //  */
-  // void IncrClock(int delta = 1) {
-  //   cache_->exector()->IncrClock(delta);
-  // }
-
   Task GetTask(const SyncOpts& opts);
   KVCache<Key, Val>* cache_;
 };
 }  // namespace ps
 
+/// \brief  Advanced synchronization options for a worker request (push or pull)
+struct SyncOpts {
+
+  /// \brief Depended timestamps.
+  ///
+  /// \a deps places an execution order. This request will be executed on the
+  /// server nodes only after all requests sent by this worker with timestamps
+  /// specified in \a deps have been executed.
+
+  std::vector<int> deps;
+
+  /// \brief The callback for this request is finished
+  ///
+  /// The callback will be called after this request is actually finished. In
+  /// other words, all ack messages have been received for a push or all values
+  /// have been pulled back for a pull.  Semantically, it is almost the same
+  /// between
+  ///
+  /// \code
+  ///    Wait(Push(keys, vals)); func();
+  /// \endcode
+  /// and
+  /// \code
+  ///   SyncOpts opt; opt.callback = func;
+  ///   Wait(Push(keys, vals, opt));
+  /// \endcode
+  ///
+  /// The subtle difference is that, in the latter, \a func is executed before
+  /// \ref Wait returns, and it is executed by a different thread (KVworker's
+  /// data receiving thread).
+
+  std::function<void()> callback;
+
+  /// \brief Filters to compression data
+  /// \sa ps::IFilter AddFilter
+
+  std::vector<Filter> filters;
+
+  /// \brief Add a filter to this request
+  ///
+  /// For example, use LZ4 to compress the values:
+  /// \code AddFilter(Filter::COMPRESSING); \endcode
+
+  Filter* AddFilter(Filter::Type type);
+
+  /// \brief The command that will be passed to the server handle.
+  /// \sa ps::IOnlineHandle::Start
+
+  int cmd = 0;
+};
+
 /**
  * \brief The main function for a worker node
  *
- * All flags and their arguments (e.g. -logtostderr 1) has been parsed and removed
- * from argc and argv, but commandline arguments are remained such as data=my_data.txt
+ * All flags and their arguments (e.g. -logtostderr 1) has been parsed and
+ * removed from argc and argv, but commandline arguments are remained
  */
 int WorkerNodeMain(int argc, char *argv[]);
 
@@ -402,6 +479,30 @@ namespace ps {
 
 DECLARE_int32(num_workers);
 DECLARE_int32(num_servers);
+
+/// A helper class to query info about the node
+class NodeInfo {
+ public:
+  static inline int MyRank() { return MyNode().rank(); }
+
+  static inline int NumWorkers() { return FLAGS_num_workers; }
+
+  static inline int NumServers() { return FLAGS_num_servers; }
+
+  static inline int RankSize() {
+    return IsWorker() ? NumWorkers() : (IsServer() ? NumServers() : 1);
+  }
+
+  static bool IsWorker() { return MyNode().role() == Node::WORKER; }
+
+  /// \brief Return true if this node is a server node.
+  static inline int IsServer() { return MyNode().role() == Node::SERVER; }
+
+  /*! \brief Return true if this node is a scheduler node. */
+  static inline int IsScheduler() { return MyNode().role() == Node::SCHEDULER; }
+
+  static inline Node MyNode() { return Postoffice::instance().manager().van().my_node(); }
+};
 
 // The app this node runs
 inline App* MyApp() { return Postoffice::instance().manager().app(); }
