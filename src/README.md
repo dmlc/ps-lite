@@ -1,16 +1,17 @@
 # Introduction                         {#mainpage}
 
 
-The parameter server is a distributed system aims for efficient machine learning
-applications. In this framework, there are three kinds of nodes: server, worker,
-and scheduler.
+The parameter server is a distributed system aims for high-performance
+distributed machine learning applications. There are multple nodes, which are
+processes over multiple machines. The role of a node can be server, worker, or
+scheduler, which can be queried via \ref ps::NodeInfo.
 
-![Caption text](../../doc/ps-arch.png)
+![Caption text](https://raw.githubusercontent.com/dmlc/dmlc.github.io/master/img/ps-arch.png)
 
-* A worker node does the main computations such as reading the data and
+* A worker node performs the main computations such as reading the data and
   computing the gradient. It communicates with the server nodes via `push` and
-  `pull`. For example, it can push the computed gradient to the servers, or
-  pull the recent model from them. The data communicated are presented as
+  `pull`. For example, it pushes the computed gradient to the servers, or
+  pulls the recent model from them. The data communicated are presented as
   key-value pairs, where the key might be the `uint64_t` feature index and the value
   might be the according `float` gradient.
 
@@ -26,6 +27,3 @@ and scheduler.
 * There is an optional scheduler node, which is often used to monitor and control the
   progress of the machine learning application. It also can be used to deal with node
   failures. See an example in [asynchronous SGD](https://github.com/dmlc/wormhole/blob/master/learn/solver/async_sgd.h#L27).
-
-
-There is helper class \ref ps::NodeInfo for query info about the node.

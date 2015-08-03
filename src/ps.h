@@ -24,7 +24,7 @@ namespace ps {
 /// This class provides \ref Push and \ref Pull with several variants for worker
 /// nodes.
 ///
-/// \tparam Val the type of value, only POD types such as int32_t and float
+/// \tparam Val the type of value, which should be primitive types such as int32_t and float
 /// are supported
 template<typename Val>
 class KVWorker {
@@ -328,7 +328,7 @@ struct SyncOpts {
  * \brief The main function for a worker node
  *
  * All flags and their arguments (e.g. -logtostderr 1) has been parsed and
- * removed from argc and argv, but commandline arguments are remained
+ * removed from argc and argv using GFlags, but commandline arguments are remained
  */
 int WorkerNodeMain(int argc, char *argv[]);
 
@@ -337,28 +337,72 @@ int WorkerNodeMain(int argc, char *argv[]);
 ///////////////////////////////////////////////////////////////////////////////
 namespace ps {
 
-/**
- * \brief An example of the value entry stored on server nodes. It should
- * support load from (save to) disk.
+/// \brief The online key-value store for server nodes
+///
+/// A server node maintains KV pairs in a particular key range, and responses the
+/// push and pull requests from worker nodes. It allows user-defined value type
+/// and handle.
+///
+/// @tparam SyncV the value type used for synchronization, which should be
+/// primitive types such as int, float. It should by the same as the value type
+/// defined in \ref ps::KVWorker
+/// @tparam Val the value type stored in server, which could be a complex
+/// user-defined type, see \ref IVal for an example
+/// @tparam Handle User-defined handle for processing push and pull request from
+/// workers, see \ref IOnlineHandle for an example
  */
+template <typename SyncV,
+          typename Val = IVal<SyncV>,
+          typename Handle = IOnlineHandle<SyncV> >
+class OnlineServer {
+ public:
+  /// \brief Creates a KV store.
+  ///
+  /// @param handle the user-defined handle
+  /// @param pull_val_len the hint of the length of value pulled from server for each
+  /// key.
+  /// @param id the unique identity. It should matches the according id of \ref
+  /// KVWorker
+  OnlineServer(const Handle& handle = Handle(),
+               int pull_val_len = 1,
+               int id = 0) {
+    server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
+        id, handle, pull_val_len);
+    Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
+  }
+
+  ~OnlineServer() { }
+
+  /// \brief Returns the pointer of the actual KV store
+  KVStore* server() { return server_; }
+
+ private:
+  KVStore* server_ = NULL;
+};
+
+
+/// \brief An example of the user-defined value for \ref OnlineServer
+///
+/// It must implement \ref Load and \ref Save
 template <typename Val>
 struct IVal {
+
   /** \brief value */
   Val w = 0;
-  /** \brief Load from disk */
+
+  /** \brief Load from disk, return false if load failed (end of the file) */
   inline bool Load(dmlc::Stream *fi) {
     return fi->Read(&w, sizeof(Val)) == sizeof(Val);
   }
-  /** \brief Save to disk */
+
+  /** \brief Save to disk, return false if it can be skipped  */
   inline bool Save(dmlc::Stream *fo) const {
     if (w == 0) return false;
     fo->Write(&w, sizeof(Val)); return true;
   }
 };
 
-/**
- * \brief An example of user-defined online handle.
- */
+/// \brief An example of user-defined handle for \ref OnlineServer
 template <typename SyncV>
 class IOnlineHandle {
  public:
@@ -370,7 +414,7 @@ class IOnlineHandle {
    *
    * @param push true if this is a push request
    * @param timestamp the timestamp of this request
-   * @param cmd the cmd specified in SyncOpts
+   * @param cmd the cmd specified in \ref SyncOpts
    * @param msg the received message
    */
   inline void Start(bool push, int timestamp, int cmd, void* msg) { }
@@ -381,11 +425,11 @@ class IOnlineHandle {
   inline void Finish() { }
 
   /**
-   * \brief Handle PUSH requests from worker nodes
+   * \brief Handle a push request from a worker node
    *
-   * @param recv_keys the keys received from a worker node
+   * @param recv_key the key received from a worker node
    * @param recv_vals the corresponding values received from the worker node
-   * @param my_vals the corresponding local values
+   * @param my_vals the corresponding local stored value
    */
   inline void Push(
       Key recv_key, Blob<const SyncV> recv_val, IVal<SyncV>& my_val) {
@@ -393,10 +437,10 @@ class IOnlineHandle {
   }
 
   /**
-   * \brief Handle PUSH requests from worker nod
+   * \brief Handle a pull requests from a worker node
    *
-   * @param recv_keys the keys received from a worker node
-   * @param my_vals the corresponding local values
+   * @param recv_key the key received from a worker node
+   * @param my_vals the corresponding local value
    * @param sent_vals the corresponding values will send to the worker node
    */
   inline void Pull(
@@ -411,51 +455,7 @@ class IOnlineHandle {
   inline void Save(dmlc::Stream *fo) const { }
 };
 
-
-
-/*!
- * \brief key-value store for server nodes in online mode.
- *
- * Individual key-value pairs received from workers are feed into the
- * user-defined handle one by one. It users unordered_map or other equivalence
- * data structure to store <Key,Val> pairs. It is suitable when new keys appears
- * during running, such as SGD/online learning algorithms. However, both read
- * and write could be 5x slower comparing to BatchServer
- *
- * @tparam SyncV the data type for synchronization, which should be primitive
- * types such as int, float, ...
- * @tparam Val the value entry stored in server
- * @Handle User-defined handles (or model updater)
- */
-template <typename SyncV,
-          typename Val = IVal<SyncV>,
-          typename Handle = IOnlineHandle<SyncV> >
-class OnlineServer {
- public:
-  /**
-   * @param pull_val_len the length of value pulled from server for each
-   * key. For fixed length sync, the length of value should be equal to
-   * pull_val_len. While for dynamic length sync, it is just a hint size.
-   * @param handle
-   * @param id the unique identity. Negative IDs is preserved by system.
-   */
-  OnlineServer(
-      const Handle& handle = Handle(), int pull_val_len = 1, int id = 0) {
-    server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
-        id, handle, pull_val_len);
-    Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
-  }
-  ~OnlineServer() { }
-
-  KVStore* server() { return server_; }
-
- private:
-  KVStore* server_ = NULL;
-};
-
-
 }  // namespace ps
-
 
 
 /**
@@ -468,11 +468,7 @@ int CreateServerNode(int argc, char *argv[]);
 
 
 ///////////////////////////////////////////////////////////////////////////////
-///                            Scheduler Node APIs                          ///
-///////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////
-///                            More Advanced APIs                           ///
+///                            Helper class                                 ///
 ///////////////////////////////////////////////////////////////////////////////
 #include "ps/app.h"
 namespace ps {

@@ -1,3 +1,3 @@
 # Documents
 
-Use `gendoc.sh` to generate Doxygen documents.
+Type `doxygen` to generate Doxygen documents.
