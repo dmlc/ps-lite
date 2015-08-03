@@ -3,6 +3,8 @@
 #include <limits>
 namespace ps {
 
+/// \brief Convert float/double into less-bit integer by projecting into
+/// [int_min, int_max].
 class TruncateFloatFilter : public IFilter {
  public:
   void Encode(Message* msg) {

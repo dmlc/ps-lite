@@ -18,8 +18,8 @@ scheduler, which can be queried via \ref ps::NodeInfo.
   zero-copy variants, are defined in class \ref ps::KVWorker
 
 * A server node maintains and updates the model. Each node maintains only a part
-  of the model, often server *i* handles the keys (feature indices) within the *i*-th
-  segment of *[0, uint64_max]*. The server node allows user-defined handles to
+  of the model, often server i handles the keys (feature indices) within the i-th
+  segment of <em>[0, uint64_max]</em>. The server node allows user-defined handles to
   process the `push` and `pull` requests from the workers. See more details in
   \ref ps::OnlineServer
 

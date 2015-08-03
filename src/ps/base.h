@@ -29,11 +29,14 @@ typedef unsigned long long uint64;  // NOLINT
 #endif /* COMPILER_MSVC */
 
 #if USE_KEY32
+/// \brief Use unsigned 32-bit int as the key
 typedef uint32 Key;
 #else
+/// \brief Use unsigned 64-bit int as the key
 typedef uint64 Key;
 #endif
 
+/// \brief The maximal allowed key
 static const Key kMaxKey = std::numeric_limits<Key>::max();
 
 /*! \brief returns a short debug string */

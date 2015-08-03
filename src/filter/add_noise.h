@@ -7,8 +7,7 @@
 namespace ps {
 
 /**
- * @brief Add noise
- *
+ * @brief Add gaussian noises to float/double values
  */
 class AddNoiseFilter : public IFilter {
  public:

@@ -4,9 +4,12 @@
 #include "base/range.h"
 namespace ps {
 
+/// \brief An empty deleter for \ref SArray
 template<typename T> struct EmptyDel {
   void operator()(T* p) const { }
 };
+
+/// \brief An array deleter for \ref SArray
 template<typename T> struct ArrayDel {
   void operator()(T* p) const { delete [] p; }
 };
@@ -305,7 +308,7 @@ template<typename V> class SArray {
   std::shared_ptr<V> ptr_;
 };
 
-// for debug use
+/// \brief for debug use
 template <typename V>
 std::ostream& operator<<(std::ostream& os, const SArray<V>& obj) {
   os << obj.blob();

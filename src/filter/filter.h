@@ -10,6 +10,7 @@ class IFilter {
   IFilter() { }
   virtual ~IFilter() { }
 
+  /// \brief Factory function
   static IFilter* create(const Filter& conf);
 
   virtual void Encode(Message* msg) { }

@@ -4,6 +4,8 @@
 // #include "base/crc32c.h"
 namespace ps {
 
+/// \brief Caches the key lists on both sender and receiver to avoid duplicated
+/// communication
 class KeyCachingFilter : public IFilter {
  public:
   // thread safe

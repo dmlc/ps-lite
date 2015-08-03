@@ -2,6 +2,7 @@
 #include "filter/filter.h"
 namespace ps {
 
+/// \brief Used delta encoding: `key[i] = keys[i+1]-key[i]`
 class DeltaKeyFilter : public IFilter {
  public:
   void Encode(Message* msg) {

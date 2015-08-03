@@ -15,7 +15,9 @@
 namespace ps {
 
 /**
- * \brief Blob, Binary Large OBject, is a simple structure
+ * \brief Binary Large OBject
+ *
+ * Blob is a simple structure
  * containing a pointer into some external storage and a size. The user of a
  * Blob must ensure that the blob is not used after the corresponding external
  * storage has been deallocated.
@@ -77,7 +79,7 @@ struct Blob {
   }
 };
 
-// for debug use
+/// \brief for debug use
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Blob<T>& obj) {
   os << obj.ShortDebugString(); return os;

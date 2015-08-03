@@ -4,6 +4,7 @@
 #include <limits>
 namespace ps {
 
+/// \brief Convert float/double into less-bit integer with quantizing and random rounding
 class FixingFloatFilter : public IFilter {
  public:
   FixingFloatFilter() {

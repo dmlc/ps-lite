@@ -14,9 +14,10 @@
 #include "proto/filter.pb.h"
 #include "dmlc/io.h"
 
-///////////////////////////////////////////////////////////////////////////////
-///                              Worker node APIs                           ///
-///////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//                              Worker node APIs                           //
+/////////////////////////////////////////////////////////////////////////////
+
 namespace ps {
 
 /// \brief  Advanced synchronization options for a worker request (push or pull)
@@ -27,7 +28,7 @@ struct SyncOpts {
   /// \a deps places an execution order. This request will be executed on the
   /// server nodes only after all requests sent by this worker with timestamps
   /// specified in \a deps have been executed.
-
+  ///
   std::vector<int> deps;
 
   /// \brief The callback for this request is finished
@@ -49,24 +50,24 @@ struct SyncOpts {
   /// The subtle difference is that, in the latter, \a func is executed before
   /// \ref Wait returns, and it is executed by a different thread (KVworker's
   /// data receiving thread).
-
+  ///
   std::function<void()> callback;
 
   /// \brief Filters to compression data
   /// \sa ps::IFilter AddFilter
-
+  ///
   std::vector<Filter> filters;
 
   /// \brief Add a filter to this request
   ///
   /// For example, use LZ4 to compress the values:
   /// \code AddFilter(Filter::COMPRESSING); \endcode
-
+  ///
   Filter* AddFilter(Filter::Type type);
 
   /// \brief The command that will be passed to the server handle.
   /// \sa ps::IOnlineHandle::Start
-
+  ///
   int cmd = 0;
 };
 
@@ -75,8 +76,8 @@ struct SyncOpts {
 /// This class provides \ref Push and \ref Pull with several variants for worker
 /// nodes.
 ///
-/// \tparam Val the type of value, which should be primitive types such as int32_t and float
-/// are supported
+/// \tparam Val the type of value, which should be primitive types such as
+/// int32_t and float
 template<typename Val>
 class KVWorker {
  public:
@@ -89,6 +90,7 @@ class KVWorker {
   /// will produce a fatal message.
   ///
   /// \param id the unique identity, negative IDs are preserved by system.
+  ///
   explicit KVWorker(int id = 0) {
     cache_ = CHECK_NOTNULL((new KVCache<Key, Val>(id)));
   }
@@ -130,7 +132,7 @@ class KVWorker {
   /// \note Both keys and values will be copied into a system buffer, the
   /// zero-copy version \ref ZPush might be more efficient
   /// \note Use \ref VPush to push dynamic length values
-
+  ///
   int Push(const std::vector<Key>& keys,
            const std::vector<Val>& vals,
            const SyncOpts& opts = SyncOpts()) {
@@ -166,7 +168,7 @@ class KVWorker {
   /// \note Both keys and values will be copied into a system buffer, the
   /// zero-copy version \ref ZPull might be more efficient
   /// \note Use \ref VPull to pull dynamic length values
-
+  ///
   int Pull(const std::vector<Key>& keys,
            std::vector<Val>* vals,
            const SyncOpts& opts = SyncOpts()) {
@@ -184,7 +186,7 @@ class KVWorker {
   /// \endcode
   ///
   /// \param timestamp the timestamp of the request waiting for
-
+  ///
   void Wait(int timestamp) { cache_->Wait(timestamp); }
 
   /// @brief Extends \ref Push to dynamic length values
@@ -204,7 +206,7 @@ class KVWorker {
   ///
   /// \note Both keys and values will be copied into a system buffer, the
   /// zero-copy version \ref ZVPush might be more efficient
-
+  ///
   int VPush(const std::vector<Key>& keys,
             const std::vector<Val>& vals,
             const std::vector<int>& vals_size,
@@ -229,7 +231,7 @@ class KVWorker {
   ///
   /// \note Both keys and values will be copied into a system buffer, the
   /// zero-copy version \ref ZVPull might be more efficient
-
+  ///
   int VPull(const std::vector<Key>& keys,
             std::vector<Val>* vals,
             std::vector<int>* vals_size,
@@ -261,7 +263,7 @@ class KVWorker {
   /// @param vals the according values
   /// @param opts push options
   /// @return the timestamp of this request
-
+  ///
   int ZPush(const std::shared_ptr<std::vector<Key> >& keys,
             const std::shared_ptr<std::vector<Val> >& vals,
             const SyncOpts& opts = SyncOpts()) {
@@ -322,6 +324,7 @@ class KVWorker {
   Task GetTask(const SyncOpts& opts);
   KVCache<Key, Val>* cache_;
 };
+
 }  // namespace ps
 
 
@@ -333,11 +336,10 @@ class KVWorker {
  */
 int WorkerNodeMain(int argc, char *argv[]);
 
-///////////////////////////////////////////////////////////////////////////////
-///                             Server node APIs                            ///
-///////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//                             Server node APIs                            //
+/////////////////////////////////////////////////////////////////////////////
 namespace ps {
-
 
 /// \brief An example of the user-defined value for \ref OnlineServer
 ///
@@ -345,15 +347,15 @@ namespace ps {
 template <typename Val>
 struct IVal {
 
-  /** \brief value */
+  /// \brief value
   Val w = 0;
 
-  /** \brief Load from disk, return false if load failed (end of the file) */
+  /// \brief Load from disk, return false if load failed (end of the file)
   inline bool Load(dmlc::Stream *fi) {
     return fi->Read(&w, sizeof(Val)) == sizeof(Val);
   }
 
-  /** \brief Save to disk, return false if it can be skipped  */
+  /// \brief Save to disk, return false if it can be skipped
   inline bool Save(dmlc::Stream *fo) const {
     if (w == 0) return false;
     fo->Write(&w, sizeof(Val)); return true;
@@ -361,6 +363,47 @@ struct IVal {
 };
 
 /// \brief An example of user-defined handle for \ref OnlineServer
+///
+/// Assume OnlineServer stores the KV pairs in `map<Key, Val> store_`. It
+/// processes a push request with \a keys and \a vals as following
+///
+/// \code
+/// handle_.Start(true, ...);
+/// for (k : keys) handle_.Push(k, vals[k], store_[k]);
+/// handle_.Finish();
+/// \endcode
+///
+/// A server node processes one request (either push or pull) at a time, the
+/// above codes can be almost treated as a transaction. But the middle for loop
+/// may run in parallel with the number of threads specified in \ref
+/// OnlineServer.
+///
+/// The procedure for a pull request is similar.
+///
+/// \code
+/// handle_.Start(true, ...);
+/// for (k : keys) {
+///   handle_.Pull(k, store_[k], v);
+///   vals.push_back(v);
+/// }
+/// handle_.Finish();
+/// // send back vals
+/// \endcode
+///
+/// \a v consists of a `SyncVal` pointer `v.data` with length `v.size =
+/// pull_val_len`. One can reuse this buffer is if the actually value length for
+/// sending is not larger than `v.size` (change `v.size` if less than). One can
+/// also modify `v.data`, the system will `memcpy` it to it's internal
+/// buffer. A sample usage:
+///
+/// \code
+/// struct MyVal { std::vector<Val> w; }
+/// void Pull(Key recv_key, MyVal& my_val, ps::Blob<Val>& send_val) {
+///   send_val.data = my_val.w.data();
+///   send_val.size = my_val.w.size();
+/// }
+/// \endcode
+///
 template <typename SyncV>
 class IOnlineHandle {
  public:
@@ -422,10 +465,10 @@ class IOnlineHandle {
 /// @tparam SyncV the value type used for synchronization, which should be
 /// primitive types such as int, float. It should by the same as the value type
 /// defined in \ref ps::KVWorker
-/// @tparam Val the value type stored in server, which could be a complex
-/// user-defined type, see \ref IVal for an example
+/// @tparam Val the value type stored in server, which could be a
+/// user-defined type, see \ref IVal for more details
 /// @tparam Handle User-defined handle for processing push and pull request from
-/// workers, see \ref IOnlineHandle for an example
+/// workers, see \ref IOnlineHandle for more details
 template <typename SyncV,
           typename Val = IVal<SyncV>,
           typename Handle = IOnlineHandle<SyncV> >
@@ -436,10 +479,13 @@ class OnlineServer {
   /// @param handle the user-defined handle
   /// @param pull_val_len the hint of the length of value pulled from server for each
   /// key.
-  /// @param id the unique identity. It should matches the according id of \ref
+  /// @param num_threads the number of threads can be used to process a worker
+  /// request
+  /// @param id the unique identity. It should match the according id of \ref
   /// KVWorker
   OnlineServer(const Handle& handle = Handle(),
                int pull_val_len = 1,
+               int num_threads = 1,
                int id = 0) {
     server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
         id, handle, pull_val_len);
@@ -467,69 +513,60 @@ class OnlineServer {
 int CreateServerNode(int argc, char *argv[]);
 
 
-///////////////////////////////////////////////////////////////////////////////
-///                            Helper class                                 ///
-///////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//                            Helper class                                 //
+/////////////////////////////////////////////////////////////////////////////
 #include "ps/app.h"
 namespace ps {
 
 DECLARE_int32(num_workers);
 DECLARE_int32(num_servers);
 
-/// A helper class to query info about the node
+/// \brief Queries runtime info about the node
 class NodeInfo {
  public:
+
+  /// \brief Returns the rank of this node in its group, which is in {0, ...,
+  /// \ref RankSize - 1} .
+  ///
+  /// Each node has an unique rank in its group (e.g. worker group or server
+  /// group), which is a continuous integer starting from 0.
   static inline int MyRank() { return MyNode().rank(); }
 
-  static inline int NumWorkers() { return FLAGS_num_workers; }
-
-  static inline int NumServers() { return FLAGS_num_servers; }
-
+  /// \brief Returns the group size
   static inline int RankSize() {
     return IsWorker() ? NumWorkers() : (IsServer() ? NumServers() : 1);
   }
 
+  /// \brief Returns the number of worker nodes
+  static inline int NumWorkers() { return FLAGS_num_workers; }
+
+  /// \brief Returns the number of server nodes
+  static inline int NumServers() { return FLAGS_num_servers; }
+
+  /// \brief Returns true if this node is a worker node
   static bool IsWorker() { return MyNode().role() == Node::WORKER; }
 
-  /// \brief Return true if this node is a server node.
+  /// \brief Returns true if this node is a server node.
   static inline int IsServer() { return MyNode().role() == Node::SERVER; }
 
-  /*! \brief Return true if this node is a scheduler node. */
+  /// \brief Returns true if this node is a scheduler node.
   static inline int IsScheduler() { return MyNode().role() == Node::SCHEDULER; }
 
-  static inline Node MyNode() { return Postoffice::instance().manager().van().my_node(); }
+  /// \brief Returns the key range this node maintains
+  static inline Range<Key> KeyRange() { return Range<Key>(MyNode().key()); }
+
+  /// \brief Returns my node info
+  static inline Node MyNode() {
+    return Postoffice::instance().manager().van().my_node();
+  }
+
+  /// \brief Returns the scheduler ID
+  static inline std::string SchedulerID() {
+    return Postoffice::instance().manager().van().scheduler().id();
+  }
 };
 
-// The app this node runs
-inline App* MyApp() { return Postoffice::instance().manager().app(); }
-
-/*! \brief The global unique string ID of this node */
-inline Node MyNode() { return Postoffice::instance().manager().van().my_node(); }
-// Each unique string id of my node
-inline std::string MyNodeID() { return MyNode().id(); }
-/*! \brief Return true if this node is a worker node. */
-inline int IsWorkerNode() { return MyNode().role() == Node::WORKER; }
-/*! \brief Return true if this node is a server node. */
-inline int IsServerNode() { return MyNode().role() == Node::SERVER; }
-/*! \brief Return true if this node is a scheduler node. */
-inline int IsSchedulerNode() { return MyNode().role() == Node::SCHEDULER; }
-
-inline std::string SchedulerID() {
-  return Postoffice::instance().manager().van().scheduler().id();
-}
-
-// The rank ID of this node in its group. Assume this a worker node in a worker
-// group with N workers. Then this node will be assigned an unique ID from 0,
-// ..., N. Similarly for server and scheduler.
-inline int MyRank() { return MyNode().rank(); }
-// Total nodes in this node group.
-inline int RankSize() {
-  auto& mng = Postoffice::instance().manager();
-  return IsWorkerNode() ? mng.num_workers() : (IsServerNode() ? mng.num_servers() : 1);
-}
-
-inline int NumWorkers() { return FLAGS_num_workers; }
-inline int NumServers() { return FLAGS_num_servers; }
 
 inline void StartSystem(int* argc, char ***argv) {
   ps::Postoffice::instance().Run(argc, argv);
@@ -548,4 +585,4 @@ inline int RunSystem(int* argc, char ***argv) {
 
 // Implementation
 
-#include <ps/ps-inl.h>
+#include <system/ps-inl.h>

@@ -8,6 +8,7 @@
 
 namespace ps {
 
+/// \brief Compress value using LZ4
 class CompressingFilter : public IFilter {
  public:
   void Encode(Message* msg) {

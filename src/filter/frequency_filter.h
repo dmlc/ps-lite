@@ -4,7 +4,7 @@
 namespace ps {
 
 /**
- * @brief IFilters infrequent keys via the countmin sketch
+ * @brief Remove infrequent keys via the countmin sketch
  * @tparam K key type
  * @tparam V counter type
  */
