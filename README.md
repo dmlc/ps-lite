@@ -3,10 +3,11 @@
 
 ### Introduction
 
-`ps-lite` provides simple yet powerful APIs for the parameter server
-framework. For example, a worker node can communicate with the server nodes via
-- `Push`: push a list of (key, value) to the server nodes
-- `Pull`: pull the values from servers for a given key list
+`ps-lite` is a high-performance implementation of the parameter server
+framework. It provides simple yet powerful APIs. For example, a worker node can
+communicate with the server nodes via
+- `Push(keys, values)`: push a list of (key, value) pairs to the server nodes
+- `Pull(keys)`: pull the values from servers for a given key list
 - `Wait`: wait a push or pull finished.
 
 A simple example:
@@ -28,6 +29,9 @@ More features:
 - Server-side programming: supporting user-defined handles on server nodes
 - Flexible data consistency control via dependency DAG, allowing various
    consistency models such as eventual consistency, bounded delay, and BSP.
+
+`ps-lite` is a part of the [DMLC](dmlc.github.io) project. It is
+licensed under Apache 2.0.
 
 ### How to build
 
