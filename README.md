@@ -55,7 +55,6 @@ cd ps-lite && make deps -j4 && make -j4
 - Open source projects using `ps-lite`
   - [Wormhole](https://github.com/dmlc/wormhole) for distributed linear method, factorization machine, etc
   - [CXXNET](https://github.com/dmlc/cxxnet) and [Minverva](https://github.com/minerva-developers/minerva) for distributed deep neural networks.
-
 - Research papers
   1. Mu Li, Dave Andersen, Alex Smola, Junwoo Park, Amr Ahmed, Vanja Josifovski,
      James Long, Eugene Shekita, Bor-Yiing

@@ -19,6 +19,57 @@
 ///////////////////////////////////////////////////////////////////////////////
 namespace ps {
 
+/// \brief  Advanced synchronization options for a worker request (push or pull)
+struct SyncOpts {
+
+  /// \brief Depended timestamps.
+  ///
+  /// \a deps places an execution order. This request will be executed on the
+  /// server nodes only after all requests sent by this worker with timestamps
+  /// specified in \a deps have been executed.
+
+  std::vector<int> deps;
+
+  /// \brief The callback for this request is finished
+  ///
+  /// The callback will be called after this request is actually finished. In
+  /// other words, all ack messages have been received for a push or all values
+  /// have been pulled back for a pull.  Semantically, it is almost the same
+  /// between
+  ///
+  /// \code
+  ///    Wait(Push(keys, vals)); func();
+  /// \endcode
+  /// and
+  /// \code
+  ///   SyncOpts opt; opt.callback = func;
+  ///   Wait(Push(keys, vals, opt));
+  /// \endcode
+  ///
+  /// The subtle difference is that, in the latter, \a func is executed before
+  /// \ref Wait returns, and it is executed by a different thread (KVworker's
+  /// data receiving thread).
+
+  std::function<void()> callback;
+
+  /// \brief Filters to compression data
+  /// \sa ps::IFilter AddFilter
+
+  std::vector<Filter> filters;
+
+  /// \brief Add a filter to this request
+  ///
+  /// For example, use LZ4 to compress the values:
+  /// \code AddFilter(Filter::COMPRESSING); \endcode
+
+  Filter* AddFilter(Filter::Type type);
+
+  /// \brief The command that will be passed to the server handle.
+  /// \sa ps::IOnlineHandle::Start
+
+  int cmd = 0;
+};
+
 /// \brief Provides Push and Pull for worker nodes
 ///
 /// This class provides \ref Push and \ref Pull with several variants for worker
@@ -273,56 +324,6 @@ class KVWorker {
 };
 }  // namespace ps
 
-/// \brief  Advanced synchronization options for a worker request (push or pull)
-struct SyncOpts {
-
-  /// \brief Depended timestamps.
-  ///
-  /// \a deps places an execution order. This request will be executed on the
-  /// server nodes only after all requests sent by this worker with timestamps
-  /// specified in \a deps have been executed.
-
-  std::vector<int> deps;
-
-  /// \brief The callback for this request is finished
-  ///
-  /// The callback will be called after this request is actually finished. In
-  /// other words, all ack messages have been received for a push or all values
-  /// have been pulled back for a pull.  Semantically, it is almost the same
-  /// between
-  ///
-  /// \code
-  ///    Wait(Push(keys, vals)); func();
-  /// \endcode
-  /// and
-  /// \code
-  ///   SyncOpts opt; opt.callback = func;
-  ///   Wait(Push(keys, vals, opt));
-  /// \endcode
-  ///
-  /// The subtle difference is that, in the latter, \a func is executed before
-  /// \ref Wait returns, and it is executed by a different thread (KVworker's
-  /// data receiving thread).
-
-  std::function<void()> callback;
-
-  /// \brief Filters to compression data
-  /// \sa ps::IFilter AddFilter
-
-  std::vector<Filter> filters;
-
-  /// \brief Add a filter to this request
-  ///
-  /// For example, use LZ4 to compress the values:
-  /// \code AddFilter(Filter::COMPRESSING); \endcode
-
-  Filter* AddFilter(Filter::Type type);
-
-  /// \brief The command that will be passed to the server handle.
-  /// \sa ps::IOnlineHandle::Start
-
-  int cmd = 0;
-};
 
 /**
  * \brief The main function for a worker node
@@ -336,49 +337,6 @@ int WorkerNodeMain(int argc, char *argv[]);
 ///                             Server node APIs                            ///
 ///////////////////////////////////////////////////////////////////////////////
 namespace ps {
-
-/// \brief The online key-value store for server nodes
-///
-/// A server node maintains KV pairs in a particular key range, and responses the
-/// push and pull requests from worker nodes. It allows user-defined value type
-/// and handle.
-///
-/// @tparam SyncV the value type used for synchronization, which should be
-/// primitive types such as int, float. It should by the same as the value type
-/// defined in \ref ps::KVWorker
-/// @tparam Val the value type stored in server, which could be a complex
-/// user-defined type, see \ref IVal for an example
-/// @tparam Handle User-defined handle for processing push and pull request from
-/// workers, see \ref IOnlineHandle for an example
- */
-template <typename SyncV,
-          typename Val = IVal<SyncV>,
-          typename Handle = IOnlineHandle<SyncV> >
-class OnlineServer {
- public:
-  /// \brief Creates a KV store.
-  ///
-  /// @param handle the user-defined handle
-  /// @param pull_val_len the hint of the length of value pulled from server for each
-  /// key.
-  /// @param id the unique identity. It should matches the according id of \ref
-  /// KVWorker
-  OnlineServer(const Handle& handle = Handle(),
-               int pull_val_len = 1,
-               int id = 0) {
-    server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
-        id, handle, pull_val_len);
-    Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
-  }
-
-  ~OnlineServer() { }
-
-  /// \brief Returns the pointer of the actual KV store
-  KVStore* server() { return server_; }
-
- private:
-  KVStore* server_ = NULL;
-};
 
 
 /// \brief An example of the user-defined value for \ref OnlineServer
@@ -453,6 +411,48 @@ class IOnlineHandle {
 
   /** \brief Save to disk */
   inline void Save(dmlc::Stream *fo) const { }
+};
+
+/// \brief The online key-value store for server nodes
+///
+/// A server node maintains KV pairs in a particular key range, and responses the
+/// push and pull requests from worker nodes. It allows user-defined value type
+/// and handle.
+///
+/// @tparam SyncV the value type used for synchronization, which should be
+/// primitive types such as int, float. It should by the same as the value type
+/// defined in \ref ps::KVWorker
+/// @tparam Val the value type stored in server, which could be a complex
+/// user-defined type, see \ref IVal for an example
+/// @tparam Handle User-defined handle for processing push and pull request from
+/// workers, see \ref IOnlineHandle for an example
+template <typename SyncV,
+          typename Val = IVal<SyncV>,
+          typename Handle = IOnlineHandle<SyncV> >
+class OnlineServer {
+ public:
+  /// \brief Creates a KV store.
+  ///
+  /// @param handle the user-defined handle
+  /// @param pull_val_len the hint of the length of value pulled from server for each
+  /// key.
+  /// @param id the unique identity. It should matches the according id of \ref
+  /// KVWorker
+  OnlineServer(const Handle& handle = Handle(),
+               int pull_val_len = 1,
+               int id = 0) {
+    server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
+        id, handle, pull_val_len);
+    Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
+  }
+
+  ~OnlineServer() { }
+
+  /// \brief Returns the pointer of the actual KV store
+  KVStore* server() { return server_; }
+
+ private:
+  KVStore* server_ = NULL;
 };
 
 }  // namespace ps
