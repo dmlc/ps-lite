@@ -1,4 +1,4 @@
-<img src="http://parameterserver.org/images/parameterserver.png" alt="Parameter Server" style="width: 500px;">
+<img src="http://parameterserver.org/images/parameterserver.png" alt="Parameter Server">
 [![Build Status](https://travis-ci.org/dmlc/ps-lite.svg?branch=master)](https://travis-ci.org/dmlc/ps-lite)
 
 ### Introduction
@@ -20,13 +20,14 @@ A simple example:
   w.Wait(w.Push(key, val));
   w.Wait(w.Pull(key, &recv_val));
 ```
-See more examples such as zero-copy communication, data consistency control,
-variable length value, and user-defined filters for communication compression
-in the [tutorial](guide/).
 
-The server nodes support user-defined handles for flexible server-side
-programming. And the scheduler node allows for monitoring progress and fault
-tolerance.
+More features:
+
+- Flexible and high-performance communication: zero-copy push/pull, supporting
+   dynamic length value, user-defined filters for communication compression
+- Server-side programming: supporting user-defined handles on server nodes
+- Flexible data consistency control via dependency DAG, allowing various
+   consistency models such as eventual consistency, bounded delay, and BSP.
 
 ### How to build
 
@@ -35,44 +36,31 @@ install them via
 ```
 sudo apt-get update && sudo apt-get install -y build-essential git
 ```
-on Ubuntu >= 13.10. For
+for Ubuntu >= 13.10. Instructions for
 [older Ubuntu](http://ubuntuhandbook.org/index.php/2013/08/install-gcc-4-8-via-ppa-in-ubuntu-12-04-13-04/),
 [Centos](http://linux.web.cern.ch/linux/devtoolset/),
 [Mac Os X](http://hpc.sourceforge.net/).
 
-Then
+Then clone and build
 
 ```bash
 git clone https://github.com/dmlc/ps-lite
 cd ps-lite && make deps -j4 && make -j4
 ```
 
-## More examples
+## Documents
 
-`ps-lite` has been used by several DMLC projects and also in several companies'
-internal system.
-- [Wormhole](https://github.com/dmlc/wormhole) for distributed linear method,
-  factorization machine, etc
-- [CXXNET](https://github.com/dmlc/cxxnet) and
-  [Minverva](https://github.com/minerva-developers/minerva) for distributed deep
-  neural networks.
+- [API Documents](http://www.cs.cmu.edu/~muli/ps-lite/)
+- [Tutorials](guide/)
+- Open source projects using `ps-lite`
+  - [Wormhole](https://github.com/dmlc/wormhole) for distributed linear method, factorization machine, etc
+  - [CXXNET](https://github.com/dmlc/cxxnet) and [Minverva](https://github.com/minerva-developers/minerva) for distributed deep neural networks.
 
-## Reference
-
-```
-@inproceedings{li2014scaling,
-title={Scaling distributed machine learning with the parameter server},
-author={Li, Mu and Andersen, David G and Park, Jun Woo and Smola, Alexander J and Ahmed, Amr and Josifovski, Vanja and Long, James and Shekita, Eugene J and Su, Bor-Yiing},
-booktitle={Proc. OSDI},
-pages={583--598},
-year={2014}
-}
-
-@inproceedings{li2014communication,
-title={Communication efficient distributed machine learning with the parameter server},
-author={Li, Mu and Andersen, David G and Smola, Alex J and Yu, Kai},
-booktitle={NIPS},
-pages={19--27},
-year={2014}
-}
-```
+- Research papers
+  1. Mu Li, Dave Andersen, Alex Smola, Junwoo Park, Amr Ahmed, Vanja Josifovski,
+     James Long, Eugene Shekita, Bor-Yiing
+     Su. [Scaling Distributed Machine Learning with the Parameter Server](http://www.cs.cmu.edu/~muli/file/parameter_server_osdi14.pdf). In
+     Operating Systems Design and Implementation (OSDI), 2014
+  2. Mu Li, Dave Andersen, Alex Smola, and Kai
+     Yu. [Communication Efficient Distributed Machine Learning with the Parameter Server](http://www.cs.cmu.edu/~muli/file/parameter_server_nips14.pdf). In
+     Neural Information Processing Systems (NIPS), 2014
