@@ -26,7 +26,6 @@ inline int NextCustomerID() {
   return Postoffice::instance().manager().NextCustomerID();
 }
 
-inline Range<Key> MyKeyRange() { return Range<Key>(MyNode().key()); }
 
 
 // The app this node runs
@@ -46,6 +45,7 @@ inline int IsSchedulerNode() { return MyNode().role() == Node::SCHEDULER; }
 inline std::string SchedulerID() {
   return Postoffice::instance().manager().van().scheduler().id();
 }
+inline Range<Key> MyKeyRange() { return Range<Key>(MyNode().key()); }
 
 // The rank ID of this node in its group. Assume this a worker node in a worker
 // group with N workers. Then this node will be assigned an unique ID from 0,
