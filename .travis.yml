@@ -5,7 +5,7 @@ sudo: false
 env:
   matrix:
     - TASK=build CXX=g++-4.8
-    - TASK=build CXX=g++-5.0
+    - TASK=build CXX=g++-5
 #    - TASK=lint LINT_LANG=cpp
 
 # dependent apt packages
@@ -15,7 +15,7 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - g++-4.8
-      - g++-5.0
+      - g++-5
       - wget
       - git
       - unzip
