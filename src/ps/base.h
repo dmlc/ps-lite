@@ -10,23 +10,29 @@
 
 namespace ps {
 
-typedef signed char         int8;
-typedef short               int16;  // NOLINT
-typedef int                 int32;
-#ifdef COMPILER_MSVC
-typedef __int64             int64;  // NOLINT
+#ifdef _MSC_VER
+typedef signed char      int8_t;
+typedef __int16          int16_t;
+typedef __int32          int32_t;
+typedef __int64          int64_t;
+typedef unsigned char    uint8_t;
+typedef unsigned __int16 uint16_t;
+typedef unsigned __int32 uint32_t;
+typedef unsigned __int64 uint64_t;
 #else
-typedef long long           int64;  // NOLINT
-#endif /* COMPILER_MSVC */
+#include <inttypes.h>
+#endif
 
-typedef unsigned char      uint8;
-typedef unsigned short     uint16;  // NOLINT
-typedef unsigned int       uint32;
-#ifdef COMPILER_MSVC
-typedef unsigned __int64   uint64;
-#else
-typedef unsigned long long uint64;  // NOLINT
-#endif /* COMPILER_MSVC */
+typedef int8_t           int8;
+typedef int16_t          int16;
+typedef int32_t          int32;
+typedef int64_t          int64;
+
+typedef uint8_t          uint8;
+typedef uint16_t         uint16;
+typedef uint32_t         uint32;
+typedef uint64_t         uint64;
+
 
 #if USE_KEY32
 /// \brief Use unsigned 32-bit int as the key
