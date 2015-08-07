@@ -5,9 +5,9 @@ namespace ps {
 template<typename K, typename E, typename V, typename Handle>
 class KVStoreSparse : public KVStore {
  public:
-  KVStoreSparse(int id, Handle handle, int pull_val_len)
-      : KVStore(id), handle_(handle), k_(pull_val_len) {
-    CHECK_GT(k_, 0);
+  KVStoreSparse(int id, Handle handle, int pull_val_len, int nt)
+      : KVStore(id), handle_(handle), k_(pull_val_len), nt_(nt) {
+    CHECK_GT(k_, 0); CHECK_GT(nt_, 0);
   }
 
   virtual ~KVStoreSparse() { }
@@ -109,10 +109,8 @@ class KVStoreSparse : public KVStore {
     handle_.Load(fi);
     K key;
     while (true) {
-      E ent;
-      if (!ent.Load(fi)) break;
-      CHECK(fi->Read(&key, sizeof(K)));
-      data_[key] = std::move(ent);
+      if (fi->Read(&key, sizeof(K)) != sizeof(K)) break;
+      data_[key].Load(fi);
     }
     LOG(INFO) << "loaded " << data_.size() << " kv pairs";
   }
@@ -121,10 +119,9 @@ class KVStoreSparse : public KVStore {
     handle_.Save(fo);
     int saved = 0;
     for (const auto& it : data_) {
-      if (it.second.Save(fo)) {
-        fo->Write(&it.first, sizeof(K));
-        ++ saved;
-      }
+      if (it.second.Empty()) continue;
+      fo->Write(&it.first, sizeof(K));
+      it.second.Save(fo);
     }
     LOG(INFO) << "saved " << saved << " kv pairs";
   }
@@ -132,6 +129,6 @@ class KVStoreSparse : public KVStore {
  private:
   std::unordered_map<K, E> data_;
   Handle handle_;
-  int k_;
+  int k_, nt_;
 };
 }  // namespace ps
