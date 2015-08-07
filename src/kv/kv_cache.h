@@ -15,6 +15,7 @@ class KVCache : public Customer {
   inline int Push(const Task& req, const SArray<K>& keys,
                   const SArray<V>& vals, const SArray<int>& vals_size,
                   const Message::Callback& cb) {
+    CHECK(IsKeysOrderd(keys)) << "keys must in non-decreasing order";
     Message msg(req, kServerGroup);
     msg.set_key(keys);
     msg.add_value(vals);
@@ -31,6 +32,7 @@ class KVCache : public Customer {
   inline int Pull(const Task& req, const SArray<K>& keys,
                   std::vector<V>* vals, std::vector<int>* vals_size,
                   const Message::Callback& cb) {
+    CHECK(IsKeysOrderd(keys)) << "keys must in non-decreasing order";
     Message msg(req, kServerGroup);
     mu_.lock();
     int chl = chl_ ++;
@@ -132,6 +134,13 @@ class KVCache : public Customer {
   }
 
  private:
+  inline bool IsKeysOrderd(const SArray<K>& keys) {
+    for (size_t i = 0; i < keys.size() -1 ; ++i) {
+      if (keys[i+1] < keys[i]) { return false; }
+    }
+    return true;
+  }
+
   struct KVPair {
     // [key_0,  ..., key_n]
     SArray<K> key;
