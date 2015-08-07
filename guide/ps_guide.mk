@@ -9,4 +9,4 @@ ifneq ($(OS), Darwin)
 endif
 
 guide/%: guide/%.cc $(PS_LIB) $(PS_MAIN)
-	$(CXX) $(CFLAGS) $^ $(LDFLAGS) -o $@
+	$(CXX) $(CFLAGS) -fopenmp $^ $(LDFLAGS) -o $@

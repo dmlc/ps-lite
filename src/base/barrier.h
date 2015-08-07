@@ -2,7 +2,7 @@
 
 #include <mutex>
 #include <condition_variable>
-#include "ps/base.h"
+#include "ps/base.h"  // for CHECK* and DISALLOW*
 
 namespace ps {
 
@@ -11,7 +11,8 @@ class Barrier {
   explicit Barrier(int num_threads)
       : num_to_block_(num_threads), num_to_exit_(num_threads) {}
 
-  // return true if this is the last thread
+  /// Block until all threads have reached this function.
+  /// return true if this is the last thread
   bool Block() {
     std::unique_lock<std::mutex> l(mu_);
     num_to_block_--;

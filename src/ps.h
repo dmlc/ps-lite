@@ -11,6 +11,7 @@
 #include "ps/shared_array.h"
 #include "kv/kv_cache.h"
 #include "kv/kv_store_sparse.h"
+#include "kv/kv_store_sparse_st.h"
 // #include "kv/kv_store_cuckoo.h"
 #include "proto/filter.pb.h"
 #include "dmlc/io.h"
@@ -498,8 +499,13 @@ class OnlineServer {
                int pull_val_len = 1,
                int num_threads = 1,
                int id = 0) {
-    server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
-        id, handle, pull_val_len, num_threads);
+    if (num_threads == 1) {
+      server_ = new KVStoreSparseST<Key, Val, SyncV, Handle>(
+          id, handle, pull_val_len);
+    } else {
+      server_ = new KVStoreSparse<Key, Val, SyncV, Handle>(
+          id, handle, pull_val_len, num_threads);
+    }
     // server_ = new KVStoreCuckoo<Key, Val, SyncV, Handle>(
     //     id, handle, pull_val_len, num_threads);
     Postoffice::instance().manager().TransferCustomer(CHECK_NOTNULL(server_));
@@ -526,67 +532,16 @@ class OnlineServer {
 int CreateServerNode(int argc, char *argv[]);
 
 
-/////////////////////////////////////////////////////////////////////////////
-//                            Helper class                                 //
-/////////////////////////////////////////////////////////////////////////////
-#include "ps/app.h"
+#include "ps/node_info.h"
+
+
 namespace ps {
-
-DECLARE_int32(num_workers);
-DECLARE_int32(num_servers);
-
-/// \brief Queries runtime info about the node
-class NodeInfo {
- public:
-
-  /// \brief Returns the rank of this node in its group, which is in {0, ...,
-  /// \ref RankSize - 1} .
-  ///
-  /// Each node has an unique rank in its group (e.g. worker group or server
-  /// group), which is a continuous integer starting from 0.
-  static inline int MyRank() { return MyNode().rank(); }
-
-  /// \brief Returns the group size
-  static inline int RankSize() {
-    return IsWorker() ? NumWorkers() : (IsServer() ? NumServers() : 1);
-  }
-
-  /// \brief Returns the number of worker nodes
-  static inline int NumWorkers() { return FLAGS_num_workers; }
-
-  /// \brief Returns the number of server nodes
-  static inline int NumServers() { return FLAGS_num_servers; }
-
-  /// \brief Returns true if this node is a worker node
-  static bool IsWorker() { return MyNode().role() == Node::WORKER; }
-
-  /// \brief Returns true if this node is a server node.
-  static inline int IsServer() { return MyNode().role() == Node::SERVER; }
-
-  /// \brief Returns true if this node is a scheduler node.
-  static inline int IsScheduler() { return MyNode().role() == Node::SCHEDULER; }
-
-  /// \brief Returns the key range this node maintains
-  static inline Range<Key> KeyRange() { return Range<Key>(MyNode().key()); }
-
-  /// \brief Returns my node info
-  static inline Node MyNode() {
-    return Postoffice::instance().manager().van().my_node();
-  }
-
-  /// \brief Returns the scheduler ID
-  static inline std::string SchedulerID() {
-    return Postoffice::instance().manager().van().scheduler().id();
-  }
-};
-
-
 inline void StartSystem(int* argc, char ***argv) {
-  ps::Postoffice::instance().Run(argc, argv);
+  Postoffice::instance().Run(argc, argv);
 }
 
 inline void StopSystem() {
-  ps::Postoffice::instance().Stop();
+  Postoffice::instance().Stop();
 }
 
 inline int RunSystem(int* argc, char ***argv) {
@@ -597,5 +552,6 @@ inline int RunSystem(int* argc, char ***argv) {
 }  // namespace ps
 
 // Implementation
+
 
 #include <system/ps-inl.h>

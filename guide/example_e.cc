@@ -4,8 +4,9 @@ using Key = ps::Key;
 
 struct MyVal {
   std::vector<Val> w;
-  inline bool Load(dmlc::Stream *fi) { fi->Read(&w); return true; }
-  inline bool Save(dmlc::Stream *fo) const { fo->Write(w); return true; }
+  inline void Load(dmlc::Stream *fi) { fi->Read(&w); }
+  inline void Save(dmlc::Stream *fo) const { fo->Write(w); }
+  inline bool Empty() const { return w.empty(); }
 };
 
 class MyHandle {
