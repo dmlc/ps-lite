@@ -180,7 +180,7 @@ void KVVector<K,V>::SetValue(const Message* msg) {
       CHECK_EQ(kv.key.size() * k_, kv.value.size());
 
       size_t n = ParallelOrderedMatch(
-          recv_key, recv_data, kv.key, &kv.value, k_, AssignOpType::PLUS);
+          recv_key, recv_data, kv.key, &kv.value, k_, AsOp::PLUS);
       CHECK_EQ(n, recv_key.size() * k_);
       VLOG(1) << "matched " << n << " keys";
     } else {
@@ -204,7 +204,7 @@ void KVVector<K,V>::SetValue(const Message* msg) {
       size_t k = recv_data.size() / recv_key.size();  // not necessary == k_
       size_t n = ParallelOrderedMatch(
           recv_key, recv_data, kv.key.Segment(buf.idx_range), &buf.values[i], k,
-          AssignOpType::PLUS);
+          AsOp::PLUS);
       CHECK_LE(n, recv_key.size() * k);
       VLOG(1) << "matched " << n << " keys";
     }

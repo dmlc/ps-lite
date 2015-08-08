@@ -8,7 +8,7 @@ template <typename K, typename V>
 void ParallelOrderedMatch(
     const K* src_key, const K* src_key_end, const V* src_val,
     const K* dst_key, const K* dst_key_end, V* dst_val,
-    int k, AssignOpType op, size_t grainsize, size_t* n) {
+    int k, AsOp op, size_t grainsize, size_t* n) {
   size_t src_len = std::distance(src_key, src_key_end);
   size_t dst_len = std::distance(dst_key, dst_key_end);
   if (dst_len == 0 || src_len == 0) return;
@@ -61,7 +61,7 @@ size_t ParallelOrderedMatch(
     const SArray<K>& dst_key,  // destination keys
     SArray<V>* dst_val,        // destination values
     int k = 1,                 // the size of a value entry = k * sizeof(V)
-    AssignOpType op = AssignOpType::ASSIGN, // assignment operator
+    AsOp op = AsOp::ASSIGN, // assignment operator
     int num_threads = 2) {
   // do check
   CHECK_GT(num_threads, 0);
@@ -90,7 +90,7 @@ size_t ParallelOrderedMatch(
     const SArray<K>& dst_key,  // destination keys
     std::vector<V>* dst_val,   // destination values
     int k = 1,                 // the size of a value entry = k * sizeof(V)
-    AssignOpType op = AssignOpType::ASSIGN, // assignment operator
+    AsOp op = AsOp::ASSIGN, // assignment operator
     int num_threads = 2) {
   if (CHECK_NOTNULL(dst_val)->empty()) {
     dst_val->resize(dst_key.size()*k);
@@ -111,7 +111,7 @@ void ParallelUnion(
     SArray<K>* joined_key,  // = key1 U key2
     SArray<V>* joined_val,  // = val1 U val2
     int k = 1,              // the size of a value entry = k * sizeof(V)
-    AssignOpType op = AssignOpType::PLUS,  // assignment operator
+    AsOp op = AsOp::PLUS,  // assignment operator
     int num_threads = 2) {
 
   // join keys

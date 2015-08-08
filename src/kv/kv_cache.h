@@ -97,7 +97,7 @@ class KVCache : public Customer {
         CHECK_EQ(msg->value.size(), (size_t)2);
         SArray<int> recv_size(msg->value[1]);
         size_t n = ParallelOrderedMatch(
-            recv_key, recv_size, kv.key, kv.val_size, 1, AssignOpType::ASSIGN);
+            recv_key, recv_size, kv.key, kv.val_size, 1, AsOp::ASSIGN);
         CHECK_EQ(n, recv_size.size());
         kv.matched_num += n;
         kv.recv.push_back(std::make_pair(recv_key[0], SArray<V>(msg->value[0])));
@@ -127,7 +127,7 @@ class KVCache : public Customer {
       SArray<V> recv_data(msg->value[0]);
       int k = recv_data.size() / recv_key.size();
       size_t n = ParallelOrderedMatch(
-          recv_key, recv_data, kv.key, kv.val, k, AssignOpType::ASSIGN);
+          recv_key, recv_data, kv.key, kv.val, k, AsOp::ASSIGN);
       CHECK_EQ(n, recv_data.size());
     }
 

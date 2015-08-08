@@ -7,17 +7,17 @@ namespace ps {
 
 // Returns right op= left. bascial version, works for both floast and intergers
 template<typename T>
-T& AssignOp(T& right, const T& left, const AssignOpType& op) {
+T& AssignOp(T& right, const T& left, const AsOp& op) {
   switch (op) {
-    case AssignOpType::ASSIGN:
+    case AsOp::ASSIGN:
       right = left; break;
-    case AssignOpType::PLUS:
+    case AsOp::PLUS:
       right += left; break;
-    case AssignOpType::MINUS:
+    case AsOp::MINUS:
       right -= left; break;
-    case AssignOpType::TIMES:
+    case AsOp::TIMES:
       right *= left; break;
-    case AssignOpType::DIVIDE:
+    case AsOp::DIVIDE:
       right /= left; break;
     default:
       LOG(FATAL) << "use AssignOpI.." ;
@@ -27,23 +27,23 @@ T& AssignOp(T& right, const T& left, const AssignOpType& op) {
 
 // Returns right op= left. for integers
 template<typename T>
-T& AssignOpI(T& right, const T& left, const AssignOpType& op) {
+T& AssignOpI(T& right, const T& left, const AsOp& op) {
   switch (op) {
-    case AssignOpType::ASSIGN:
+    case AsOp::ASSIGN:
       right = left; break;
-    case AssignOpType::PLUS:
+    case AsOp::PLUS:
       right += left; break;
-    case AssignOpType::MINUS:
+    case AsOp::MINUS:
       right -= left; break;
-    case AssignOpType::TIMES:
+    case AsOp::TIMES:
       right *= left; break;
-    case AssignOpType::DIVIDE:
+    case AsOp::DIVIDE:
       right /= left; break;
-    case AssignOpType::AND:
+    case AsOp::AND:
       right &= left; break;
-    case AssignOpType::OR:
+    case AsOp::OR:
       right |= left; break;
-    case AssignOpType::XOR:
+    case AsOp::XOR:
       right ^= left; break;
   }
   return right;
