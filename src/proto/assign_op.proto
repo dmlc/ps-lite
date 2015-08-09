@@ -2,6 +2,7 @@ package ps;
 
 // assignment operators: http://en.cppreference.com/w/cpp/language/operator_assignment
 enum AsOp {
+  NONE   = 10;
   ASSIGN = 0;  // a = b
   PLUS   = 1;  // a += b
   MINUS  = 2;  // a -= b

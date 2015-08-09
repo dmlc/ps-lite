@@ -123,7 +123,8 @@ class Customer {
                      std::vector<Message*>* msgs) {}
 
   /**
-   * @brief A user-defined function, which processes a request message received from "request->sender"
+   * @brief A user-defined function, which processes a request message received
+   * from "request->sender"
    *
    * It which will be called by the executor's processing thread once the time
    * dependencies specified in "request->task" have been satisfied.
@@ -142,7 +143,8 @@ class Customer {
   ///////// As a receiver /////////
 
   /**
-   * @brief A user-defined function, which processes a response message received from "response->sender"
+   * @brief A user-defined function, which processes a response message received
+   * from "response->sender"
    *
    * It be called by the executor's processing thread.
    *
@@ -272,8 +274,6 @@ class App : public Customer {
   /// created.
   virtual bool Run() {
     return true;
-    // in default, just wait all nodes are ready.
-    // return sys_.manager().WaitServersReady() && sys_.manager().WaitWorkersReady();
   }
 };
 

@@ -6,21 +6,23 @@
 #include "ps.h"
 namespace ps {
 
-inline Filter* SyncOpts::AddFilter(Filter::Type type) {
+Filter* SyncOpts::AddFilter(Filter::Type type) {
   filters.push_back(Filter());
   filters.back().set_type(type);
   return &(filters.back());
 }
 
-template<typename Val>
-Task KVWorker<Val>::GetTask(const SyncOpts& opts) {
+
+Task SyncOpts::GetTask() const {
   Task req;
   req.set_request(true);
-  for (int l : opts.deps) req.add_wait_time(l);
-  for (const auto& f : opts.filters) req.add_filter()->CopyFrom(f);
-  if (opts.cmd != 0) req.set_cmd(opts.cmd);
+  for (int l : deps) req.add_wait_time(l);
+  for (const auto& f : filters) req.add_filter()->CopyFrom(f);
+  if (cmd != 0) req.set_cmd(cmd);
   return req;
 }
+
+/// DEPRECATED
 
 inline int NextCustomerID() {
   return Postoffice::instance().manager().NextCustomerID();

@@ -166,7 +166,7 @@ class OnlineServer {
   OnlineServer(const Handle& handle = Handle(),
                int pull_val_len = 1,
                int num_threads = 1,
-               int id = 0) {
+               int id = NextID()) {
     if (num_threads == 1) {
       server_ = new KVStoreSparseST<Key, Val, SyncV, Handle>(
           id, handle, pull_val_len);

@@ -16,7 +16,6 @@ namespace ps {
 
 /// \brief  Advanced synchronization options for a worker request (push or pull)
 struct SyncOpts {
-
   /**
    * \brief Depended timestamps.
    *
@@ -68,13 +67,18 @@ struct SyncOpts {
    * \sa ps::IOnlineHandle::Start
    */
   int cmd = 0;
+
+  /**
+   * \brief Returns the according system Task
+   */
+  Task GetTask() const;
 };
 
 /**
- * \brief Provides Push and Pull for worker nodes
+ * \brief Communicate server nodes with key-value pairs
  *
  * This class provides \ref Push and \ref Pull with several variants for worker
- * nodes.
+ * nodes. See the \ref OnlineServer of server APIs
  *
  * \tparam Val the type of value, which should be primitive types such as
  * int32_t and float
@@ -93,7 +97,7 @@ class KVWorker {
    *
    * \param id the unique identity, negative IDs are preserved by system.
    */
-  explicit KVWorker(int id = 0) {
+  explicit KVWorker(int id = NextID()) {
     cache_ = CHECK_NOTNULL((new KVCache<Key, Val>(id)));
   }
 
@@ -274,7 +278,7 @@ class KVWorker {
   int ZPush(const std::shared_ptr<std::vector<Key> >& keys,
             const std::shared_ptr<std::vector<Val> >& vals,
             const SyncOpts& opts = SyncOpts()) {
-    return cache_->Push(GetTask(opts), SArray<Key>(keys),
+    return cache_->Push(opts.GetTask(), SArray<Key>(keys),
                         SArray<Val>(vals), SArray<int>(), opts.callback);
   }
   /**
@@ -304,7 +308,7 @@ class KVWorker {
   int ZPull(const std::shared_ptr<std::vector<Key> >& keys,
             std::vector<Val>* vals,
             const SyncOpts& opts = SyncOpts()) {
-    return cache_->Pull(GetTask(opts), SArray<Key>(keys),
+    return cache_->Pull(opts.GetTask(), SArray<Key>(keys),
                         CHECK_NOTNULL(vals), NULL, opts.callback);
   }
 
@@ -314,7 +318,7 @@ class KVWorker {
              const std::shared_ptr<std::vector<Val> >& vals,
              const std::shared_ptr<std::vector<int> >& vals_size,
              const SyncOpts& opts = SyncOpts()) {
-    return cache_->Push(GetTask(opts), SArray<Key>(keys), SArray<Val>(vals),
+    return cache_->Push(opts.GetTask(), SArray<Key>(keys), SArray<Val>(vals),
                         SArray<int>(vals_size), opts.callback);
   }
 
@@ -323,14 +327,14 @@ class KVWorker {
              std::vector<Val>* vals,
              std::vector<int>* vals_size,
              const SyncOpts& opts = SyncOpts()) {
-    return cache_->Pull(GetTask(opts), SArray<Key>(keys), CHECK_NOTNULL(vals),
+    return cache_->Pull(opts.GetTask(), SArray<Key>(keys), CHECK_NOTNULL(vals),
                         CHECK_NOTNULL(vals_size), opts.callback);
   }
 
  private:
-  Task GetTask(const SyncOpts& opts);
   KVCache<Key, Val>* cache_;
 };
+
 
 }  // namespace ps
 
