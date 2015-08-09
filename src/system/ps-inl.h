@@ -3,17 +3,16 @@
  * @brief  Implementation of ps.h
  */
 #pragma once
-#include "ps.h"
 namespace ps {
 
-Filter* SyncOpts::AddFilter(Filter::Type type) {
+inline Filter* SyncOpts::AddFilter(Filter::Type type) {
   filters.push_back(Filter());
   filters.back().set_type(type);
   return &(filters.back());
 }
 
 
-Task SyncOpts::GetTask() const {
+inline Task SyncOpts::GetTask() const {
   Task req;
   req.set_request(true);
   for (int l : deps) req.add_wait_time(l);
