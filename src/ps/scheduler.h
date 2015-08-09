@@ -39,7 +39,7 @@ class Slave : public Customer {
     msg.task.set_op(reduce);
     msg.task.set_cmd(kPush);
     msg.add_value(SArray<Val>(vals));
-    return Submit(msg);
+    return Submit(&msg);
   }
 
   /**
@@ -108,18 +108,18 @@ class Root : public Customer {
     Lock l(mu_);
     const Task& task = request->task;
     int cmd = request->task.cmd();
-    if (cmd == Slave::kPush) {
+    if (cmd == Slave<Val>::kPush) {
       CHECK_EQ(request->value.size(), 1);
-      SArray<Val> recv(request.value[0]);
+      SArray<Val> recv(request->value[0]);
       if (recv_.size() == 0) recv_.resize(recv.size());
-      CHECK_EQ(recv.size(), revc_.size());
+      CHECK_EQ(recv.size(), recv_.size());
       CHECK(task.has_op());
       for (size_t i = 0; i < recv.size(); ++i) {
         AssignOp(recv_[i], recv[i], task.op());
       }
-    } else if (cmd == Slave::kPull) {
+    } else if (cmd == Slave<Val>::kPull) {
       Message* response = new Message();
-      response.add_value(SArray<Val>(revc_));
+      response->add_value(SArray<Val>(recv_));
       Reply(request, response);
     }
   }

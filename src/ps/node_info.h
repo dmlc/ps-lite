@@ -39,6 +39,11 @@ class NodeInfo {
   /// \brief Returns the key range this node maintains
   static inline Range<Key> KeyRange() { return Range<Key>(MyNode().key()); }
 
+  /// \brief Returns my node id
+  static inline std::string MyID() {
+    return MyNode().id();
+  }
+
   /// \brief Returns my node info
   static inline Node MyNode() {
     return Postoffice::instance().manager().van().my_node();
