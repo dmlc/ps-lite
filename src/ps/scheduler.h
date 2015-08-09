@@ -38,7 +38,7 @@ class Slave : public Customer {
     Message msg(opts.GetTask(), root_);
     msg.task.set_op(reduce);
     msg.task.set_cmd(kPush);
-    msg.add_value(SArray<Val>(vals));
+    msg.task.set_msg(vals.data(), vals.size()*sizeof(Val));
     return Submit(&msg);
   }
 
@@ -69,10 +69,10 @@ class Slave : public Customer {
       int t = task.time();
       auto it = recv_buf_.find(t);
       CHECK(it != recv_buf_.end()) << "no message sent at time " << t;
-      CHECK_EQ(response->value.size(), 1);
-      SArray<Val> recv(response->value[0]);
-      it->second->resize(recv.size());
-      memcpy(it->second->data(), recv.data(), recv.size()*sizeof(Val));
+
+      int n = task.msg().size() / sizeof(Val);
+      it->second->resize(n);
+      memcpy(it->second->data(), task.msg().data(), task.msg().size());
       recv_buf_.erase(it);
     }
   }
@@ -109,8 +109,10 @@ class Root : public Customer {
     const Task& task = request->task;
     int cmd = request->task.cmd();
     if (cmd == Slave<Val>::kPush) {
-      CHECK_EQ(request->value.size(), 1);
-      SArray<Val> recv(request->value[0]);
+      int n = task.msg().size() / sizeof(Val);
+      if (n == 0) return;
+      std::vector<Val> recv(n);
+      memcpy(recv.data(), task.msg().data(), task.msg().size());
       if (recv_.size() == 0) recv_.resize(recv.size());
       CHECK_EQ(recv.size(), recv_.size());
       CHECK(task.has_op());
@@ -118,9 +120,8 @@ class Root : public Customer {
         AssignOp(recv_[i], recv[i], task.op());
       }
     } else if (cmd == Slave<Val>::kPull) {
-      Message* response = new Message();
-      response->add_value(SArray<Val>(recv_));
-      Reply(request, response);
+      Task reply; reply.set_msg(recv_.data(), recv_.size()*sizeof(Val));
+      Reply(request, reply);
     }
   }
  private:
