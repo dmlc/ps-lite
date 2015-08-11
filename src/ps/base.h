@@ -73,9 +73,11 @@ inline std::string DebugStr(const V* data, int n, int m = 5) {
             __FILE__+n+1, __LINE__, ##args);                            \
 } while (0)
 
+#ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&);               \
   void operator=(const TypeName&)
+#endif
 
 #define SINGLETON(Typename)                     \
   static Typename& instance() {                 \
