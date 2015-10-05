@@ -23,7 +23,7 @@ endif
 
 WARN = -Wall -finline-functions
 INCPATH = -I./src -I$(DEPS_PATH)/include $(EXTRA_INCLUDES)
-CFLAGS = -std=c++11 -msse2 $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
+CFLAGS = -std=c++11 -msse2 -fPIC $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
 
 PS_LIB = build/libps.a
 PS_MAIN = build/libps_main.a
