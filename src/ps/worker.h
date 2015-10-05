@@ -308,8 +308,8 @@ class KVWorker {
   int ZPull(const std::shared_ptr<std::vector<Key> >& keys,
             std::vector<Val>* vals,
             const SyncOpts& opts = SyncOpts()) {
-    return cache_->Pull(opts.GetTask(), SArray<Key>(keys),
-                        CHECK_NOTNULL(vals), NULL, opts.callback);
+    return cache_->Pull(opts.GetTask(), SArray<Key>(keys), opts.callback,
+                        CHECK_NOTNULL(vals), NULL);
   }
 
 
@@ -327,8 +327,8 @@ class KVWorker {
              std::vector<Val>* vals,
              std::vector<int>* vals_size,
              const SyncOpts& opts = SyncOpts()) {
-    return cache_->Pull(opts.GetTask(), SArray<Key>(keys), CHECK_NOTNULL(vals),
-                        CHECK_NOTNULL(vals_size), opts.callback);
+    return cache_->Pull(opts.GetTask(), SArray<Key>(keys), opts.callback,
+                        CHECK_NOTNULL(vals), CHECK_NOTNULL(vals_size));
   }
 
  private:

@@ -63,6 +63,7 @@ size_t ParallelOrderedMatch(
     int k = 1,                 // the size of a value entry = k * sizeof(V)
     AsOp op = AsOp::ASSIGN, // assignment operator
     int num_threads = 2) {
+  if (dst_key.empty()) return 0;
   // do check
   CHECK_GT(num_threads, 0);
   CHECK_EQ(src_key.size() * k, src_val.size());
