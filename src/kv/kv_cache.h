@@ -77,12 +77,11 @@ class KVCache : public Customer {
     mu_.unlock();
 
     if (msg->task.param().dyn_val_size()) {
-      kv.recv_num ++;
       SArray<K> recv_key(msg->key);
       if (recv_key.size()) {
         CHECK_EQ(msg->value.size(), (size_t)2);
         SArray<int> recv_size(msg->value[1]);
-        SArray<int> val_size(kv.val_size, kv.key.size(), EmptyDel<int>());
+        SArray<int> val_size(CHECK_NOTNULL(kv.val_size), kv.key.size(), EmptyDel<int>());
         size_t n = ParallelOrderedMatch(
             recv_key, recv_size, kv.key, &val_size, 1, AsOp::ASSIGN);
         CHECK_EQ(n, recv_size.size());
@@ -90,6 +89,7 @@ class KVCache : public Customer {
         kv.recv.push_back(std::make_pair(recv_key[0], SArray<V>(msg->value[0])));
       }
 
+      kv.recv_num ++;
       if (kv.recv_num != sys_.manager().num_servers()) return;
 
       // CHECK_EQ(kv.matched_num, kv.key.size());
@@ -147,7 +147,7 @@ class KVCache : public Customer {
     auto& kv = pull_data_[chl];
     mu_.unlock();
     kv.key = keys;
-    kv.val = CHECK_NOTNULL(vals);
+    kv.val = vals;
     kv.len_val = len_vals;
     kv.val_vec = vals_vec;
     bool dyn_val = false;
@@ -200,8 +200,8 @@ class KVCache : public Customer {
     //   [val_00, ..., val_0k, ..., val_n0, ..., val_nk]
     // dynamic value size:
     //   [val_00, ...val_0,val_size[0], ..., val_n0, ..., val_n,val_size[n]
-    V* val;
-    size_t len_val;  // length of val
+    V* val = NULL ;
+    size_t len_val = 0;  // length of val
     std::vector<V>* val_vec = NULL;  // allocator fo val
 
     int* val_size = NULL;
