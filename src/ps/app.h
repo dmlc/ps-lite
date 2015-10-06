@@ -257,7 +257,7 @@ class Customer {
 /// The base class of an application.
 class App : public Customer {
  public:
-  App() : Customer(Postoffice::instance().manager().NextCustomerID()) { }
+  App(int id = Postoffice::instance().manager().NextCustomerID()) : Customer(id) { }
   virtual ~App() { }
 
   /**

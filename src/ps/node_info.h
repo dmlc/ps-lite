@@ -53,6 +53,11 @@ class NodeInfo {
   static inline std::string SchedulerID() {
     return Postoffice::instance().manager().van().scheduler().id();
   }
+
+  /// \brief The app this node runs
+  static inline App* MyApp() {
+    return Postoffice::instance().manager().app();
+  }
 };
 
 }  // namespace ps

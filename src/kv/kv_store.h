@@ -12,6 +12,7 @@ class KVStore : public Customer {
   // load and save
   virtual void Load(dmlc::Stream *fi) = 0;
   virtual void Save(dmlc::Stream *fo) const = 0;
+  virtual void Clear() = 0;
 
   // handle system call
   void ProcessRequest(Message* request) {

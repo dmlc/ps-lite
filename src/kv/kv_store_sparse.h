@@ -20,6 +20,10 @@ class KVStoreSparse : public KVStore {
 
   virtual ~KVStoreSparse() { }
 
+  void Clear() override {
+    data_.clear();
+  }
+
   // process a pull message
   void HandlePull(Message* msg) {
     int ts = msg->task.time();
