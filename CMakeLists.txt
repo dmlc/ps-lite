@@ -5,6 +5,7 @@ project(pslite C CXX)
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
 include(ExternalProject) 
+set(pslite_LINKER_LIBS "")
 
 # ---[ Google-gflags
 include("cmake/External/gflags.cmake")
