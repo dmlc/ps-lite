@@ -2,10 +2,20 @@
 #pragma once
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _MSC_VER
+#include "../windows/unistd.h"
+#else
 #include <unistd.h>
+#endif
 #include <time.h>
+#ifdef _MSC_VER
+#include <sys/timeb.h>
+#include <sys/types.h>
+#else
 #include <sys/time.h>
 #include <libgen.h>
+#endif
+
 
 // concurrency
 #include <future>

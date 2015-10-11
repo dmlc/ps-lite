@@ -35,7 +35,7 @@ static double milliToc(system_clock::time_point start) {
     system_clock::now() - start).count();
   return static_cast<double>(ct);
 }
-
+#ifndef _MSC_VER
 inline struct timespec hwtic() {
   struct timespec tv;
 #ifdef __MACH__
@@ -57,7 +57,7 @@ inline double hwtoc(struct timespec tv) {
   return  (double) ((curr.tv_sec - tv.tv_sec) +
                         (curr.tv_nsec -tv.tv_nsec)*1e-9);
 }
-
+#endif
 class ScopedTimer {
  public:
   explicit ScopedTimer(double* aggregate_time) :

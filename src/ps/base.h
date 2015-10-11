@@ -59,9 +59,22 @@ inline std::string DebugStr(const V* data, int n, int m = 5) {
   }
   return ss.str();
 }
-
+#ifdef _MSC_VER
 /*! \brief printf-style logging */
-#define NOTICE(_fmt_, args...) do {                                     \
+#define NOTICE(_fmt_,...) do {                                          \
+    struct timeval tv; gettimeofday(&tv, NULL);                         \
+    time_t ts = (time_t)(tv.tv_sec);                                    \
+    struct ::tm tm_time; localtime_r(&ts, &tm_time);                    \
+    int n = strlen(__FILE__) - 1;                                       \
+    for (; n > -1; --n) { if (n==-1 || __FILE__[n] == '/') break; }     \
+    fprintf(stdout, "[%02d%02d %02d:%02d:%02d.%03d %s:%d] " _fmt_ "\n", \
+            1+tm_time.tm_mon, tm_time.tm_mday, tm_time.tm_hour,         \
+            tm_time.tm_min, tm_time.tm_sec, (int)tv.tv_usec/1000,       \
+            __FILE__+n+1, __LINE__, __VA_ARGS__);                       \
+} while (0)
+#else
+/*! \brief printf-style logging */
+#define NOTICE(_fmt_, args...) do {                                    \
     struct timeval tv; gettimeofday(&tv, NULL);                         \
     time_t ts = (time_t)(tv.tv_sec);                                    \
     struct ::tm tm_time; localtime_r(&ts, &tm_time);                    \
@@ -72,6 +85,8 @@ inline std::string DebugStr(const V* data, int n, int m = 5) {
             tm_time.tm_min, tm_time.tm_sec, (int)tv.tv_usec/1000,       \
             __FILE__+n+1, __LINE__, ##args);                            \
 } while (0)
+#endif
+
 
 #ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
