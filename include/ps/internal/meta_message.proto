@@ -1,0 +1,37 @@
+package ps;
+import "ps/internal/node.proto";
+
+// mete information about a message
+message MetaMessage {
+  // message.head
+  optional int32 head = 1;
+  // message.body
+  optional bytes body = 2;
+  // if set, then it is system control task. otherwise, it is for app
+  optional Control control = 3;
+  // true: a request task
+  // false: the response task to the request task with the same *time*
+  optional bool request = 4 [default = false];
+  // the unique id of an customer
+  optional int32 customer_id = 5;
+  // the timestamp of this message
+  optional int32 timestamp = 6;
+  // data type of message.data[i]
+  repeated int32 data_type = 8 [packed=true];
+  // whether or not a push message
+  optional bool push = 9;
+  // whether or not it's for SimpleApp
+  optional bool simple_app = 10 [default = false];
+}
+
+// system control info
+message Control {
+  enum Command {
+    TERMINATE = 1;
+    ADD_NODE = 2;
+    BARRIER = 3;
+  }
+  required Command cmd = 1;
+  repeated Node node = 2;
+  optional int32 barrier_group = 3;
+}
