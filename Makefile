@@ -1,16 +1,15 @@
-ifndef config
-ifneq ("$(wildcard ./config.mk)","")
-config = ./config.mk
-else
-config = make/config.mk
-endif
+ifdef config
+include $(config)
 endif
 
-include $(config)
 include make/ps.mk
 
+ifndef CXX
+CXX = g++
+endif
+
 ifndef OPT
-OPT  = -O3 -ggdb
+OPT  =
 endif
 
 ifndef DEPS_PATH
@@ -21,48 +20,56 @@ ifndef PROTOC
 PROTOC = ${DEPS_PATH}/bin/protoc
 endif
 
-WARN = -Wall -finline-functions
-INCPATH = -I./src -I$(DEPS_PATH)/include $(EXTRA_INCLUDES)
-CFLAGS = -std=c++11 -msse2 -fPIC $(WARN) $(OPT) $(INCPATH) $(PS_CFLAGS) $(EXTRA_CFLAGS)
+INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
+CFLAGS = -std=c++11 -msse2 -fPIC -O0 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 
 PS_LIB = build/libps.a
-PS_MAIN = build/libps_main.a
+# PS_MAIN = build/libps_main.a
 
-all: deps ps guide
+
+all: deps ps test #guide
 
 clean:
-	rm -rf build
-	find src -name "*.pb.[ch]*" -delete
-
-
+	rm -rf build $(TEST) tests/*.d
+	find include -name "*.pb.cc" -delete
 
 ps: $(PS_LIB) $(PS_MAIN)
 
 ps_srcs	= $(wildcard src/*.cc src/*/*.cc)
-ps_protos	= $(wildcard src/proto/*.proto)
-ps_objs	= $(patsubst src/%.proto, build/%.pb.o, $(ps_protos)) \
+ps_protos	= $(wildcard include/ps/internal/*.proto)
+ps_objs	= $(patsubst include/ps/internal/%.proto, build/%.pb.o, $(ps_protos)) \
 			  $(patsubst src/%.cc, build/%.o, $(ps_srcs))
 
 build/libps.a: $(patsubst %.proto, %.pb.h, $(ps_protos)) $(ps_objs)
 	ar crv $@ $(filter %.o, $?)
 
-build/libps_main.a: build/ps_main.o
-	ar crv $@ $?
+# build/libps_main.a: build/ps_main.o
+# 	ar crv $@ $?
 
 build/%.o: src/%.cc
 	@mkdir -p $(@D)
 	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
 	$(CXX) $(CFLAGS) -c $< -o $@
 
-%.pb.cc %.pb.h : %.proto
-	$(PROTOC) --cpp_out=./src --proto_path=./src $<
+build/%.o: include/ps/internal/%.cc
+	@mkdir -p build
+	$(CXX) $(CFLAGS) -c $< -o $@
 
+%.pb.cc %.pb.h : %.proto
+	$(PROTOC) --cpp_out=./include --proto_path=./include $<
+
+-include build/*.d
 -include build/*/*.d
--include build/*/*/*.d
--include test/ps_test.mk
--include guide/ps_guide.mk
+# -include guide/ps_guide.mk
 
 # deps
 include make/deps.mk
 
-deps: gflags glog protobuf zmq lz4 cityhash
+deps: glog protobuf zmq
+
+# test
+
+-include tests/test.mk
+
+test: $(TEST)
+	echo $(TEST)
