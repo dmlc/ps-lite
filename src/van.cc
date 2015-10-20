@@ -1,4 +1,5 @@
 #include "ps/internal/van.h"
+#include <unistd.h>
 #include <zmq.h>
 #include <net/if.h>
 #include <arpa/inet.h>

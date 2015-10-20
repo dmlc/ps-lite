@@ -55,7 +55,7 @@ build/%.o: include/ps/internal/%.cc
 	@mkdir -p build
 	$(CXX) $(CFLAGS) -c $< -o $@
 
-%.pb.cc %.pb.h : %.proto
+%.pb.cc %.pb.h : %.proto protobuf
 	$(PROTOC) --cpp_out=./include --proto_path=./include $<
 
 -include build/*.d
@@ -65,7 +65,7 @@ build/%.o: include/ps/internal/%.cc
 # deps
 include make/deps.mk
 
-deps: glog protobuf zmq
+deps: protobuf zmq
 
 # test
 

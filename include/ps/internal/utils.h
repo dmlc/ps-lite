@@ -1,5 +1,5 @@
 #pragma once
-#include "glog/logging.h"
+#include "dmlc/logging.h"
 
 namespace ps {
 

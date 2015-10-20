@@ -1,4 +1,5 @@
 #include "ps/internal/postoffice.h"
+#include <unistd.h>
 #include "ps/internal/message.h"
 #include "ps/base.h"
 
@@ -15,9 +16,9 @@ Postoffice::Postoffice() : van_(new Van()) {
 void Postoffice::Start(const char* argv0) {
   // init glog
   if (argv0) {
-    google::InitGoogleLogging(argv0);
+    dmlc::InitLogging(argv0);
   } else {
-    google::InitGoogleLogging("ps-lite\0");
+    dmlc::InitLogging("ps-lite\0");
   }
 
   // init node info.
