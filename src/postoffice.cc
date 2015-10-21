@@ -5,9 +5,13 @@
 
 namespace ps {
 Postoffice::Postoffice() : van_(new Van()) {
-  num_workers_ = atoi(CHECK_NOTNULL(getenv("DMLC_NUM_WORKER")));
-  num_servers_ = atoi(CHECK_NOTNULL(getenv("DMLC_NUM_SERVER")));
-  std::string role(CHECK_NOTNULL(getenv("DMLC_ROLE")));
+  const char* val = NULL;
+  val = CHECK_NOTNULL(getenv("DMLC_NUM_WORKER"));
+  num_workers_ = atoi(val);
+  val =  CHECK_NOTNULL(getenv("DMLC_NUM_SERVER"));
+  num_servers_ = atoi(val);
+  val = CHECK_NOTNULL(getenv("DMLC_ROLE"));
+  std::string role(val);
   is_worker_ = role == "worker";
   is_server_ = role == "server";
   is_scheduler_ = role == "scheduler";

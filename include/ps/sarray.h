@@ -1,4 +1,5 @@
 #pragma once
+#include <string.h>
 #include <memory>
 #include <sstream>
 #include "ps/internal/utils.h"
