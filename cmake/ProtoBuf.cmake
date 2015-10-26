@@ -61,18 +61,19 @@ function(pslite_protobuf_generate_cpp_py output_dir srcs_var hdrs_var python_var
     get_filename_component(abs_fil ${fil} ABSOLUTE)
     get_filename_component(fil_we ${fil} NAME_WE)
 	string(REPLACE ${work_path}/ "" o_fil ${abs_fil})
+	string(REPLACE "${fil_we}.proto" "" o_fil_path ${o_fil})
 
-    list(APPEND ${srcs_var} "${output_dir}/proto/${fil_we}.pb.cc")
-    list(APPEND ${hdrs_var} "${output_dir}/proto/${fil_we}.pb.h")
-    list(APPEND ${python_var} "${output_dir}/proto/${fil_we}_pb2.py")
+    list(APPEND ${srcs_var} "${o_fil_path}/${fil_we}.pb.cc")
+    list(APPEND ${hdrs_var} "${o_fil_path}/${fil_we}.pb.h")
+    list(APPEND ${python_var} "${o_fil_path}/${fil_we}_pb2.py")
 
     add_custom_command(
-      OUTPUT "${output_dir}/proto/${fil_we}.pb.cc"
-             "${output_dir}/proto/${fil_we}.pb.h"
-             "${output_dir}/proto/${fil_we}_pb2.py"
+      OUTPUT "${o_fil_path}/${fil_we}.pb.cc"
+             "${o_fil_path}/${fil_we}.pb.h"
+             "${o_fil_path}/${fil_we}_pb2.py"
       COMMAND ${CMAKE_COMMAND} -E make_directory "${output_dir}"
-      COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --cpp_out    ${output_dir} ${_protoc_include} ${o_fil} --proto_path src
-      COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --python_out ${output_dir} ${_protoc_include} ${o_fil} --proto_path src
+      COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --cpp_out    ${output_dir} ${_protoc_include} ${o_fil} --proto_path ${proto_path}
+      COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} --python_out ${output_dir} ${_protoc_include} ${o_fil} --proto_path ${proto_path}
       DEPENDS ${abs_fil}
 	  WORKING_DIRECTORY ${work_path}
       COMMENT "Running C++/Python protocol buffer compiler on ${o_fil}" VERBATIM )
