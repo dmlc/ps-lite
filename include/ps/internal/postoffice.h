@@ -117,7 +117,10 @@ class Postoffice {
    * \param id the node id
    */
   static inline int IDtoRank(int id) {
-    return std::max((id - 8) / 2, 0);
+#ifdef _MSC_VER
+#undef max
+#endif
+	  return std::max((id - 8) / 2, 0);
   }
 
   /** \brief Returns the number of worker nodes */

@@ -86,10 +86,16 @@ Customer* Postoffice::GetCustomer(int id, int timeout) const {
       const auto it = customers_.find(id);
       if (it != customers_.end()) {
         obj = it->second;
-        break;
-      }
-    }
-    usleep(1000);
+		break;
+	  }
+	  }
+#ifdef _MSC_VER
+	_sleep(1);
+#else
+	usleep(1000);
+#endif
+
+
   }
   return obj;
 }
