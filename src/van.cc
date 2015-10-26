@@ -1,10 +1,18 @@
 #include "ps/internal/van.h"
 #include <unistd.h>
 #include <zmq.h>
+#ifdef _MSC_VER
+#include <tchar.h>
+#include "windows.h"
+# include <winsock.h>
+# include <iphlpapi.h>
+#undef interface
+#else
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <netinet/in.h>
+#endif
 #include "ps/base.h"
 #include "ps/sarray.h"
 #include "ps/internal/postoffice.h"
@@ -17,6 +25,74 @@ namespace ps {
  * \brief return the IP address for given interface eth0, eth1, ...
  */
 void GetIP(const std::string& interface, std::string* ip) {
+#ifdef _MSC_VER
+	typedef std::basic_string<TCHAR> tstring;
+	// Try to get the Adapters-info table, so we can given useful names to the IP
+	// addresses we are returning.  Gotta call GetAdaptersInfo() up to 5 times to handle
+	// the potential race condition between the size-query call and the get-data call.
+	// I love a well-designed API :^P
+	IP_ADAPTER_INFO * pAdapterInfo = NULL;
+	{
+		ULONG bufLen = 0;
+		for (int i = 0; i < 5; i++)
+		{
+			DWORD apRet = GetAdaptersInfo(pAdapterInfo, &bufLen);
+			if (apRet == ERROR_BUFFER_OVERFLOW)
+			{
+				free(pAdapterInfo);  // in case we had previously allocated it
+				pAdapterInfo = (IP_ADAPTER_INFO *)malloc(bufLen);
+			}
+			else if (apRet == ERROR_SUCCESS) break;
+			else
+			{
+				free(pAdapterInfo);
+				pAdapterInfo = NULL;
+				break;
+}
+}
+	}
+	if (pAdapterInfo)
+	{
+		tstring keybase = _T("SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
+		tstring connection = _T("\\Connection");
+
+		IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
+		while (curpAdapterInfo->Next)
+		{
+
+			HKEY hKEY;
+			std::string AdapterName = curpAdapterInfo->AdapterName;
+			//GUID only ascii
+			tstring key_set = keybase + tstring(AdapterName.begin(), AdapterName.end()) + connection;
+			LPCTSTR data_Set = key_set.c_str();
+			LPCTSTR dwValue = NULL;
+			if (ERROR_SUCCESS == ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, data_Set, 0, KEY_READ, &hKEY))
+			{
+				DWORD dwSize = 0;
+				DWORD dwType = REG_SZ;
+				if (::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize) == ERROR_SUCCESS)
+				{
+					dwValue = new TCHAR[dwSize];
+					if (::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize) == ERROR_SUCCESS)
+					{
+						//interface name must only ascii
+						tstring tstr = dwValue;
+						std::string s(tstr.begin(), tstr.end());
+						if (s == interface) {
+
+							*ip = std::string(curpAdapterInfo->IpAddressList.IpAddress.String, (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
+							break;
+
+						}
+					}
+				}
+				::RegCloseKey(hKEY);
+			}
+			curpAdapterInfo = curpAdapterInfo->Next;
+		}
+		free(pAdapterInfo);
+	}
+#else
   struct ifaddrs * ifAddrStruct = NULL;
   struct ifaddrs * ifa = NULL;
   void * tmpAddrPtr = NULL;
@@ -38,7 +114,9 @@ void GetIP(const std::string& interface, std::string* ip) {
     }
   }
   if (ifAddrStruct != NULL) freeifaddrs(ifAddrStruct);
+#endif
 }
+
 
 /**
  * \brief return the IP address and Interface the first interface which is not
@@ -48,6 +126,79 @@ void GetIP(const std::string& interface, std::string* ip) {
  */
 void GetAvailableInterfaceAndIP(
     std::string* interface, std::string* ip) {
+#ifdef _MSC_VER
+	typedef std::basic_string<TCHAR> tstring;
+	IP_ADAPTER_INFO * pAdapterInfo = NULL;
+	{
+		ULONG bufLen = 0;
+		for (int i = 0; i < 5; i++)
+		{
+			DWORD apRet = GetAdaptersInfo(pAdapterInfo, &bufLen);
+			if (apRet == ERROR_BUFFER_OVERFLOW)
+			{
+				free(pAdapterInfo);  // in case we had previously allocated it
+				pAdapterInfo = (IP_ADAPTER_INFO *)malloc(bufLen);
+			}
+			else if (apRet == ERROR_SUCCESS) break;
+			else
+			{
+				free(pAdapterInfo);
+				pAdapterInfo = NULL;
+				break;
+			}
+		}
+	}
+	if (pAdapterInfo)
+	{
+		tstring keybase = _T("SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
+		tstring connection = _T("\\Connection");
+
+		IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
+		HKEY hKEY = NULL;
+		while (curpAdapterInfo->Next)
+		{
+			std::string curip = std::string(curpAdapterInfo->IpAddressList.IpAddress.String, (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
+			if (curip == "127.0.0.1")
+			{
+				continue;
+			}
+
+
+			std::string AdapterName = curpAdapterInfo->AdapterName;
+			//GUID only ascii
+			tstring key_set = keybase + tstring(AdapterName.begin(), AdapterName.end()) + connection;
+			LPCTSTR data_Set = key_set.c_str();
+			LPCTSTR dwValue = NULL;
+			if (ERROR_SUCCESS == ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, data_Set, 0, KEY_READ, &hKEY))
+			{
+				DWORD dwSize = 0;
+				DWORD dwType = REG_SZ;
+				if (::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize) == ERROR_SUCCESS)
+				{
+					dwValue = new TCHAR[dwSize];
+					if (::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize) == ERROR_SUCCESS)
+					{
+						//interface name must only ascii
+						tstring tstr = dwValue;
+						std::string s(tstr.begin(), tstr.end());
+
+						*interface = s;
+						*ip = std::string(curpAdapterInfo->IpAddressList.IpAddress.String, (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
+						break;
+					}
+				}
+				::RegCloseKey(hKEY);
+				hKEY = NULL;
+			}
+			curpAdapterInfo = curpAdapterInfo->Next;
+		}
+		if (hKEY != NULL)
+		{
+			::RegCloseKey(hKEY);
+		}
+		free(pAdapterInfo);
+	}
+#else
   struct ifaddrs * ifAddrStruct = nullptr;
   struct ifaddrs * ifa = nullptr;
 
@@ -72,7 +223,10 @@ void GetAvailableInterfaceAndIP(
   }
   if (nullptr != ifAddrStruct) freeifaddrs(ifAddrStruct);
   return;
+#endif
 }
+
+
 
 /**
  * \brief return an available port on local machine
@@ -91,8 +245,12 @@ unsigned short GetAvailablePort() {
     perror("bind():");
     return 0;
   }
-
+#ifdef _MSC_VER
+  int addr_len = sizeof(struct sockaddr_in);
+#else
   socklen_t addr_len = sizeof(struct sockaddr_in);
+#endif
+
   if (0 != getsockname(sock, (struct sockaddr*)&addr, &addr_len)) {
     perror("getsockname():");
     return 0;
@@ -187,7 +345,14 @@ void Van::Start() {
     Send_(msg);
   }
   // wait until ready
-  while(!ready_) usleep(500);
+  while (!ready_) {
+#ifdef _MSC_VER
+	  Sleep(1);
+#else
+	  usleep(500);
+#endif
+	
+  }
 }
 
 void Van::Stop() {
@@ -407,7 +572,12 @@ void Van::Receiving() {
               my_node_.port() == node.port()) {
             my_node_.set_id(node.id());
             std::string rank = std::to_string(Postoffice::IDtoRank(node.id()));
-            setenv("DMLC_RANK", rank.c_str(), true);
+#ifdef _MSC_VER
+			_putenv_s("DMLC_RANK", rank.c_str());
+#else
+			setenv("DMLC_RANK", rank.c_str(), true);
+#endif
+       
           }
         }
 
