@@ -158,11 +158,15 @@ void GetAvailableInterfaceAndIP(
 		while (curpAdapterInfo->Next)
 		{
 			std::string curip = std::string(curpAdapterInfo->IpAddressList.IpAddress.String, (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
+			curip = std::string(curip.c_str());
 			if (curip == "127.0.0.1")
 			{
 				continue;
 			}
-
+			if (curip == "0.0.0.0")
+			{
+				continue;
+			}
 
 			std::string AdapterName = curpAdapterInfo->AdapterName;
 			//GUID only ascii
@@ -257,7 +261,11 @@ unsigned short GetAvailablePort() {
   }
 
   unsigned short ret_port = ntohs(addr.sin_port);
+#ifdef  _MSC_VER
+  closesocket(sock);
+#else
   close(sock);
+#endif
   return ret_port;
 }
 
