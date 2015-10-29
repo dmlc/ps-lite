@@ -161,6 +161,7 @@ void GetAvailableInterfaceAndIP(
 			curip = std::string(curip.c_str());
 			if (curip == "127.0.0.1")
 			{
+				curpAdapterInfo = curpAdapterInfo->Next;
 				continue;
 			}
 			if (curip == "0.0.0.0")
