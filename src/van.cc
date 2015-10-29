@@ -189,7 +189,7 @@ void GetAvailableInterfaceAndIP(
 						std::string s(tstr.begin(), tstr.end());
 
 						*interface = s;
-						*ip = std::string(curpAdapterInfo->IpAddressList.IpAddress.String, (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
+						*ip = curip;
 						break;
 					}
 				}
