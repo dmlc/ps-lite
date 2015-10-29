@@ -165,6 +165,7 @@ void GetAvailableInterfaceAndIP(
 			}
 			if (curip == "0.0.0.0")
 			{
+				curpAdapterInfo = curpAdapterInfo->Next;
 				continue;
 			}
 
