@@ -53,7 +53,6 @@ if (NOT __ZMQ_INCLUDED) # guard against multiple includes
 		FILE(GLOB_RECURSE ZMQ_LIBRARIES "${ZMQ_INSTALL}/lib/libzmq-*.a")
 		#set(ZMQ_LIBRARIES ${ZMQ_INSTALL}/lib/libZMQ.a ${CMAKE_THREAD_LIBS_INIT})
 	endif()
-	message(${ZMQ_LIBRARIES})
     set(ZMQ_LIBRARY_DIRS ${ZMQ_INSTALL}/lib)
     set(ZMQ_EXTERNAL TRUE)
 

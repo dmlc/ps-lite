@@ -24,6 +24,7 @@ include_directories(pslite "${PROJECT_SOURCE_DIR}/include/")
 include_directories(pslite "${PROJECT_BINARY_DIR}/include/")
 list(APPEND pslite_INCLUDE_DIR_L "${PROJECT_BINARY_DIR}/include/")
 
+FILE(COPY DIRECTORY "${PROJECT_BINARY_DIR}/include" DESTINATION "${PROJECT_SOURCE_DIR}/" FILES_MATCHING PATTERN "*.pb.h")
 FILE(GLOB SOURCE "src/*.cc")
 
 if(MSVC)
