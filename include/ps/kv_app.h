@@ -194,7 +194,6 @@ class KVWorker : public SimpleApp {
             const Callback& cb = nullptr) {
     return Pull_(keys, vals, lens, cmd, cb);
   }
-
   using SlicedKVs = std::vector<std::pair<bool, KVPairs<Val>>>;
   /**
    * \brief a slicer partitions a key-value list according to the key ranges
@@ -398,7 +397,7 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
 template <typename Val>
 void KVWorker<Val>::DefaultSlicer(
     const KVPairs<Val>& send, const std::vector<Range>& ranges,
-    KVWorker<Val>::SlicedKVs* sliced) {
+	typename KVWorker<Val>::SlicedKVs* sliced) {
   sliced->resize(ranges.size());
 
   // find the positions in msg.key
