@@ -6,4 +6,5 @@ deps
 doc/html
 doc/latex
 tests/test_*
+*.pyc
 *.d
