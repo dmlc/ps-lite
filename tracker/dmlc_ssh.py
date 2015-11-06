@@ -69,6 +69,7 @@ def ssh_submit(nworker, nserver, pass_envs):
     else:
         hosts = ['localhost']
 
+    hosts = [h.strip() for h in hosts]
     for h in hosts:
         sync_dir(h)
 
@@ -77,7 +78,8 @@ def ssh_submit(nworker, nserver, pass_envs):
         subprocess.check_call(prog, shell = True)
 
     def get_env(pass_envs):
-        envs = ['export LD_LIBRARY_PATH=' + args.slave_dir + '/lib:$LD_LIBRARY_PATH;']
+        envs = ['export LD_LIBRARY_PATH=' + args.slave_dir + ':' +
+                os.getenv('LD_LIBRARY_PATH', '')]
         for k, v in pass_envs.items():
             envs.append('export ' + str(k) + '=' + str(v) + ';')
         return (' '.join(envs))
@@ -98,8 +100,9 @@ def ssh_submit(nworker, nserver, pass_envs):
 
 tracker.config_logger(args)
 
-# print cmd
+pscmd = 'export LD_LIBRARY_PATH=' + args.root_dir + '/lib:$LD_LIBRARY_PATH; echo $LD_LIBRARY_PATH; ' + cmd
+
 tracker.submit(args.nworker,
                args.nserver,
                fun_submit = ssh_submit,
-               pscmd = cmd)
+               pscmd = pscmd)
