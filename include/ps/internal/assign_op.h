@@ -20,7 +20,6 @@ enum AssignOp {
 /**
  * \brief return an assignment function: right op= left
  */
-
 template<typename T>
 inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {

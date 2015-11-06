@@ -355,10 +355,10 @@ void KVServer<Val>::Process(const Message& msg) {
     SimpleApp::Process(msg); return;
   }
   KVMeta meta;
-  meta.cmd = msg.meta.head();
-  meta.push = msg.meta.push();
-  meta.sender = msg.sender;
-  meta.timestamp = msg.meta.timestamp();
+  meta.cmd       = msg.meta.head;
+  meta.push      = msg.meta.push;
+  meta.sender    = msg.meta.sender;
+  meta.timestamp = msg.meta.timestamp;
   KVPairs<Val> data;
   int n = msg.data.size();
   if (n) {
@@ -378,11 +378,12 @@ void KVServer<Val>::Process(const Message& msg) {
 template <typename Val>
 void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
   Message msg;
-  msg.meta.set_customer_id(obj_->id());
-  msg.meta.set_request(false);
-  msg.meta.set_push(req.push);
-  msg.meta.set_head(req.cmd);
-  msg.meta.set_timestamp(req.timestamp);
+  msg.meta.customer_id = obj_->id();
+  msg.meta.request     = false;
+  msg.meta.push        = req.push;
+  msg.meta.head        = req.cmd;
+  msg.meta.timestamp   = req.timestamp;
+  msg.meta.recver      = req.sender;
   if (res.keys.size()) {
     msg.AddData(res.keys);
     msg.AddData(res.vals);
@@ -390,7 +391,6 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
       msg.AddData(res.lens);
     }
   }
-  msg.recver = req.sender;
   Postoffice::Get()->van()->Send(msg);
 }
 
@@ -471,11 +471,12 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
     const auto& s = sliced[i];
     if (!s.first) continue;
     Message msg;
-    msg.meta.set_customer_id(obj_->id());
-    msg.meta.set_request(true);
-    msg.meta.set_push(push);
-    msg.meta.set_head(cmd);
-    msg.meta.set_timestamp(timestamp);
+    msg.meta.customer_id = obj_->id();
+    msg.meta.request     = true;
+    msg.meta.push        = push;
+    msg.meta.head        = cmd;
+    msg.meta.timestamp   = timestamp;
+    msg.meta.recver      = Postoffice::Get()->ServerRankToID(i);
     const auto& kvs = s.second;
     if (kvs.keys.size()) {
       msg.AddData(kvs.keys);
@@ -484,7 +485,6 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
         msg.AddData(kvs.lens);
       }
     }
-    msg.recver = Postoffice::Get()->ServerRankToID(i);
     Postoffice::Get()->van()->Send(msg);
   }
 }
@@ -492,13 +492,13 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
 
 template <typename Val>
 void KVWorker<Val>::Process(const Message& msg) {
-  if (msg.meta.simple_app()) {
+  if (msg.meta.simple_app) {
     SimpleApp::Process(msg); return;
   }
 
   // store the data for pulling
-  int ts = msg.meta.timestamp();
-  if (!msg.meta.push() && msg.data.size()) {
+  int ts = msg.meta.timestamp;
+  if (!msg.meta.push && msg.data.size()) {
     CHECK_GE(msg.data.size(), (size_t)2);
     KVPairs<Val> kvs;
     kvs.keys = msg.data[0];

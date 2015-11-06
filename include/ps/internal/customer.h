@@ -15,7 +15,7 @@ namespace ps {
  * As a sender, a customer tracks the responses for each request sent.
  *
  * It has its own receiving thread which is able to process any message received
- * from a remote node with `msg.meta.customer_id()` equal to this customer's id
+ * from a remote node with `msg.meta.customer_id` equal to this customer's id
  */
 class Customer {
  public:

@@ -6,10 +6,7 @@
 #include <memory>
 #include <atomic>
 #include "ps/base.h"
-
 #include "ps/internal/message.h"
-#include "ps/internal/node.pb.h"
-
 namespace ps {
 
 /**
@@ -118,8 +115,8 @@ class Van {
   size_t send_bytes_ = 0;
   size_t recv_bytes_ = 0;
 
-int num_servers_ = 0;
-int num_workers_ = 0;
+  int num_servers_ = 0;
+  int num_workers_ = 0;
 
   /**
    * \brief node_id to the socket for sending data to this node

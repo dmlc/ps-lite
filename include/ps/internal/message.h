@@ -1,20 +1,30 @@
 #pragma once
 #include <vector>
+#include <limits>
+#include <string>
 #include "ps/sarray.h"
-#include "ps/internal/meta_message.pb.h"
 namespace ps {
 
+/**
+ * \brief data type
+ */
 enum DataType {
   CHAR, INT8, INT16, INT32, INT64,
   UINT8, UINT16, UINT32, UINT64,
   FLOAT, DOUBLE, OTHER
 };
 
+/**
+ * \brief compare if V and W are the same type
+ */
 template<typename V, typename W>
 inline bool SameType() {
   return std::is_same<typename std::remove_cv<V>::type, W>::value;
 }
 
+/**
+ * \brief return the DataType of V
+ */
 template<typename V>
 DataType GetDataType() {
   if (SameType<V, int8_t>()) {
@@ -42,16 +52,74 @@ DataType GetDataType() {
   }
 }
 
+/**
+ * \brief information about a node
+ */
+struct Node {
+  enum Role { SERVER, WORKER, SCHEDULER };
+  Role role;
+  /** \brief node id */
+  int id;
+  /** \brief hostname or ip */
+  std::string hostname;
+  /** \brief the port this node is binding */
+  int port;
+};
 
+/**
+ * \brief meta info of a system control message
+ */
+struct MetaControl {
+  /** \brief all commands */
+  enum Command { TERMINATE, ADD_NODE, BARRIER };
+  /** \brief the command */
+  Command cmd;
+  /** \brief node infos */
+  std::vector<Node> node;
+  /** \brief the node group for a barrier, such as kWorkerGroup */
+  int barrier_group;
+};
+
+/**
+ * \brief meta info of a message
+ */
+struct MetaMessage {
+  /** \brief the empty value */
+  static const int kEmpty = std::numeric_limits<int>::max();
+  /** \brief default constructor */
+  MetaMessage() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
+                  sender(kEmpty), recver(kEmpty),
+                  simple_app(false), request(false) {}
+  /** \brief an int head */
+  int head;
+  /** \brief the unique id of the customer is messsage is for*/
+  int customer_id;
+  /** \brief the timestamp of this message */
+  int timestamp;
+  /** \brief the node id of the sender of this message */
+  int sender;
+  /** \brief the node id of the receiver of this message */
+  int recver;
+  /** \brief whether or not a push message */
+  bool push;
+  /** \brief whether or not it's for SimpleApp */
+  bool simple_app;
+  /** \brief  */
+  bool request;
+  /** \brief an string body */
+  std::string body;
+  /** \brief data type of message.data[i] */
+  std::vector<DataType> data_type;
+};
 
 /**
  * \brief messages that communicated amaong nodes.
  */
 struct Message {
-  static const int kInvalidNode = 0;
-  Message() : sender(kInvalidNode), recver(kInvalidNode) { }
+  /** \brief the meta info of this message */
   MetaMessage meta;
 
+  /** \brief the large chunk of data of this message */
   std::vector<SArray<char> > data;
 
   /**
@@ -63,9 +131,5 @@ struct Message {
     meta.add_data_type(GetDataType<V>());
     data.push_back(SArray<char>(val));
   }
-
-  int sender;
-  int recver;
-
 };
 }  // namespace ps

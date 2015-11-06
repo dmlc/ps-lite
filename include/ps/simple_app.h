@@ -122,13 +122,13 @@ SimpleApp::SimpleApp(int app_id) : SimpleApp() {
 int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
   // setup message
   Message msg;
-  msg.meta.set_head(req_head);
-  if (req_body.size()) msg.meta.set_body(req_body);
+  msg.meta.head = req_head;
+  if (req_body.size()) msg.meta.body = req_body;
   int ts = obj_->NewRequest(recv_id);
-  msg.meta.set_timestamp(ts);
-  msg.meta.set_request(true);
-  msg.meta.set_simple_app(true);
-  msg.meta.set_customer_id(obj_->id());
+  msg.meta.timestamp = ts;
+  msg.meta.request = true;
+  msg.meta.simple_app = true;
+  msg.meta.customer_id = obj_->id();
 
   // send
   for (int r : Postoffice::Get()->GetNodeIDs(recv_id)) {
@@ -141,13 +141,13 @@ int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
 void SimpleApp::Response(const SimpleData& req, const std::string& res_body) {
   // setup message
   Message msg;
-  msg.meta.set_head(req.head);
-  if (res_body.size()) msg.meta.set_body(res_body);
-  msg.meta.set_timestamp(req.timestamp);
-  msg.meta.set_request(false);
-  msg.meta.set_simple_app(true);
-  msg.meta.set_customer_id(obj_->id());
-  msg.recver = req.sender;
+  msg.meta.head = req.head;
+  if (res_body.size()) msg.meta.body = res_body;
+  msg.meta.timestamp = req.timestamp;
+  msg.meta.request = false;
+  msg.meta.simple_app = true;
+  msg.meta.customer_id = obj_->id();
+  msg.meta.recver = req.sender;
 
   // send
   Postoffice::Get()->van()->Send(msg);
@@ -156,11 +156,11 @@ void SimpleApp::Response(const SimpleData& req, const std::string& res_body) {
 
 void SimpleApp::Process(const Message& msg) {
   SimpleData recv;
-  recv.sender    = msg.sender;
-  recv.head      = msg.meta.head();
-  recv.body      = msg.meta.body();
-  recv.timestamp = msg.meta.timestamp();
-  if (msg.meta.request()) {
+  recv.sender    = msg.meta.sender;
+  recv.head      = msg.meta.head;
+  recv.body      = msg.meta.body;
+  recv.timestamp = msg.meta.timestamp;
+  if (msg.meta.request) {
     CHECK(request_handle_);
     request_handle_(recv, this);
   } else {
