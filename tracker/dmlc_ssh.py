@@ -23,7 +23,7 @@ parser.add_argument('-s', '--nserver', default = 0, type=int,
                     help = 'number of server nodes to be launched')
 parser.add_argument('-H', '--hostfile', type=str,
                     help = 'the hostfile of all slave nodes')
-parser.add_argument('-R', '--root-dir', type=str, default=os.getcwd(),
+parser.add_argument('-R', '--root-dir', type=str, default=os.getcwd()+'/',
                     help = 'the directory at root node will be synced, default\
                     is the current working directory')
 parser.add_argument('-L', '--slave-dir', type=str, default='/tmp/dmlc',
@@ -77,9 +77,9 @@ def ssh_submit(nworker, nserver, pass_envs):
         subprocess.check_call(prog, shell = True)
 
     def get_env(pass_envs):
-        envs = ['export LD_LIBRARY_PATH=' + args.slave_dir + ':${LD_LIBRARY_PATH};']
+        envs = ['export LD_LIBRARY_PATH=' + args.slave_dir + '/lib:$LD_LIBRARY_PATH;']
         for k, v in pass_envs.items():
-            envs.append('export ' + k + '=' + v + ';')
+            envs.append('export ' + str(k) + '=' + str(v) + ';')
         return (' '.join(envs))
 
     for i in range(nworker + nserver):
@@ -89,8 +89,8 @@ def ssh_submit(nworker, nserver, pass_envs):
             pass_envs['DMLC_ROLE'] = 'worker'
 
         node = hosts[i % len(hosts)]
-        prog = envs + ' ' + cmd
-        prog = 'ssh -o StrictHostKeyChecking=no ' + node + '\'' + prog + '\''
+        prog = get_env(pass_envs) + ' cd ' + args.slave_dir + '; ' + cmd
+        prog = 'ssh -o StrictHostKeyChecking=no ' + node + ' \'' + prog + '\''
 
         thread = Thread(target = run, args=(prog,))
         thread.setDaemon(True)
@@ -98,6 +98,7 @@ def ssh_submit(nworker, nserver, pass_envs):
 
 tracker.config_logger(args)
 
+# print cmd
 tracker.submit(args.nworker,
                args.nserver,
                fun_submit = ssh_submit,
