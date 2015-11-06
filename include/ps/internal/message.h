@@ -56,7 +56,13 @@ DataType GetDataType() {
  * \brief information about a node
  */
 struct Node {
+  /** \brief the empty value */
+  static const int kEmpty = std::numeric_limits<int>::max();
+  /** \brief default constructor */
+  Node() : id(kEmpty), port(kEmpty) {}
+  /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
+  /** \brief the role of this node */
   Role role;
   /** \brief node id */
   int id;
@@ -69,9 +75,13 @@ struct Node {
 /**
  * \brief meta info of a system control message
  */
-struct MetaControl {
+struct Control {
+  /** \brief empty constructor */
+  Control() : cmd(EMPTY) { }
+  /** \brief return true is empty */
+  inline bool empty() const { return cmd == EMPTY; }
   /** \brief all commands */
-  enum Command { TERMINATE, ADD_NODE, BARRIER };
+  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER };
   /** \brief the command */
   Command cmd;
   /** \brief node infos */
@@ -83,11 +93,11 @@ struct MetaControl {
 /**
  * \brief meta info of a message
  */
-struct MetaMessage {
+struct Meta {
   /** \brief the empty value */
   static const int kEmpty = std::numeric_limits<int>::max();
   /** \brief default constructor */
-  MetaMessage() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
+  Meta() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
                   sender(kEmpty), recver(kEmpty),
                   simple_app(false), request(false) {}
   /** \brief an int head */
@@ -110,6 +120,8 @@ struct MetaMessage {
   std::string body;
   /** \brief data type of message.data[i] */
   std::vector<DataType> data_type;
+  /** \brief system control message */
+  Control control;
 };
 
 /**
@@ -117,7 +129,7 @@ struct MetaMessage {
  */
 struct Message {
   /** \brief the meta info of this message */
-  MetaMessage meta;
+  Meta meta;
 
   /** \brief the large chunk of data of this message */
   std::vector<SArray<char> > data;

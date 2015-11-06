@@ -52,7 +52,6 @@ class Van {
     return my_node_;
   }
 
-
   /**
    * \brief stop van
    *
@@ -76,6 +75,16 @@ class Van {
    * \brief connect to a node
    */
   void Connect(const Node& node);
+
+  /**
+   * \brief pack meta into a string
+   */
+  void PackMeta(const Meta& meta, char** meta_buf, int* buf_size);
+
+  /**
+   * \brief unpack meta from a string
+   */
+  void UnpackMeta(const char* meta_buf, int buf_size, Meta* meta);
 
   /**
    * \brief receive a packge
