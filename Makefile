@@ -38,7 +38,7 @@ OBJS = $(addprefix build/, customer.o postoffice.o van.o meta.pb.o)
 build/libps.a: $(OBJS)
 	ar crv $@ $(filter %.o, $?)
 
-build/%.o: src/%.cc ${ZMQ}
+build/%.o: src/%.cc ${ZMQ} src/meta.pb.h
 	@mkdir -p $(@D)
 	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
 	$(CXX) $(CFLAGS) -c $< -o $@
