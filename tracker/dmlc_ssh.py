@@ -78,8 +78,14 @@ def ssh_submit(nworker, nserver, pass_envs):
         subprocess.check_call(prog, shell = True)
 
     def get_env(pass_envs):
-        envs = ['export LD_LIBRARY_PATH=' + args.slave_dir + ':' +
-                os.getenv('LD_LIBRARY_PATH', '')]
+        envs = []
+        # get system envs
+        keys = ['LD_LIBRARY_PATH', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
+        for k in keys:
+            v = os.getenv(k)
+            if v is not None:
+                envs.append('export ' + k + '=' + v + ';')
+        # get ass_envs
         for k, v in pass_envs.items():
             envs.append('export ' + str(k) + '=' + str(v) + ';')
         return (' '.join(envs))
@@ -100,9 +106,7 @@ def ssh_submit(nworker, nserver, pass_envs):
 
 tracker.config_logger(args)
 
-pscmd = 'export LD_LIBRARY_PATH=' + args.root_dir + '/lib:$LD_LIBRARY_PATH; echo $LD_LIBRARY_PATH; ' + cmd
-
 tracker.submit(args.nworker,
                args.nserver,
                fun_submit = ssh_submit,
-               pscmd = pscmd)
+               pscmd = cmd)
