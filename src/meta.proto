@@ -2,7 +2,7 @@ package ps;
 
 message PBNode {
   // the node role
-  required int role = 1;
+  required int32 role = 1;
   // node id
   optional int32 id = 2;
   // hostname or ip
@@ -13,8 +13,8 @@ message PBNode {
 
 // system control info
 message PBControl {
-  required int cmd = 1;
-  repeated Node node = 2;
+  required int32 cmd = 1;
+  repeated PBNode node = 2;
   optional int32 barrier_group = 3;
 }
 
@@ -25,7 +25,7 @@ message PBMeta {
   // message.body
   optional bytes body = 2;
   // if set, then it is system control task. otherwise, it is for app
-  optional Control control = 3;
+  optional PBControl control = 3;
   // true: a request task
   // false: the response task to the request task with the same *time*
   optional bool request = 4 [default = false];

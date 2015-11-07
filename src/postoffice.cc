@@ -98,7 +98,7 @@ Customer* Postoffice::GetCustomer(int id, int timeout) const {
 
 void Postoffice::Barrier(int node_group) {
   if (GetNodeIDs(node_group).size() <= 1) return;
-  auto role = van_->my_node().role();
+  auto role = van_->my_node().role;
   if (role == Node::SCHEDULER) {
     CHECK(node_group & kScheduler);
   } else if (role == Node::WORKER) {

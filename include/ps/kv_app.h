@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "ps/base.h"
 #include "ps/simple_app.h"
 namespace ps {
@@ -351,7 +352,7 @@ struct KVServerDefaultHandle {
 
 template <typename Val>
 void KVServer<Val>::Process(const Message& msg) {
-  if (msg.meta.simple_app()) {
+  if (msg.meta.simple_app) {
     SimpleApp::Process(msg); return;
   }
   KVMeta meta;

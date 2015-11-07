@@ -6,7 +6,6 @@
 #include "ps/sarray.h"
 #include "ps/internal/postoffice.h"
 #include "ps/internal/customer.h"
-#include "ps/internal/meta_message.pb.h"
 #include "./network_utils.h"
 
 namespace ps {
@@ -60,11 +59,11 @@ void Van::Start() {
   std::string addr = local ? "ipc:///tmp/" : "tcp://*:";
   int max_retry = is_scheduler_ ? 40 : 1;
   for (int i = 0; i < max_retry; ++i) {
-    auto address = addr + std::to_string(my_node_.port());
+    auto address = addr + std::to_string(my_node_.port);
     if (zmq_bind(receiver_, address.c_str()) == 0) break;
     CHECK_NE(i, max_retry - 1)
         << "bind failed after " << max_retry << " retries";
-    srand((int)time(NULL) + my_node_.port());
+    srand((int)time(NULL) + my_node_.port);
     my_node_.port = 10000 + rand() % 40000;
   }
 
@@ -103,7 +102,7 @@ void Van::Stop() {
   // stop threads
   Message exit;
   exit.meta.control.cmd = Control::TERMINATE;
-  exit.recver = my_node_.id;
+  exit.meta.recver = my_node_.id;
   Send_(exit);
   receiver_thread_->join();
 
@@ -288,7 +287,7 @@ void Van::Receiving() {
     Message msg; CHECK_GE(Recv(&msg), 0);
     if (!msg.meta.control.empty()) {
       // do some management
-      const auto& ctrl = msg.meta.control;
+      auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
@@ -307,7 +306,7 @@ void Van::Receiving() {
         }
 
         // update my id
-        for (int i = 0; i < ctrl.node.size(); ++i) {
+        for (size_t i = 0; i < ctrl.node.size(); ++i) {
           const auto& node = ctrl.node[i];
           if (my_node_.hostname == node.hostname &&
               my_node_.port == node.port) {
@@ -322,7 +321,7 @@ void Van::Receiving() {
         }
 
         // connect to these nodes
-        for (int i = 0; i < ctrl.node.size(); ++i) {
+        for (size_t i = 0; i < ctrl.node.size(); ++i) {
           const auto& node = ctrl.node[i];
           if (node.role == Node::SERVER) ++num_servers_;
           if (node.role == Node::WORKER) ++num_workers_;
@@ -337,7 +336,7 @@ void Van::Receiving() {
             Message back; back.meta = nodes;
             for (int r : Postoffice::Get()->GetNodeIDs(
                      kWorkerGroup + kServerGroup)) {
-              back.recver = r; Send_(back);
+              back.meta.recver = r; Send_(back);
             }
           }
           ready_ = true;
@@ -356,7 +355,7 @@ void Van::Receiving() {
             res.meta.request = false;
             res.meta.control.cmd = Control::BARRIER;
             for (int r : Postoffice::Get()->GetNodeIDs(group)) {
-              res.recver = r;
+              res.meta.recver = r;
               CHECK_GT(Send_(res), 0);
             }
           }
@@ -411,7 +410,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
 }
 
 
-void UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
+void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
 //       CHECK(msg->meta.ParseFromArray(buf, size))
 //           << "failed to parse string from " << msg->sender
 //           << ". this is " << my_node_.id() << " " << size;

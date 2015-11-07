@@ -1,6 +1,6 @@
 build
 deps
-*.pb.cc
+*.pb.*
 .*
 *core*
 doc/html

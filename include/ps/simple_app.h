@@ -132,7 +132,7 @@ int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
 
   // send
   for (int r : Postoffice::Get()->GetNodeIDs(recv_id)) {
-    msg.recver = r;
+    msg.meta.recver = r;
     Postoffice::Get()->van()->Send(msg);
   }
   return ts;

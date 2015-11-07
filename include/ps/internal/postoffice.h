@@ -134,7 +134,7 @@ class Postoffice {
    * Each worker will have a unique rank within [0, NumWorkers()). So are
    * servers. This function is available only after \ref Start has been called.
    */
-  int my_rank() const { return IDtoRank(van_->my_node().id()); }
+  int my_rank() const { return IDtoRank(van_->my_node().id); }
 
   /** \brief Returns true if this node is a worker node */
   int is_worker() const { return is_worker_; }
