@@ -30,7 +30,7 @@ include make/deps.mk
 
 clean:
 	rm -rf build $(TEST) tests/*.d
-	find include -name "*.pb.[ch]*" -delete
+	find src -name "*.pb.[ch]*" -delete
 
 ps: build/libps.a
 
