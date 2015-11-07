@@ -98,8 +98,8 @@ struct Meta {
   static const int kEmpty = std::numeric_limits<int>::max();
   /** \brief default constructor */
   Meta() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
-                  sender(kEmpty), recver(kEmpty),
-                  simple_app(false), request(false) {}
+           sender(kEmpty), recver(kEmpty),
+           request(false), simple_app(false) {}
   /** \brief an int head */
   int head;
   /** \brief the unique id of the customer is messsage is for*/
@@ -110,12 +110,12 @@ struct Meta {
   int sender;
   /** \brief the node id of the receiver of this message */
   int recver;
+  /** \brief whether or not this is a request message*/
+  bool request;
   /** \brief whether or not a push message */
   bool push;
   /** \brief whether or not it's for SimpleApp */
   bool simple_app;
-  /** \brief  */
-  bool request;
   /** \brief an string body */
   std::string body;
   /** \brief data type of message.data[i] */

@@ -7,6 +7,7 @@
 #include "ps/internal/postoffice.h"
 #include "ps/internal/customer.h"
 #include "./network_utils.h"
+#include "./meta.pb.h"
 
 namespace ps {
 
@@ -402,18 +403,71 @@ void Van::Monitoring() {
 }
 
 void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
+  // convert into protobuf
+  PBMeta pb;
+  pb.set_head(meta.head);
+  if (meta.customer_id != Meta::kEmpty) pb.set_customer_id(meta.customer_id);
+  if (meta.timestamp != Meta::kEmpty) pb.set_timestamp(meta.timestamp);
+  if (meta.body.size()) pb.set_body(meta.body);
+  pb.set_push(meta.push);
+  pb.set_request(meta.request);
+  pb.set_simple_app(meta.simple_app);
+  for (auto d : meta.data_type) pb.add_data_type(d);
+  if (!meta.control.empty()) {
+    auto ctrl = pb.mutable_control();
+    ctrl->set_cmd(meta.control.cmd);
+    ctrl->set_barrier_group(meta.control.barrier_group);
+    for (const auto& n : meta.control.node) {
+      auto p = ctrl->add_node();
+      p->set_id(n.id);
+      p->set_role(n.role);
+      p->set_port(n.port);
+      p->set_hostname(n.hostname);
+    }
+  }
 
-//   int meta_size = msg.meta.ByteSize();
-//   char* meta_buf = new char[meta_size+5];
-//   CHECK(msg.meta.SerializeToArray(meta_buf, meta_size))
-//       << "failed to serialize " << msg.meta.ShortDebugString();
+  // to string
+  *buf_size = pb.ByteSize();
+  *meta_buf = new char[*buf_size+1];
+  CHECK(pb.SerializeToArray(*meta_buf, *buf_size))
+      << "failed to serialize protbuf";
 }
 
 
 void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
-//       CHECK(msg->meta.ParseFromArray(buf, size))
-//           << "failed to parse string from " << msg->sender
-//           << ". this is " << my_node_.id() << " " << size;
+  // to protobuf
+  PBMeta pb;
+  CHECK(pb.ParseFromArray(meta_buf, buf_size))
+      << "failed to parse string into protobuf";
+
+  // to meta
+  meta->head = pb.head();
+  meta->customer_id = pb.has_customer_id() ? pb.customer_id() : Meta::kEmpty;
+  meta->timestamp = pb.has_timestamp() ? pb.timestamp() : Meta::kEmpty;
+  meta->request = pb.request();
+  meta->push = pb.push();
+  meta->simple_app = pb.simple_app();
+  meta->body = pb.body();
+  meta->data_type.resize(pb.data_type_size());
+  for (int i = 0; i < pb.data_type_size(); ++i) {
+    meta->data_type[i] = static_cast<DataType>(pb.data_type(i));
+  }
+  if (pb.has_control()) {
+    const auto& ctrl = pb.control();
+    meta->control.cmd = static_cast<Control::Command>(ctrl.cmd());
+    meta->control.barrier_group = ctrl.barrier_group();
+    for (int i = 0; i < ctrl.node_size(); ++i) {
+      const auto& p = ctrl.node(i);
+      Node n;
+      n.role = static_cast<Node::Role>(p.role());
+      n.port = p.port();
+      n.hostname = p.hostname();
+      n.id = p.has_id() ? p.id() : Node::kEmpty;
+      meta->control.node.push_back(n);
+    }
+  } else {
+    meta->control.cmd = Control::EMPTY;
+  }
 }
 
 }  // namespace ps

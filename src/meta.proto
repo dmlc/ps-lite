@@ -1,4 +1,5 @@
 package ps;
+option optimize_for = LITE_RUNTIME;
 
 message PBNode {
   // the node role
@@ -30,13 +31,13 @@ message PBMeta {
   // false: the response task to the request task with the same *time*
   optional bool request = 4 [default = false];
   // the unique id of an customer
-  optional int32 customer_id = 5;
+  optional int32 customer_id = 7;
   // the timestamp of this message
-  optional int32 timestamp = 6;
+  optional int32 timestamp = 8;
   // data type of message.data[i]
-  repeated int32 data_type = 8 [packed=true];
+  repeated int32 data_type = 9 [packed=true];
   // whether or not a push message
-  optional bool push = 9;
+  optional bool push = 5;
   // whether or not it's for SimpleApp
-  optional bool simple_app = 10 [default = false];
+  optional bool simple_app = 6 [default = false];
 }
