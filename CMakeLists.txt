@@ -17,14 +17,15 @@ list(APPEND pslite_LINKER_LIBS_L ${ZMQ_LIBRARIES})
 include(cmake/ProtoBuf.cmake)
 
 # generate protobuf sources
-set(proto_gen_folder "${PROJECT_BINARY_DIR}/include")
-file(GLOB_RECURSE proto_files "include/*.proto")
-pslite_protobuf_generate_cpp_py(${proto_gen_folder} proto_srcs proto_hdrs proto_python "${PROJECT_SOURCE_DIR}" "include" ${proto_files})
+set(proto_gen_folder "${PROJECT_BINARY_DIR}/src")
+file(GLOB_RECURSE proto_files "src/*.proto")
+pslite_protobuf_generate_cpp_py(${proto_gen_folder} proto_srcs proto_hdrs proto_python "${PROJECT_SOURCE_DIR}" "src" ${proto_files})
 include_directories(pslite "${PROJECT_SOURCE_DIR}/include/")
 include_directories(pslite "${PROJECT_BINARY_DIR}/include/")
+include_directories(pslite "${PROJECT_BINARY_DIR}/src/")
 list(APPEND pslite_INCLUDE_DIR_L "${PROJECT_BINARY_DIR}/include/")
 
-FILE(COPY DIRECTORY "${PROJECT_BINARY_DIR}/include" DESTINATION "${PROJECT_SOURCE_DIR}/" FILES_MATCHING PATTERN "*.pb.h")
+#FILE(COPY DIRECTORY "${PROJECT_BINARY_DIR}/include" DESTINATION "${PROJECT_SOURCE_DIR}/" FILES_MATCHING PATTERN "*.pb.h")
 FILE(GLOB SOURCE "src/*.cc")
 
 if(MSVC)
