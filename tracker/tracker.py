@@ -416,8 +416,9 @@ def submit(nworker, nserver, fun_submit, hostIP = 'auto', pscmd = None):
 
 def config_logger(args):
     FORMAT = '%(asctime)s %(levelname)s %(message)s'
-    level = eval('logging.' + args.log_level)
-    if args.log_file is None:
+    level = args.log_level if 'log_level' in args else 'DEBUG'
+    level = eval('logging.' + level)
+    if 'log_file' not in args or args.log_file is None:
         logging.basicConfig(format=FORMAT, level = level)
     else:
         logging.basicConfig(format=FORMAT, level = level, filename = args.log_file)
