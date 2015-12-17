@@ -1,5 +1,11 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_INTERNAL_CUSTOMER_H_
+#define PS_INTERNAL_CUSTOMER_H_
 #include <mutex>
+#include <vector>
+#include <utility>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -19,7 +25,6 @@ namespace ps {
  */
 class Customer {
  public:
-
   /**
    * \brief the handle for a received message
    * \param recved the received message
@@ -94,3 +99,4 @@ class Customer {
 };
 
 }  // namespace ps
+#endif  // PS_INTERNAL_CUSTOMER_H_

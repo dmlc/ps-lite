@@ -1,5 +1,11 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_INTERNAL_POSTOFFICE_H_
+#define PS_INTERNAL_POSTOFFICE_H_
 #include <mutex>
+#include <algorithm>
+#include <vector>
 #include "ps/range.h"
 #include "ps/internal/customer.h"
 #include "ps/internal/van.h"
@@ -120,7 +126,7 @@ class Postoffice {
 #ifdef _MSC_VER
 #undef max
 #endif
-	  return std::max((id - 8) / 2, 0);
+    return std::max((id - 8) / 2, 0);
   }
 
   /** \brief Returns the number of worker nodes */
@@ -162,7 +168,6 @@ class Postoffice {
   ~Postoffice() { delete van_; }
   Van* van_;
   mutable std::mutex mu_;
-  DISALLOW_COPY_AND_ASSIGN(Postoffice);
 
   std::unordered_map<int, Customer*> customers_;
   std::unordered_map<int, std::vector<int>> node_ids_;
@@ -176,5 +181,9 @@ class Postoffice {
   std::condition_variable barrier_cond_;
 
   Callback exit_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 }  // namespace ps
+
+#endif  // PS_INTERNAL_POSTOFFICE_H_

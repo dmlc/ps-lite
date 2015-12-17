@@ -1,3 +1,6 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
 #include "ps/internal/customer.h"
 #include "ps/internal/postoffice.h"
 namespace ps {
@@ -54,7 +57,7 @@ void Customer::Receiving() {
     recv_handle_(recv);
     if (!recv.meta.request) {
       std::lock_guard<std::mutex> lk(tracker_mu_);
-      tracker_[recv.meta.timestamp].second ++;
+      tracker_[recv.meta.timestamp].second++;
       tracker_cond_.notify_all();
     }
   }

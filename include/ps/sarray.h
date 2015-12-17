@@ -1,5 +1,11 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_SARRAY_H_
+#define PS_SARRAY_H_
 #include <string.h>
+#include <string>
+#include <vector>
 #include <memory>
 #include <sstream>
 #include "ps/internal/utils.h"
@@ -93,17 +99,17 @@ class SArray {
    */
   template <typename ForwardIt>
   void CopyFrom(const ForwardIt& first, const ForwardIt& last) {
-    int size = (int)std::distance(first, last);
+    int size = static_cast<int>(std::distance(first, last));
     V* data = new V[size];
     reset(data, size, [](V* data){ delete [] data; });
     auto it = first;
-    while (size-- > 0) { *data = *it; ++ data; ++ it; }
+    while (size-- > 0) { *data = *it; ++data; ++it; }
   }
 
   /**
    * \brief construct from a std::vector, copy the data
    */
-  SArray(const std::vector<V>& vec) { CopyFrom(vec.data(), vec.size()); }
+  explicit SArray(const std::vector<V>& vec) { CopyFrom(vec.data(), vec.size()); }
 
   /** @brief Copy from a initializer_list */
   template <typename W> SArray(const std::initializer_list<W>& list) {
@@ -247,7 +253,7 @@ class SArray {
  */
 template<typename V>
 Range FindRange(const SArray<V>& arr, V lower, V upper) {
-  if (upper <= lower) return Range(0,0);
+  if (upper <= lower) return Range(0, 0);
   auto lb = std::lower_bound(arr.begin(), arr.end(), lower);
   auto ub = std::lower_bound(arr.begin(), arr.end(), upper);
   return Range(lb - arr.begin(), ub - arr.begin());
@@ -279,3 +285,4 @@ std::ostream& operator<<(std::ostream& os, const SArray<V>& obj) {
 }
 
 }  // namespace ps
+#endif  // PS_SARRAY_H_

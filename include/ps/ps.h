@@ -1,18 +1,16 @@
 /*!
+ *  Copyright (c) 2015 by Contributors
  * @file   ps.h
  * \brief  The parameter server interface
  */
-#pragma once
-
+#ifndef PS_PS_H_
+#define PS_PS_H_
 /** \brief basic setups in ps */
 #include "ps/base.h"
-
 /** \brief communicating with a pair of (int, string). */
 #include "ps/simple_app.h"
-
 /** \brief communcating with a list of key-value paris. */
 #include "ps/kv_app.h"
-
 namespace ps {
 
 /** \brief Returns the number of worker nodes */
@@ -36,7 +34,6 @@ bool IsScheduler() { return Postoffice::Get()->is_scheduler(); }
  * servers. This function is available only after \ref Start has been called.
  */
 int MyRank() { return Postoffice::Get()->my_rank(); }
-
 
 /**
  * \brief start the system
@@ -78,3 +75,4 @@ void RegisterExitCallback(const std::function<void()>& cb) {
 }
 
 }  // namespace ps
+#endif  // PS_PS_H_

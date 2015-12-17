@@ -1,4 +1,9 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_SIMPLE_APP_H_
+#define PS_SIMPLE_APP_H_
+#include <string>
 #include "ps/internal/message.h"
 #include "ps/internal/postoffice.h"
 namespace ps {
@@ -29,7 +34,7 @@ class SimpleApp {
    * @param app_id the app id, should match with the remote node app with which this app
    * is communicated
    */
-  SimpleApp(int app_id);
+  explicit SimpleApp(int app_id);
 
   /** \brief deconstructor */
   virtual ~SimpleApp() { delete obj_; obj_ = nullptr; }
@@ -90,6 +95,7 @@ class SimpleApp {
    * \brief returns the customer
    */
   Customer* get_customer() { return obj_; }
+
  protected:
   /** \brief empty construct */
   SimpleApp() : obj_(nullptr) {
@@ -170,3 +176,4 @@ void SimpleApp::Process(const Message& msg) {
 }
 
 }  // namespace ps
+#endif  // PS_SIMPLE_APP_H_

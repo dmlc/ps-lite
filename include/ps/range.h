@@ -1,5 +1,9 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_RANGE_H_
+#define PS_RANGE_H_
 #include "ps/internal/utils.h"
-#pragma once
 namespace ps {
 
 /**
@@ -7,7 +11,7 @@ namespace ps {
  */
 class Range {
  public:
-  Range() : Range(0,0) {}
+  Range() : Range(0, 0) {}
   Range(uint64_t begin, uint64_t end) : begin_(begin), end_(end) { }
 
   uint64_t begin() const { return begin_; }
@@ -19,3 +23,4 @@ class Range {
 };
 
 }  // namespace ps
+#endif  // PS_RANGE_H_

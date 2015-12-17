@@ -1,8 +1,13 @@
 /**
+ *  Copyright (c) 2015 by Contributors
  * @file   parallel_sort.h
  * @brief  Parallel sort
  */
-#pragma once
+#ifndef PS_INTERNAL_PARALLEL_SORT_H_
+#define PS_INTERNAL_PARALLEL_SORT_H_
+#include <functional>
+#include <thread>
+#include <algorithm>
 #include "ps/sarray.h"
 namespace ps {
 
@@ -49,4 +54,5 @@ void ParallelSort(SArray<T>* arr,
   ParallelSort(arr->data(), arr->size(), grainsize, cmp);
 }
 
-} // namespace ps
+}  // namespace ps
+#endif  // PS_INTERNAL_PARALLEL_SORT_H_

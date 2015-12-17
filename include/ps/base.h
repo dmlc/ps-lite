@@ -1,4 +1,9 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_BASE_H_
+#define PS_BASE_H_
+
 #include <limits>
 #include "ps/internal/utils.h"
 namespace ps {
@@ -15,7 +20,7 @@ using Key = uint64_t;
 static const Key kMaxKey = std::numeric_limits<Key>::max();
 
 /** \brief node ID for the scheduler */
-const static int kScheduler = 1;
+static const int kScheduler = 1;
 
 /**
  * \brief the server node group ID
@@ -24,9 +29,10 @@ const static int kScheduler = 1;
  * - kServerGroup + kScheduler means all server nodes and the scheuduler
  * - kServerGroup + kWorkerGroup means all server and worker nodes
  */
-const static int kServerGroup = 2;
+static const int kServerGroup = 2;
 
 /** \brief the worker node group ID */
-const static int kWorkerGroup = 4;
+static const int kWorkerGroup = 4;
 
 }  // namespace ps
+#endif  // PS_BASE_H_

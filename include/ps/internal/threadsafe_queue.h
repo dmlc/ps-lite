@@ -1,3 +1,8 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_INTERNAL_THREADSAFE_QUEUE_H_
+#define PS_INTERNAL_THREADSAFE_QUEUE_H_
 #include <queue>
 #include <mutex>
 #include <condition_variable>
@@ -41,14 +46,14 @@ template<typename T> class ThreadsafeQueue {
   std::condition_variable cond_;
 };
 
-} // namespace ps
+}  // namespace ps
 
-
-  // bool TryPop(T& value) {
-  //   std::lock_guard<std::mutex> lk(mut);
-  //   if(data_queue.empty())
-  //     return false;
-  //   value=std::move(data_queue.front());
-  //   data_queue.pop();
-  //   return true;
-  // }
+// bool TryPop(T& value) {
+//   std::lock_guard<std::mutex> lk(mut);
+//   if(data_queue.empty())
+//     return false;
+//   value=std::move(data_queue.front());
+//   data_queue.pop();
+//   return true;
+// }
+#endif  // PS_INTERNAL_THREADSAFE_QUEUE_H_

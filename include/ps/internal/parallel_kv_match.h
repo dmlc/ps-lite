@@ -1,9 +1,12 @@
 /**
+ *  Copyright (c) 2015 by Contributors
  * \file   parallel_kv_match.h
  * \brief  paralle key-value pairs matching
  */
-#pragma once
+#ifndef PS_INTERNAL_PARALLEL_KV_MATCH_H_
+#define PS_INTERNAL_PARALLEL_KV_MATCH_H_
 #include <thread>
+#include <algorithm>
 #include "ps/sarray.h"
 #include "ps/internal/assign_op.h"
 
@@ -39,27 +42,27 @@ void ParallelOrderedMatch(
   if (dst_len <= grainsize) {
     while (dst_key != dst_key_end && src_key != src_key_end) {
       if (*src_key < *dst_key) {
-        ++ src_key; src_val += k;
+        ++src_key; src_val += k;
       } else {
         if (!(*dst_key < *src_key)) {
           for (int i = 0; i < k; ++i) {
             AssignOp(dst_val[i], src_val[i], op);
           }
-          ++ src_key; src_val += k;
+          ++src_key; src_val += k;
           *n += k;
         }
-        ++ dst_key; dst_val += k;
+        ++dst_key; dst_val += k;
       }
     }
   } else {
     std::thread thr(
-        ParallelOrderedMatch<K,V>, src_key, src_key_end, src_val,
+        ParallelOrderedMatch<K, V>, src_key, src_key_end, src_val,
         dst_key, dst_key + dst_len / 2, dst_val,
         k, op, grainsize, n);
     size_t m = 0;
-    ParallelOrderedMatch<K,V>(
+    ParallelOrderedMatch<K, V>(
         src_key, src_key_end, src_val,
-        dst_key + dst_len / 2, dst_key_end, dst_val + ( dst_len / 2 ) * k,
+        dst_key + dst_len / 2, dst_key_end, dst_val + (dst_len / 2) * k,
         k, op, grainsize, &m);
     thr.join();
     *n += m;
@@ -107,7 +110,7 @@ size_t ParallelOrderedMatch(
   // shorten the matching range
   Range range = FindRange(dst_key, src_key.begin(), src_key.end());
   size_t grainsize = std::max(range.size() * k / num_threads + 5,
-                              (size_t)1024*1024);
+                              static_cast<size_t>(1024*1024));
   size_t n = 0;
   ParallelOrderedMatch<K, V>(
       src_key.begin(), src_key.end(), src_val.begin(),
@@ -117,3 +120,4 @@ size_t ParallelOrderedMatch(
 }
 
 }  // namespace ps
+#endif  // PS_INTERNAL_PARALLEL_KV_MATCH_H_

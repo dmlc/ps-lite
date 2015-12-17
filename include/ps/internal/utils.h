@@ -1,6 +1,9 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_INTERNAL_UTILS_H_
+#define PS_INTERNAL_UTILS_H_
 #include "dmlc/logging.h"
-
 namespace ps {
 
 #ifdef _MSC_VER
@@ -41,3 +44,4 @@ inline V GetEnv(const char *key, V default_val) {
 #define LL LOG(ERROR)
 
 }  // namespace ps
+#endif  // PS_INTERNAL_UTILS_H_

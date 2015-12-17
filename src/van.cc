@@ -1,3 +1,6 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
 #include "ps/internal/van.h"
 #include <zmq.h>
 #include <thread>
@@ -8,7 +11,6 @@
 #include "ps/internal/customer.h"
 #include "./network_utils.h"
 #include "./meta.pb.h"
-
 namespace ps {
 
 void Van::Start() {
@@ -64,8 +66,8 @@ void Van::Start() {
     if (zmq_bind(receiver_, address.c_str()) == 0) break;
     CHECK_NE(i, max_retry - 1)
         << "bind failed after " << max_retry << " retries";
-    srand((int)time(NULL) + my_node_.port);
-    my_node_.port = 10000 + rand() % 40000;
+    srand(static_cast<int>(time(NULL)) + my_node_.port);
+    my_node_.port = 10000 + rand() % 40000;  // NOLINT
   }
 
   // connect to the scheduler
@@ -159,9 +161,9 @@ void Van::Connect(const Node& node) {
  */
 void FreeData(void *data, void *hint) {
   if (hint == NULL) {
-    delete [] (char*)data;
+    delete [] static_cast<char*>(data);
   } else {
-    delete (SArray<char>*)hint;
+    delete static_cast<SArray<char>*>(hint);
   }
 }
 
@@ -268,7 +270,7 @@ int Van::Recv(Message* msg) {
     } else {
       // zero-copy
       SArray<char> data;
-      data.reset(buf, size, [zmsg,size](char*) {
+      data.reset(buf, size, [zmsg, size](char* buf) {
           zmq_msg_close(zmsg);
           delete zmsg;
         });
@@ -314,9 +316,9 @@ void Van::Receiving() {
             my_node_.id = node.id;
             std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
-			_putenv_s("DMLC_RANK", rank.c_str());
+            _putenv_s("DMLC_RANK", rank.c_str());
 #else
-			setenv("DMLC_RANK", rank.c_str(), true);
+            setenv("DMLC_RANK", rank.c_str(), true);
 #endif
           }
         }
@@ -345,12 +347,12 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::BARRIER) {
         if (msg.meta.request) {
           if (barrier_count_.empty()) {
-            barrier_count_.resize(8,0);
+            barrier_count_.resize(8, 0);
           }
           int group = ctrl.barrier_group;
-          ++ barrier_count_[group];
+          ++barrier_count_[group];
           if (barrier_count_[group] ==
-              (int)Postoffice::Get()->GetNodeIDs(group).size()) {
+              static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
             barrier_count_[group] = 0;
             Message res;
             res.meta.request = false;
@@ -378,7 +380,7 @@ void Van::Receiving() {
 
 void Van::Monitoring() {
   void *s = CHECK_NOTNULL(zmq_socket(context_, ZMQ_PAIR));
-  CHECK(!zmq_connect (s, "inproc://monitor"));
+  CHECK(!zmq_connect(s, "inproc://monitor"));
   while (true) {
     //  First frame in message contains event number and value
     zmq_msg_t msg;
@@ -387,8 +389,8 @@ void Van::Monitoring() {
       if (errno == EINTR) continue;
       break;
     }
-    uint8_t *data = (uint8_t *)zmq_msg_data (&msg);
-    int event = *(uint16_t *)(data);
+    uint8_t *data = static_cast<uint8_t*>(zmq_msg_data(&msg));
+    int event = *reinterpret_cast<uint16_t*>(data);
     // int value = *(uint32_t *)(data + 2);
 
     // Second frame in message contains event address. it's just the router's
@@ -399,7 +401,7 @@ void Van::Monitoring() {
     }
     if (event == ZMQ_EVENT_MONITOR_STOPPED) break;
   }
-  zmq_close (s);
+  zmq_close(s);
 }
 
 void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {

@@ -1,8 +1,11 @@
 /**
+ *  Copyright (c) 2015 by Contributors
  * \file   assign_op.h
  * \brief  assignment operator
  * http://en.cppreference.com/w/cpp/language/operator_assignment
  */
+#ifndef PS_INTERNAL_ASSIGN_OP_H_
+#define PS_INTERNAL_ASSIGN_OP_H_
 #include "ps/internal/utils.h"
 namespace ps {
 
@@ -34,7 +37,7 @@ inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
     case DIVIDE:
       *right /= left; break;
     default:
-      LOG(FATAL) << "use AssignOpInt.." ;
+      LOG(FATAL) << "use AssignOpInt..";
   }
 }
 
@@ -62,7 +65,8 @@ inline void AssignFuncInt(const T& lhs, AssignOp op, T* rhs) {
     case XOR:
       *right ^= left; break;
   }
-};
+}
 
 
 }  // namespace ps
+#endif  // PS_INTERNAL_ASSIGN_OP_H_

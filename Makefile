@@ -27,7 +27,7 @@ clean:
 	find src -name "*.pb.[ch]*" -delete
 
 lint:
-	python2 dmlc-core/scripts/lint.py ps-lite all include src
+	python2 tests/lint.py ps all include/ps src
 
 ps: build/libps.a
 

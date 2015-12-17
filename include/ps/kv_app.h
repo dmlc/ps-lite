@@ -1,4 +1,11 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_KV_APP_H_
+#define PS_KV_APP_H_
 #include <algorithm>
+#include <utility>
+#include <vector>
 #include "ps/base.h"
 #include "ps/simple_app.h"
 namespace ps {
@@ -283,7 +290,7 @@ class KVServer : public SimpleApp {
    * \brief constructor
    * \param app_id the app id, should match with \ref KVWorker's id
    */
-  KVServer(int app_id) : SimpleApp() {
+  explicit KVServer(int app_id) : SimpleApp() {
     using namespace std::placeholders;
     obj_ = new Customer(app_id, std::bind(&KVServer<Val>::Process, this, _1));
   }
@@ -398,7 +405,7 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
 template <typename Val>
 void KVWorker<Val>::DefaultSlicer(
     const KVPairs<Val>& send, const std::vector<Range>& ranges,
-	typename KVWorker<Val>::SlicedKVs* sliced) {
+    typename KVWorker<Val>::SlicedKVs* sliced) {
   sliced->resize(ranges.size());
 
   // find the positions in msg.key
@@ -461,7 +468,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
   // need to add response first, since it will not always trigger the callback
   int skipped = 0;
   for (size_t i = 0; i < sliced.size(); ++i) {
-    if (!sliced[i].first) ++ skipped;
+    if (!sliced[i].first) ++skipped;
   }
   obj_->AddResponse(timestamp, skipped);
   if ((size_t)skipped == sliced.size()) {
@@ -595,4 +602,6 @@ int KVWorker<Val>::Pull_(
   Send(ts, false, cmd, kvs);
   return ts;
 }
+
 }  // namespace ps
+#endif  // PS_KV_APP_H_

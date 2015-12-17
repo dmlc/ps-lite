@@ -1,7 +1,12 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_INTERNAL_VAN_H_
+#define PS_INTERNAL_VAN_H_
 #include <unordered_map>
 #include <mutex>
 #include <string>
+#include <vector>
 #include <thread>
 #include <memory>
 #include <atomic>
@@ -147,3 +152,4 @@ class Van {
   DISALLOW_COPY_AND_ASSIGN(Van);
 };
 }  // namespace ps
+#endif  // PS_INTERNAL_VAN_H_

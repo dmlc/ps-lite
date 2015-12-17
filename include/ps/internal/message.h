@@ -1,4 +1,8 @@
-#pragma once
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_INTERNAL_MESSAGE_H_
+#define PS_INTERNAL_MESSAGE_H_
 #include <vector>
 #include <limits>
 #include <string>
@@ -145,3 +149,4 @@ struct Message {
   }
 };
 }  // namespace ps
+#endif  // PS_INTERNAL_MESSAGE_H_

@@ -1,4 +1,7 @@
 package ps;
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
 option optimize_for = LITE_RUNTIME;
 
 message PBNode {

@@ -1,3 +1,6 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
 #include <unistd.h>
 #include <thread>
 #include <chrono>
@@ -88,8 +91,8 @@ Customer* Postoffice::GetCustomer(int id, int timeout) const {
       const auto it = customers_.find(id);
       if (it != customers_.end()) {
         obj = it->second;
-		break;
-	  }
+        break;
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
