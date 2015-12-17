@@ -2,10 +2,8 @@
 #include "ps/internal/postoffice.h"
 namespace ps {
 
-#if _MSC_VER <1900
 const int Node::kEmpty = std::numeric_limits<int>::max();
 const int Meta::kEmpty = std::numeric_limits<int>::max();
-#endif
 
 Customer::Customer(int id, const Customer::RecvHandle& recv_handle)
     : id_(id), recv_handle_(recv_handle) {

@@ -57,11 +57,7 @@ DataType GetDataType() {
  */
 struct Node {
   /** \brief the empty value */
-#if _MSC_VER <1900
-    static const int kEmpty;
-#else
-    static const int kEmpty = std::numeric_limits<int>::max();
-#endif
+  static const int kEmpty;
   /** \brief default constructor */
   Node() : id(kEmpty), port(kEmpty) {}
   /** \brief node roles */
@@ -99,11 +95,7 @@ struct Control {
  */
 struct Meta {
   /** \brief the empty value */
-#if _MSC_VER <1900
   static const int kEmpty;
-#else
-  static const int kEmpty = std::numeric_limits<int>::max();
-#endif
   /** \brief default constructor */
   Meta() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
            sender(kEmpty), recver(kEmpty),
