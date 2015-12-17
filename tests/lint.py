@@ -134,7 +134,7 @@ def process(fname, allow_type):
     arr = fname.rsplit('.', 1)
     if fname.find('#') != -1 or arr[-1] not in allow_type:
         return
-    if arr[-1] in CXX_SUFFIX:
+    if arr[-1] in CXX_SUFFIX and (not fname.endswith(".pb.h")) and (not fname.endswith(".pb.cc")):
         _HELPER.process_cpp(fname, arr[-1])
     if arr[-1] in PYTHON_SUFFIX:
         _HELPER.process_python(fname)
