@@ -3,13 +3,10 @@ include $(config)
 endif
 
 include make/ps.mk
+include make/deps.mk
 
 ifndef CXX
 CXX = g++
-endif
-
-ifndef OPT
-OPT  =
 endif
 
 ifndef DEPS_PATH
@@ -23,10 +20,7 @@ endif
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++11 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 
-all: ps test #guide
-
-# deps
-include make/deps.mk
+all: ps
 
 clean:
 	rm -rf build $(TEST) tests/*.d
@@ -48,9 +42,6 @@ src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 
 -include build/*.d
 -include build/*/*.d
-# -include guide/ps_guide.mk
 
-
-# test
--include tests/test.mk
+include tests/test.mk
 test: $(TEST)
