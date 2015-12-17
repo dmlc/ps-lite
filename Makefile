@@ -26,6 +26,9 @@ clean:
 	rm -rf build $(TEST) tests/*.d
 	find src -name "*.pb.[ch]*" -delete
 
+lint:
+	python2 dmlc-core/scripts/lint.py ps-lite all include src
+
 ps: build/libps.a
 
 OBJS = $(addprefix build/, customer.o postoffice.o van.o meta.pb.o)
