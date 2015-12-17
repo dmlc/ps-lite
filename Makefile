@@ -3,7 +3,6 @@ include $(config)
 endif
 
 include make/ps.mk
-include make/deps.mk
 
 ifndef CXX
 CXX = g++
@@ -12,6 +11,7 @@ endif
 ifndef DEPS_PATH
 DEPS_PATH = $(shell pwd)/deps
 endif
+
 
 ifndef PROTOC
 PROTOC = ${DEPS_PATH}/bin/protoc
@@ -43,5 +43,6 @@ src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 -include build/*.d
 -include build/*/*.d
 
+include make/deps.mk
 include tests/test.mk
 test: $(TEST)
