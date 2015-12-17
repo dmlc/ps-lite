@@ -24,14 +24,3 @@ Run a job using 4 workers and 2 servers on the local machine:
 
 If `mpirun` is available (shipped with `openmpi` or `mpich2`), we can launch a
 job using `dmlc_mpi.py`.
-
-First prepare a hostfile for all available machine with each line containing a
-hostname.
-
-
-```bash
-
-```
-
-
-## How it works
