@@ -95,4 +95,3 @@ learning algorithms codes into other projects such as `dmlc-core` and
   2. Mu Li, Dave Andersen, Alex Smola, and Kai
      Yu. [Communication Efficient Distributed Machine Learning with the Parameter Server](http://www.cs.cmu.edu/~muli/file/parameter_server_nips14.pdf). In
      Neural Information Processing Systems (NIPS), 2014
-refactor of ps-lite
