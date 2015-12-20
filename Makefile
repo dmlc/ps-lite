@@ -20,6 +20,8 @@ endif
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++11 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 
+include make/deps.mk
+
 all: ps
 
 clean:
@@ -46,6 +48,5 @@ src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 -include build/*.d
 -include build/*/*.d
 
-include make/deps.mk
 include tests/test.mk
 test: $(TEST)
