@@ -22,7 +22,10 @@ class SSHLauncher(object):
         with open(args.hostfile) as f:
             hosts = f.readlines()
         assert len(hosts) > 0
-        self.hosts = [h.strip() for h in hosts]
+        self.hosts=[]
+        for h in hosts:
+            if len(h.strip()) > 0:
+                self.hosts.append(h.strip())
 
     def sync_dir(self, local_dir, slave_node, slave_dir):
         """
