@@ -111,6 +111,15 @@ class SArray {
    */
   explicit SArray(const std::vector<V>& vec) { CopyFrom(vec.data(), vec.size()); }
 
+  /**
+   * \brief construct from a shared std::vector pinter, no data copy
+   */
+  explicit SArray(const std::shared_ptr<std::vector<V>>& vec) {
+    ptr_ = std::shared_ptr<V>(vec, vec->data());
+    size_ = vec->size();
+    capacity_ = size_;
+  }
+
   /** @brief Copy from a initializer_list */
   template <typename W> SArray(const std::initializer_list<W>& list) {
     CopyFrom(list.begin(), list.end());
