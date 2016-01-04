@@ -111,6 +111,15 @@ class SArray {
   }
 
   /**
+   * \brief copy from another SArray
+   *
+   * \param other the source data
+   */
+  void CopyFrom(const SArray<V>& other) {
+    CopyFrom(other.data(), other.size());
+  }
+
+  /**
    * \brief copy from an iterator
    */
   template <typename ForwardIt>
