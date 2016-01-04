@@ -15,9 +15,25 @@ namespace ps {
 /**
  * \brief Shared array
  *
- * A smart array that retains shared ownership.  It provides similar
- * functionality to std::vector, but both copy are assign are passing by
- * pointers.
+ * A smart array that retains shared ownership. It provides similar
+ * functionalities comparing to std::vector, including data(), size(),
+ * operator[], resize(), clear(). SArray can be easily constructed from
+ * std::vector, such as
+ *
+ * \code
+ * std::vector<int> a(10); SArray<int> b(a);  // copying
+ * std::shared_ptr<std::vector<int>> c(new std::vector<int>(10));
+ * SArray<int> d(c);  // only pointer copying
+ * \endcode
+ *
+ * SArray is also like a C pointer when copying and assigning, namely
+ * both copy are assign are passing by pointers. The memory will be release only
+ * if there is no copy exists. It is also can be cast without memory copy, such as
+ *
+ * \code
+ * SArray<int> a(10);
+ * SArray<char> b(a);  // now b.size() = 10 * sizeof(int);
+ * \endcode
  *
  * \tparam V the value type
  */
@@ -138,29 +154,21 @@ class SArray {
     size_ = size; capacity_ = size; ptr_.reset(data, del);
   }
 
-
-  /**
-   * @brief Resizes the array to size elements
-   *
-   * If size <= capacity_, then only change the size. otherwise, append size -
-   * current_size entries (without value initialization)
-   */
-  void resize(size_t size) {
-    if (capacity_ >= size) { size_ = size; return; }
-    V* new_data = new V[size+5];
-    memcpy(new_data, data(), size_*sizeof(V));
-    reset(new_data, size, [](V* data){ delete [] data; });
-  }
-
   /**
    * @brief Resizes the array to size elements
    *
    * If size <= capacity_, then only change the size. otherwise, append size -
    * current_size entries, and then set new value to val
    */
-  void resize(size_t size, V val) {
+  void resize(size_t size, V val = 0) {
     size_t cur_n = size_;
-    resize(size);
+    if (capacity_ >= size) {
+      size_ = size;
+    } else {
+      V* new_data = new V[size+5];
+      memcpy(new_data, data(), size_*sizeof(V));
+      reset(new_data, size, [](V* data){ delete [] data; });
+    }
     if (size <= cur_n) return;
     V* p = data() + cur_n;
     if (val == 0) {
