@@ -34,6 +34,7 @@ void Van::Init() {
 
   // one need to "sudo ulimit -n 65536" or edit /etc/security/limits.conf
   zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, 65536);
+  zmq_ctx_set(context_, ZMQ_IPV6, 1);
   // zmq_ctx_set(context_, ZMQ_IO_THREADS, 4);
 
   Bind();
