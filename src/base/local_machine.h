@@ -89,7 +89,6 @@ class LocalMachine {
       }
     }
 
-    printf("got %s\n", ip.c_str());
     if (nullptr != ifAddrStruct) freeifaddrs(ifAddrStruct);
     return;
   }
