@@ -4,9 +4,10 @@ sudo: false
 # Use Build Matrix to do lint and build seperately
 env:
   matrix:
-    - TASK=build CXX=g++-4.8
-    - TASK=build CXX=g++-5
-#    - TASK=lint LINT_LANG=cpp
+     - TASK=lint
+     - TASK=test CXX=g++-4.8
+#    - TASK=build CXX=g++-4.8
+#    - TASK=build CXX=g++-5
 
 # dependent apt packages
 addons:
@@ -15,13 +16,13 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - g++-4.8
-      - g++-5
+#      - g++-5
       - wget
       - git
-      - unzip
+#      - unzip
 
 before_install:
-  - export TRAVIS=make/travis
+  - export TRAVIS=tests/travis
   - source ${TRAVIS}/travis_setup_env.sh
 
 
