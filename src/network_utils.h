@@ -16,6 +16,7 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #endif
 #include <string>
@@ -111,7 +112,6 @@ void GetIP(const std::string& interface, std::string* ip) {
 #else
   struct ifaddrs * ifAddrStruct = NULL;
   struct ifaddrs * ifa = NULL;
-  void * tmpAddrPtr = NULL;
 
   getifaddrs(&ifAddrStruct);
   for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
@@ -121,7 +121,7 @@ void GetIP(const std::string& interface, std::string* ip) {
 
       *ip = ip_string(ifa);
 
-      if (!ret_ip.empty() && strncmp(ifa->ifa_name,
+      if (ip->empty() && strncmp(ifa->ifa_name,
             interface.c_str(),
             interface.size()) == 0) {
         break;
