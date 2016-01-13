@@ -244,7 +244,7 @@ void GetAvailableInterfaceAndIP(
  * only support IPv4
  * \return 0 on failure
  */
-static unsigned short GetAvailablePort() {
+int GetAvailablePort() {
   struct addrinfo hints;
   memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_family = AF_UNSPEC;
