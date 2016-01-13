@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 #include <ifaddrs.h>
 #include <netinet/in.h>
 #include <string.h>
@@ -56,9 +58,9 @@ class LocalMachine {
       ret_ip = ip_string(ifa);
 
       if (!ret_ip.empty() && strncmp(ifa->ifa_name,
-                    interface.c_str(),
-                    interface.size()) == 0) {
-          break;
+            interface.c_str(),
+            interface.size()) == 0) {
+        break;
       }
 
     }
@@ -68,7 +70,6 @@ class LocalMachine {
 
   // return the IP address and Interface
   //    the first interface which is not loopback
-  //    only support IPv4
   static void pickupAvailableInterfaceAndIP(std::string& interface, std::string& ip) {
     struct ifaddrs * ifAddrStruct = nullptr;
     struct ifaddrs * ifa = nullptr;
@@ -82,9 +83,9 @@ class LocalMachine {
       std::string tmp_ip = ip_string(ifa);
 
       if (!tmp_ip.empty() && 0 == (ifa->ifa_flags & IFF_LOOPBACK)) {
-          interface = ifa->ifa_name;
-          ip = tmp_ip;
-          break;
+        interface = ifa->ifa_name;
+        ip = tmp_ip;
+        break;
       }
     }
 
@@ -93,28 +94,49 @@ class LocalMachine {
   }
 
   // return an available port on local machine
-  //    only support IPv4
   //    return 0 on failure
   static unsigned short pickupAvailablePort() {
-    struct sockaddr_in6 addr;
-    addr.sin6_port = htons(0); // have system pick up a random port available for me
-    addr.sin6_family = AF_INET6; // IPV4
-    addr.sin6_addr = in6addr_any; // set our addr to any interface
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    struct addrinfo *result, *rp;
 
-    int sock = socket(AF_INET6, SOCK_STREAM, 0);
-    if (0 != bind(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in6))) {
-      perror("bind():");
+    if (0 != getaddrinfo("localhost", NULL, &hints, &result)) {
+      perror("getaddrinfo():");
       return 0;
     }
 
-    socklen_t addr_len = sizeof(struct sockaddr_in6);
-    if (0 != getsockname(sock, (struct sockaddr*)&addr, &addr_len)) {
-      perror("getsockname():");
-      return 0;
-    }
+    unsigned short ret_port = 0;
+    for (rp = result; rp != nullptr; rp = rp->ai_next) {
+      int sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+      if (sfd == -1) {
+        perror("socket():");
+      }
 
-    unsigned short ret_port = ntohs(addr.sin6_port);
-    close(sock);
+      if (bind(sfd, rp->ai_addr, rp->ai_addrlen) != 0) {
+        perror("bind():");
+        goto finish;
+      }
+
+      if (0 != getsockname(sfd, rp->ai_addr, &rp->ai_addrlen)) {
+        perror("getsockname():");
+        goto finish;
+      }
+
+      char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+      if (0 != getnameinfo(rp->ai_addr, rp->ai_addrlen, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf), NI_NUMERICSERV)) {
+        perror("getnameinfo():");
+        goto finish;
+      }
+      ret_port = atoi(sbuf);
+      close(sfd);
+      break;
+finish:
+      close(sfd);
+    }
+    freeaddrinfo(result);
     return ret_port;
   }
 
