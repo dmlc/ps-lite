@@ -26,22 +26,21 @@ class LocalMachine {
 
   // return the IP address for given interface eth0, eth1, ...
   static std::string ip_string(struct ifaddrs * ifa) {
-      char addressBuffer[INET6_ADDRSTRLEN];
-      std::string rv;
-      void * tmpAddrPtr = NULL;
-      if (ifa->ifa_addr->sa_family==AF_INET) {
-        // is a valid IP4 Address
-        tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-        char addressBuffer[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-        rv = addressBuffer;
-      } else if (
-          (ifa->ifa_addr->sa_family==AF_INET6)) {
-        // is a valid IP6 Address
-        tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
-        inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
-        rv = addressBuffer;
-      }
+    char addressBuffer[INET6_ADDRSTRLEN];
+    std::string rv;
+    void * tmpAddrPtr = NULL;
+    if (ifa->ifa_addr->sa_family==AF_INET) {
+      // is a valid IP4 Address
+      tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+    } else if (ifa->ifa_addr->sa_family==AF_INET6) {
+      // is a valid IP6 Address
+      tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+    }
+
+    if (tmpAddrPtr) {
+      inet_ntop(ifa->ifa_addr->sa_family, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+      rv = addressBuffer;
+    }
     return rv;
   }
 
