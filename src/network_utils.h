@@ -55,7 +55,7 @@ void GetIP(const std::string& interface, std::string* ip) {
     tstring connection = _T("\\Connection");
 
     IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
-    while (curpAdapterInfo->Next) {
+    while (curpAdapterInfo) {
       HKEY hKEY;
       std::string AdapterName = curpAdapterInfo->AdapterName;
       // GUID only ascii
@@ -147,7 +147,7 @@ void GetAvailableInterfaceAndIP(
 
     IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
     HKEY hKEY = NULL;
-    while (curpAdapterInfo->Next) {
+    while (curpAdapterInfo) {
       std::string curip = std::string(
           curpAdapterInfo->IpAddressList.IpAddress.String,
           (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
