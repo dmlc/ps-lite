@@ -1,6 +1,9 @@
 # Install dependencies
 
 URL=https://raw.githubusercontent.com/mli/deps/master/build
+ifndef WGET
+WGET = wget
+endif
 
 # protobuf
 PROTOBUF = ${DEPS_PATH}/include/google/protobuf/message.h
@@ -8,7 +11,7 @@ ${PROTOBUF}:
 	$(eval FILE=protobuf-2.5.0.tar.gz)
 	$(eval DIR=protobuf-2.5.0)
 	rm -rf $(FILE) $(DIR)
-	wget $(URL)/$(FILE) && tar -zxf $(FILE)
+	$(WGET) $(URL)/$(FILE) && tar -zxf $(FILE)
 	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
@@ -19,7 +22,7 @@ ${ZMQ}:
 	$(eval FILE=zeromq-4.1.2.tar.gz)
 	$(eval DIR=zeromq-4.1.2)
 	rm -rf $(FILE) $(DIR)
-	wget $(URL)/$(FILE) && tar -zxf $(FILE)
+	$(WGET) $(URL)/$(FILE) && tar -zxf $(FILE)
 	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) --with-libsodium=no --with-libgssapi_krb5=no && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
