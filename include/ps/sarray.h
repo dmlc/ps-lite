@@ -116,6 +116,7 @@ class SArray {
    * \param other the source data
    */
   void CopyFrom(const SArray<V>& other) {
+    if (this == &other) return;
     CopyFrom(other.data(), other.size());
   }
 
