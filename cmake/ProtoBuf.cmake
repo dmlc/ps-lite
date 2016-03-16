@@ -67,9 +67,6 @@ function(pslite_protobuf_generate_cpp_py output_dir srcs_var hdrs_var python_var
     list(APPEND ${hdrs_var} "${o_fil_path}/${fil_we}.pb.h")
     list(APPEND ${python_var} "${o_fil_path}/${fil_we}_pb2.py")
 	
-	message("o_fil:" ${_protoc_include})
-	message("o_fil:" ${o_fil})
-	message("proto_path:" ${proto_path})
     add_custom_command(
       OUTPUT "${o_fil_path}/${fil_we}.pb.cc"
              "${o_fil_path}/${fil_we}.pb.h"

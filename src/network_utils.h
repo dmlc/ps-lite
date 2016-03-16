@@ -8,8 +8,8 @@
 #include <unistd.h>
 #ifdef _MSC_VER
 #include <tchar.h>
+#include <winsock2.h>
 #include <windows.h>
-#include <winsock.h>
 #include <iphlpapi.h>
 #undef interface
 #else
