@@ -3,10 +3,10 @@ deps
 *.pb.*
 .*
 *core*
-doc/html
-doc/xml
-doc/latex
-doc/_build
+docs/html
+docs/xml
+docs/latex
+docs/_build
 tests/test_*
 *.pyc
 *.d
