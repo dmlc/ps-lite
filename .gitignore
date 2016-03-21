@@ -4,7 +4,11 @@ deps
 .*
 *core*
 doc/html
+doc/xml
 doc/latex
+doc/_build
 tests/test_*
 *.pyc
 *.d
+
+recommonmark/
