@@ -33,18 +33,22 @@ void Van::Start() {
   } else {
     auto role = is_scheduler_ ? Node::SCHEDULER :
                 (Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER);
-    std::string interface;
-    const char*  itf = getenv("DMLC_INTERFACE");
-    if (itf) interface = std::string(itf);
+    const char* nhost = getenv("DMLC_NODE_HOST");
     std::string ip;
-    if (interface.size()) {
-      GetIP(interface, &ip);
-    } else {
-      GetAvailableInterfaceAndIP(&interface, &ip);
+    if (nhost) ip = std::string(nhost);
+    if (ip.empty()) {
+      const char*  itf = getenv("DMLC_INTERFACE");
+      std::string interface;
+      if (itf) interface = std::string(itf);
+      if (interface.size()) {
+        GetIP(interface, &ip);
+      } else {
+        GetAvailableInterfaceAndIP(&interface, &ip);
+      }
+      CHECK(!interface.empty()) << "failed to get the interface";
     }
     int port = GetAvailablePort();
     CHECK(!ip.empty()) << "failed to get ip";
-    CHECK(!interface.empty()) << "failed to get the interface";
     CHECK(port) << "failed to get a port";
     my_node_.hostname = ip;
     my_node_.role     = role;
