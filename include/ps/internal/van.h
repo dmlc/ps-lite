@@ -57,6 +57,7 @@ class Van {
    * stop both receiving and monitoring threads
    */
   void Stop();
+
  private:
   /**
    * \return interal version without ready check

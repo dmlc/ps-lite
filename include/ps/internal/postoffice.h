@@ -141,6 +141,7 @@ class Postoffice {
    * \param the received message
    */
   void Manage(const Message& recv);
+
  private:
   Postoffice();
   ~Postoffice() { delete van_; }

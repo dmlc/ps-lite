@@ -6,18 +6,21 @@
 #include <vector>
 #include <limits>
 #include <string>
+#include <sstream>
 #include "ps/sarray.h"
 namespace ps {
-
-/**
- * \brief data type
- */
+/** \brief data type */
 enum DataType {
   CHAR, INT8, INT16, INT32, INT64,
   UINT8, UINT16, UINT32, UINT64,
   FLOAT, DOUBLE, OTHER
 };
-
+/** \brief data type name */
+static const char* DataTypeName[] = {
+  "CHAR", "INT8", "INT16", "INT32", "INT64",
+  "UINT8", "UINT16", "UINT32", "UINT64",
+  "FLOAT", "DOUBLE", "OTHER"
+};
 /**
  * \brief compare if V and W are the same type
  */
@@ -25,7 +28,6 @@ template<typename V, typename W>
 inline bool SameType() {
   return std::is_same<typename std::remove_cv<V>::type, W>::value;
 }
-
 /**
  * \brief return the DataType of V
  */
@@ -67,12 +69,12 @@ struct Node {
   enum Role { SERVER, WORKER, SCHEDULER };
   /** \brief get debug string */
   std::string DebugString() const {
-    std::string str = "role=";
-    str += (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"));
-    if (id != kEmpty) str += "id=" + std::to_string(id);
-    str += ", ip=" + hostname;
-    str += ", port=" + std::to_string(port);
-    return str;
+    std::stringstream ss;
+    ss << "role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
+       << (id != kEmpty ? "id=" + std::to_string(id) : "")
+       << ", ip=" << hostname << ", port=" << port;
+
+    return ss.str();
   }
   /** \brief get short debug string */
   std::string ShortDebugString() const {
@@ -89,7 +91,6 @@ struct Node {
   /** \brief the port this node is binding */
   int port;
 };
-
 /**
  * \brief meta info of a system control message
  */
@@ -98,6 +99,20 @@ struct Control {
   Control() : cmd(EMPTY) { }
   /** \brief return true is empty */
   inline bool empty() const { return cmd == EMPTY; }
+  /** \brief get debug string */
+  std::string DebugString() const {
+    if (empty()) return "";
+    std::vector<std::string> cmds = {"EMPTY", "TERMINATE", "ADD_NODE", "BARRIER" };
+    std::stringstream ss;
+    ss << "cmd=" << cmds[cmd];
+    if (node.size()) {
+      ss << ", node={";
+      for (const Node& n : node) ss << " " << n.DebugString();
+      ss << " }";
+    }
+    if (cmd == BARRIER) ss << ", barrier_group=" << barrier_group;
+    return ss.str();
+  }
   /** \brief all commands */
   enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER };
   /** \brief the command */
@@ -107,7 +122,6 @@ struct Control {
   /** \brief the node group for a barrier, such as kWorkerGroup */
   int barrier_group;
 };
-
 /**
  * \brief meta info of a message
  */
@@ -118,6 +132,22 @@ struct Meta {
   Meta() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
            sender(kEmpty), recver(kEmpty),
            request(false), simple_app(false) {}
+  std::string DebugString() const {
+    std::stringstream ss;
+    ss << "Meta: request=" << request << ", push=" << push
+       << ", simple_app=" << simple_app;
+    if (customer_id != kEmpty) ss << ", customer_id=" << customer_id;
+    if (timestamp != kEmpty) ss << ", timestamp=" << timestamp;
+    if (!control.empty()) ss << ", control={ " << control.DebugString() << " }";
+    if (head != kEmpty) ss << ", head=" << head;
+    if (body.size()) ss << ", body=" << body;
+    if (data_type.size()) {
+      ss << ", data_type={";
+      for (auto d : data_type) ss << " " << DataTypeName[static_cast<int>(d)];
+      ss << " }";
+    }
+    return ss.str();
+  }
   /** \brief an int head */
   int head;
   /** \brief the unique id of the customer is messsage is for*/
@@ -141,17 +171,14 @@ struct Meta {
   /** \brief system control message */
   Control control;
 };
-
 /**
  * \brief messages that communicated amaong nodes.
  */
 struct Message {
   /** \brief the meta info of this message */
   Meta meta;
-
   /** \brief the large chunk of data of this message */
   std::vector<SArray<char> > data;
-
   /**
    * \brief push array into data, and add the data type
    */
@@ -160,6 +187,15 @@ struct Message {
     CHECK_EQ(data.size(), meta.data_type.size());
     meta.data_type.push_back(GetDataType<V>());
     data.push_back(SArray<char>(val));
+  }
+  std::string DebugString() const {
+    std::stringstream ss;
+    ss << meta.DebugString();
+    if (data.size()) {
+      ss << " Body:";
+      for (const auto& d : data) ss << " data_size=" << d.size();
+    }
+    return ss.str();
   }
 };
 }  // namespace ps

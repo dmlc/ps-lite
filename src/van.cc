@@ -218,6 +218,10 @@ int Van::Send_(const Message& msg) {
     }
     send_bytes += data_size;
   }
+  if (Postoffice::Get()->verbose() >= 2) {
+    PS_VLOG(2) << my_node_.ShortDebugString() << " => " << msg.meta.recver << ": "
+               << msg.DebugString();
+  }
   send_bytes_ += send_bytes;
   return send_bytes;
 }
@@ -293,7 +297,7 @@ void Van::Receiving() {
       // do some management
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
-        VLOG(1) << my_node_.ShortDebugString() << " is stopped";
+        PS_VLOG(1) << my_node_.ShortDebugString() << " is stopped";
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
         // assign an id
