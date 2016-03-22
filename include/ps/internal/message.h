@@ -55,7 +55,6 @@ DataType GetDataType() {
     return OTHER;
   }
 }
-
 /**
  * \brief information about a node
  */
@@ -66,6 +65,21 @@ struct Node {
   Node() : id(kEmpty), port(kEmpty) {}
   /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
+  /** \brief get debug string */
+  std::string DebugString() const {
+    std::string str = "role=";
+    str += (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"));
+    if (id != kEmpty) str += "id=" + std::to_string(id);
+    str += ", ip=" + hostname;
+    str += ", port=" + std::to_string(port);
+    return str;
+  }
+  /** \brief get short debug string */
+  std::string ShortDebugString() const {
+    std::string str = role == SERVER ? "S" : (role == WORKER ? "W" : "H");
+    if (id != kEmpty) str += "[" + std::to_string(id) + "]";
+    return str;
+  }
   /** \brief the role of this node */
   Role role;
   /** \brief node id */

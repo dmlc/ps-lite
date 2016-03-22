@@ -10,7 +10,6 @@
 #include "ps/internal/customer.h"
 #include "ps/internal/van.h"
 namespace ps {
-
 /**
  * \brief the center of the system
  */
@@ -22,11 +21,8 @@ class Postoffice {
   static Postoffice* Get() {
     static Postoffice e; return &e;
   }
-
   /** \brief get the van */
   Van* van() { return van_; }
-
-
   /**
    * \brief start the system
    *
@@ -34,7 +30,6 @@ class Postoffice {
    * \param argv0 the program name, used for logging
    */
   void Start(const char* argv0);
-
   /**
    * \brief terminate the system
    *
@@ -42,17 +37,14 @@ class Postoffice {
    * every node is finalized.
    */
   void Finalize();
-
   /**
    * \brief add an customer to the system. threadsafe
    */
   void AddCustomer(Customer* customer);
-
   /**
    * \brief remove a customer by given it's id. threasafe
    */
   void RemoveCustomer(Customer* customer);
-
   /**
    * \brief get the customer by id, threadsafe
    * \param id the customer id
@@ -60,7 +52,6 @@ class Postoffice {
    * \return return nullptr if doesn't exist and timeout
    */
   Customer* GetCustomer(int id, int timeout = 0) const;
-
   /**
    * \brief get the id of a node (group), threadsafe
    *
@@ -72,17 +63,14 @@ class Postoffice {
     CHECK(it != node_ids_.cend()) << "node " << node_id << " doesn't exist";
     return it->second;
   }
-
   /**
    * \brief return the key ranges of all server nodes
    */
   const std::vector<Range>& GetServerKeyRanges();
-
   /**
    * \brief the template of a callback
    */
   using Callback = std::function<void()>;
-
   /**
    * \brief Register a callback to the system which is called after Finalize()
    *
@@ -101,7 +89,6 @@ class Postoffice {
   void RegisterExitCallback(const Callback& cb) {
     exit_callback_ = cb;
   }
-
   /**
    * \brief convert from a worker rank into a node id
    * \param rank the worker rank
@@ -109,7 +96,6 @@ class Postoffice {
   static inline int WorkerRankToID(int rank) {
     return rank * 2 + 9;
   }
-
   /**
    * \brief convert from a server rank into a node id
    * \param rank the server rank
@@ -117,7 +103,6 @@ class Postoffice {
   static inline int ServerRankToID(int rank) {
     return rank * 2 + 8;
   }
-
   /**
    * \brief convert from a node id into a server or worker rank
    * \param id the node id
@@ -128,62 +113,53 @@ class Postoffice {
 #endif
     return std::max((id - 8) / 2, 0);
   }
-
   /** \brief Returns the number of worker nodes */
   int num_workers() const { return num_workers_; }
-
   /** \brief Returns the number of server nodes */
   int num_servers() const { return num_servers_; }
-
   /** \brief Returns the rank of this node in its group
    *
    * Each worker will have a unique rank within [0, NumWorkers()). So are
    * servers. This function is available only after \ref Start has been called.
    */
   int my_rank() const { return IDtoRank(van_->my_node().id); }
-
   /** \brief Returns true if this node is a worker node */
   int is_worker() const { return is_worker_; }
-
   /** \brief Returns true if this node is a server node. */
   int is_server() const { return is_server_; }
-
   /** \brief Returns true if this node is a scheduler node. */
   int is_scheduler() const { return is_scheduler_; }
-
+  /** \brief Returns the verbose level. */
+  int verbose() const { return verbose_; }
   /**
    * \brief barrier
    * \param node_id the barrier group id
    */
   void Barrier(int node_id);
-
   /**
    * \brief process a control message, called by van
    * \param the received message
    */
   void Manage(const Message& recv);
-
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
   Van* van_;
   mutable std::mutex mu_;
-
   std::unordered_map<int, Customer*> customers_;
   std::unordered_map<int, std::vector<int>> node_ids_;
   std::vector<Range> server_key_ranges_;
-
   bool is_worker_, is_server_, is_scheduler_;
   int num_servers_, num_workers_;
-
   bool barrier_done_;
+  int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
-
   Callback exit_callback_;
-
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
-}  // namespace ps
 
+/** \brief verbose log */
+#define PS_VLOG(x) LOG_IF(INFO, x <= Postoffice::Get()->verbose())
+}  // namespace ps
 #endif  // PS_INTERNAL_POSTOFFICE_H_

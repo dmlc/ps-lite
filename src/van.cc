@@ -69,11 +69,12 @@ void Van::Start() {
     srand(static_cast<int>(time(NULL)) + my_node_.port);
     my_node_.port = 10000 + rand() % 40000;  // NOLINT
   }
+  PS_VLOG(1) << "Node Info: " << my_node_.DebugString();
 
   // connect to the scheduler
   Connect(scheduler_);
 
-  // start monitor
+  // start monitor, TODO(mli)
   // if (is_scheduler_) {
   //   CHECK(!zmq_socket_monitor(receiver_, "inproc://monitor", ZMQ_EVENT_ALL));
   // } else {
@@ -142,7 +143,6 @@ void Van::Connect(const Node& node) {
     zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
   }
 
-
   // connect
   std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
   if (GetEnv("DMLC_LOCAL", 0)) {
@@ -152,7 +152,8 @@ void Van::Connect(const Node& node) {
   if (zmq_connect(sender, addr.c_str()) != 0) {
     LOG(FATAL) <<  "connect to " + addr + " failed: " + zmq_strerror(errno);
   }
-
+  if (node.role == Node::SERVER) ++num_servers_;
+  if (node.role == Node::WORKER) ++num_workers_;
   senders_[id] = sender;
 }
 
@@ -292,20 +293,14 @@ void Van::Receiving() {
       // do some management
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
+        VLOG(1) << my_node_.ShortDebugString() << " is stopped";
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
         // assign an id
         if (msg.meta.sender == Meta::kEmpty) {
           CHECK(is_scheduler_);
           CHECK_EQ(ctrl.node.size(), 1);
-          auto& node = ctrl.node[0];
-          if (node.role == Node::SERVER) {
-            node.id = Postoffice::ServerRankToID(num_servers_);
-          } else {
-            CHECK_EQ(node.role, Node::WORKER);
-            node.id = Postoffice::WorkerRankToID(num_workers_);
-          }
-          nodes.control.node.push_back(node);
+          nodes.control.node.push_back(ctrl.node[0]);
         }
 
         // update my id
@@ -323,17 +318,25 @@ void Van::Receiving() {
           }
         }
 
-        // connect to these nodes
-        for (size_t i = 0; i < ctrl.node.size(); ++i) {
-          const auto& node = ctrl.node[i];
-          if (node.role == Node::SERVER) ++num_servers_;
-          if (node.role == Node::WORKER) ++num_workers_;
-          Connect(node);
-        }
-
-        if (num_servers_ == Postoffice::Get()->num_servers() &&
-            num_workers_ == Postoffice::Get()->num_workers()) {
-          if (is_scheduler_) {
+        size_t num_nodes = Postoffice::Get()->num_servers() +
+                           Postoffice::Get()->num_workers();
+        if (is_scheduler_) {
+          if (nodes.control.node.size() == num_nodes) {
+            // sort the nodes according their ip and port,
+            std::sort(nodes.control.node.begin(), nodes.control.node.end(),
+                      [](const Node& a, const Node& b) {
+                        return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
+                      });
+            // assign node rank
+            for (auto& node : nodes.control.node) {
+              CHECK_EQ(node.id, Node::kEmpty);
+              int id = node.role == Node::SERVER ?
+                       Postoffice::ServerRankToID(num_servers_) :
+                       Postoffice::WorkerRankToID(num_workers_);
+              VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
+              node.id = id;
+              Connect(node);
+            }
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
             Message back; back.meta = nodes;
@@ -341,7 +344,14 @@ void Van::Receiving() {
                      kWorkerGroup + kServerGroup)) {
               back.meta.recver = r; Send_(back);
             }
+            VLOG(1) << "the scheduler is connected to "
+                    << num_workers_ << " workers and " << num_servers_ << " servers";
+            ready_ = true;
           }
+        } else {
+          CHECK_EQ(ctrl.node.size(), num_nodes+1);
+          for (const auto& node : ctrl.node) Connect(node);
+          VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
           ready_ = true;
         }
       } else if (ctrl.cmd == Control::BARRIER) {

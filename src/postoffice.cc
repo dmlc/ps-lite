@@ -20,6 +20,7 @@ Postoffice::Postoffice() : van_(new Van()) {
   is_worker_ = role == "worker";
   is_server_ = role == "server";
   is_scheduler_ = role == "scheduler";
+  verbose_ = GetEnv("PS_VERBOSE", 0);
 }
 
 void Postoffice::Start(const char* argv0) {

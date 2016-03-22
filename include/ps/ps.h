@@ -12,29 +12,22 @@
 /** \brief communcating with a list of key-value paris. */
 #include "ps/kv_app.h"
 namespace ps {
-
 /** \brief Returns the number of worker nodes */
 int NumWorkers() { return Postoffice::Get()->num_workers(); }
-
 /** \brief Returns the number of server nodes */
 int NumServers() { return Postoffice::Get()->num_servers(); }
-
 /** \brief Returns true if this node is a worker node */
 bool IsWorker() { return Postoffice::Get()->is_worker(); }
-
 /** \brief Returns true if this node is a server node. */
 bool IsServer() { return Postoffice::Get()->is_server(); }
-
 /** \brief Returns true if this node is a scheduler node. */
 bool IsScheduler() { return Postoffice::Get()->is_scheduler(); }
-
 /** \brief Returns the rank of this node in its group
  *
  * Each worker will have a unique rank within [0, NumWorkers()). So are
  * servers. This function is available only after \ref Start has been called.
  */
 int MyRank() { return Postoffice::Get()->my_rank(); }
-
 /**
  * \brief start the system
  *
@@ -44,7 +37,6 @@ int MyRank() { return Postoffice::Get()->my_rank(); }
 void Start(const char* argv0 = nullptr) {
   Postoffice::Get()->Start(argv0);
 }
-
 /**
  * \brief terminate the system
  *
@@ -54,7 +46,6 @@ void Start(const char* argv0 = nullptr) {
 void Finalize() {
   Postoffice::Get()->Finalize();
 }
-
 /**
  * \brief Register a callback to the system which is called after Finalize()
  *

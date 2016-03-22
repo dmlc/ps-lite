@@ -3,7 +3,6 @@
  */
 #ifndef PS_BASE_H_
 #define PS_BASE_H_
-
 #include <limits>
 #include "ps/internal/utils.h"
 namespace ps {
@@ -15,13 +14,10 @@ using Key = uint32_t;
 /*! \brief Use unsigned 64-bit int as the key type */
 using Key = uint64_t;
 #endif
-
 /*! \brief The maximal allowed key value */
 static const Key kMaxKey = std::numeric_limits<Key>::max();
-
 /** \brief node ID for the scheduler */
 static const int kScheduler = 1;
-
 /**
  * \brief the server node group ID
  *
@@ -30,7 +26,6 @@ static const int kScheduler = 1;
  * - kServerGroup + kWorkerGroup means all server and worker nodes
  */
 static const int kServerGroup = 2;
-
 /** \brief the worker node group ID */
 static const int kWorkerGroup = 4;
 
