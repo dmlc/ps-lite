@@ -75,8 +75,7 @@ void GetIP(const std::string& interface, std::string* ip) {
             tstring tstr = dwValue;
             std::string s(tstr.begin(), tstr.end());
             if (s == interface) {
-              *ip = std::string(curpAdapterInfo->IpAddressList.IpAddress.String,
-                                (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
+              *ip = curpAdapterInfo->IpAddressList.IpAddress.String;
               break;
             }
           }
@@ -148,10 +147,7 @@ void GetAvailableInterfaceAndIP(
     IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
     HKEY hKEY = NULL;
     while (curpAdapterInfo) {
-      std::string curip = std::string(
-          curpAdapterInfo->IpAddressList.IpAddress.String,
-          (curpAdapterInfo->IpAddressList.IpAddress.String + 16));
-      curip = std::string(curip.c_str());
+      std::string curip(curpAdapterInfo->IpAddressList.IpAddress.String);
       if (curip == "127.0.0.1") {
         curpAdapterInfo = curpAdapterInfo->Next;
         continue;
