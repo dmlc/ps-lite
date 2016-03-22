@@ -23,6 +23,8 @@ parser.add_argument('-H', '--hostfile', type=str,
                     help = 'the hostfile of mpi server')
 parser.add_argument('command', nargs='+',
                     help = 'command for dmlc program')
+parser.add_argument('--host-ip', type=str,
+                    help = 'the scheduler ip', default='ip')
 args, unknown = parser.parse_known_args()
 #
 # submission script using MPI
@@ -85,4 +87,5 @@ def mpi_submit(nworker, nserver, pass_envs):
 tracker.config_logger(args)
 
 tracker.submit(args.nworker, args.server_nodes, fun_submit = mpi_submit,
+               hostIP=args.host_ip,
                pscmd=(' '.join(args.command) + ' ' + ' '.join(unknown)))
