@@ -2,10 +2,10 @@
 
 ## Debug PS-Lite
 
-We can let PS-Lite print debug information by specify the environment variable
-`PS_VERBOSE`.
-- `PS_VERBOSE=1`: print connection information
-- `PS_VERBOSE=2`: print all data communication information
+One way to debug is loggining all communications. We can do it by specifying
+the environment variable `PS_VERBOSE`:
+- `PS_VERBOSE=1`: logging connection information
+- `PS_VERBOSE=2`: logging all data communication information
 
 For example, first run `make test; cd tests` in the root directory. Then
 ```bash
@@ -25,21 +25,21 @@ Possible outputs are
 [19:57:18] src/van.cc:296: S[8] is stopped
 [19:57:18] src/van.cc:296: W[9] is stopped
 ```
-where `H`, `S` and `W` stand for scheduler, server, and workers respectively.
+where `H`, `S` and `W` stand for scheduler, server, and worker respectively.
 
 ### Use a Particular Network Interface ###
 
-PS-Lite often chooses the first available network interface. But for machines
-have multiple interface, we can specify which network interface to use for data
-communication by the environment variable `DMLC_INTERFACE`. For example, to use
-the infinite-band interface `ib0`, we can
+In default PS-Lite automatically chooses an available network interface. But for
+machines have multiple interfaces, we can specify the network interface to use
+by the environment variable `DMLC_INTERFACE`. For example, to use the
+infinite-band interface `ib0`, we can
 ```bash
 export DMLC_INTERFACE=ib0; commands_to_run
 ```
 
-If all ps-lite nodes run in the same machine, we can also set `DMLC_LOCAL` to be
-true. Then it will use memory copy rather than the local network interface,
-which sometimes improve the performance:
+If all PS-Lite nodes run in the same machine, we can set `DMLC_LOCAL` to use
+memory copy rather than the local network interface, which may improve the
+performance:
 ```bash
 export DMLC_LOCAL=1; commands_to_run
 ```
@@ -47,7 +47,7 @@ export DMLC_LOCAL=1; commands_to_run
 ## Environment Variables to Start PS-Lite
 
 This section is useful if we want to port PS-Lite to other cluster resource
-managers besides the supported one including `ssh`, `mpirun`, `yarn` and `sge`.
+managers besides the provided ones such as `ssh`, `mpirun`, `yarn` and `sge`.
 
 To start a PS-Lite node, we need to give proper values to the following
 environment variables.
