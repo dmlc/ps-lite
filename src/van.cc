@@ -73,7 +73,7 @@ void Van::Start() {
     srand(static_cast<int>(time(NULL)) + my_node_.port);
     my_node_.port = 10000 + rand() % 40000;  // NOLINT
   }
-  PS_VLOG(1) << "Node Info: " << my_node_.DebugString();
+  PS_VLOG(1) << "Bind to " << my_node_.DebugString();
 
   // connect to the scheduler
   Connect(scheduler_);
@@ -286,6 +286,10 @@ int Van::Recv(Message* msg) {
       msg->data.push_back(data);
       if (!zmq_msg_more(zmsg)) { break; }
     }
+  }
+  if (Postoffice::Get()->verbose() >= 2) {
+    PS_VLOG(2) << my_node_.ShortDebugString() << " <= " << msg->meta.sender << ": "
+               << msg->DebugString();
   }
   recv_bytes_ += recv_bytes;
   return recv_bytes;
