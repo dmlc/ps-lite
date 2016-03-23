@@ -19,8 +19,8 @@ ${PROTOBUF}:
 ZMQ = ${DEPS_PATH}/include/zmq.h
 
 ${ZMQ}:
-	$(eval FILE=zeromq-4.1.2.tar.gz)
-	$(eval DIR=zeromq-4.1.2)
+	$(eval FILE=zeromq-4.1.4.tar.gz)
+	$(eval DIR=zeromq-4.1.4)
 	rm -rf $(FILE) $(DIR)
 	$(WGET) $(URL)/$(FILE) && tar -zxf $(FILE)
 	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) --with-libsodium=no --with-libgssapi_krb5=no && $(MAKE) && $(MAKE) install

@@ -78,19 +78,16 @@ void Van::Start() {
   // connect to the scheduler
   Connect(scheduler_);
 
-  // start monitor, TODO(mli)
-  // if (is_scheduler_) {
-  //   CHECK(!zmq_socket_monitor(receiver_, "inproc://monitor", ZMQ_EVENT_ALL));
-  // } else {
-  //   CHECK(!zmq_socket_monitor(
-  //       senders_[kScheduler], "inproc://monitor", ZMQ_EVENT_ALL));
-  // }
-  // monitor_thread_ = std::unique_ptr<std::thread>(
-  //     new std::thread(&Van::Monitoring, this));
-
   // start receiver
   receiver_thread_ = std::unique_ptr<std::thread>(
       new std::thread(&Van::Receiving, this));
+
+  // aliveness monitor
+  CHECK(!zmq_socket_monitor(
+      senders_[kScheduler], "inproc://monitor", ZMQ_EVENT_ALL));
+  monitor_thread_ = std::unique_ptr<std::thread>(
+      new std::thread(&Van::Monitoring, this));
+  monitor_thread_->detach();
 
   if (!is_scheduler_) {
     // let the schduler know myself
@@ -115,9 +112,10 @@ void Van::Stop() {
   receiver_thread_->join();
 
   // close sockets
-  for (auto& it : senders_) zmq_close(it.second);
-  zmq_close(receiver_);
-  zmq_ctx_destroy(context_);
+  // commentted out due enabled monitor...
+  // zmq_close(receiver_);
+  // for (auto& it : senders_) zmq_close(it.second);
+  // zmq_ctx_destroy(context_);
 }
 
 void Van::Connect(const Node& node) {
@@ -127,7 +125,7 @@ void Van::Connect(const Node& node) {
   int id = node.id;
 
   if (senders_.find(id) != senders_.end()) {
-    zmq_close(senders_[id]);
+    return;
   }
 
   // worker doesn't need to connect to the other workers. same for server
@@ -419,9 +417,14 @@ void Van::Monitoring() {
     // address. no help
 
     if (event == ZMQ_EVENT_DISCONNECTED) {
-      // huh...
+      if (!is_scheduler_) {
+        PS_VLOG(1) << my_node_.ShortDebugString() << ": scheduler is dead. exit.";
+        exit(-1);
+      }
     }
-    if (event == ZMQ_EVENT_MONITOR_STOPPED) break;
+    if (event == ZMQ_EVENT_MONITOR_STOPPED) {
+      break;
+    }
   }
   zmq_close(s);
 }
