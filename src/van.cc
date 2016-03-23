@@ -343,7 +343,7 @@ void Van::Receiving() {
               int id = node.role == Node::SERVER ?
                        Postoffice::ServerRankToID(num_servers_) :
                        Postoffice::WorkerRankToID(num_workers_);
-              VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
+              PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
               node.id = id;
               Connect(node);
             }
@@ -354,14 +354,14 @@ void Van::Receiving() {
                      kWorkerGroup + kServerGroup)) {
               back.meta.recver = r; Send_(back);
             }
-            VLOG(1) << "the scheduler is connected to "
+            PS_VLOG(1) << "the scheduler is connected to "
                     << num_workers_ << " workers and " << num_servers_ << " servers";
             ready_ = true;
           }
         } else {
           CHECK_EQ(ctrl.node.size(), num_nodes+1);
           for (const auto& node : ctrl.node) Connect(node);
-          VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
+          PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
           ready_ = true;
         }
       } else if (ctrl.cmd == Control::BARRIER) {
