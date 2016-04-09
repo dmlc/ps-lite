@@ -48,14 +48,14 @@ class SimpleApp {
    *
    * @return the timestamp of this request
    */
-  int Request(int req_head, const std::string& req_body, int recv_id);
+  virtual inline int Request(int req_head, const std::string& req_body, int recv_id);
 
   /**
    * \brief wait until a request is finished
    *
    * \param timestamp
    */
-  void Wait(int timestamp) { obj_->WaitRequest(timestamp); }
+  virtual inline void Wait(int timestamp) { obj_->WaitRequest(timestamp); }
 
 
   /**
@@ -63,7 +63,7 @@ class SimpleApp {
    * \param recv_req the received request
    * \param the response body
    */
-  void Response(const SimpleData& recv_req, const std::string& res_body = "");
+  virtual inline void Response(const SimpleData& recv_req, const std::string& res_body = "");
 
   /**
    * \brief the handle to proces a received request/respoonse
@@ -77,7 +77,7 @@ class SimpleApp {
    * \brief set the request handle
    * \param request_handle the request handle
    */
-  void set_request_handle(const Handle& request_handle) {
+  virtual inline void set_request_handle(const Handle& request_handle) {
     CHECK(request_handle) << "invalid request handle";
     request_handle_ = request_handle;
   }
@@ -86,7 +86,7 @@ class SimpleApp {
    * \brief set the response handle
    * \param response_handle the response handle
    */
-  void set_response_handle(const Handle& response_handle) {
+  virtual inline void set_response_handle(const Handle& response_handle) {
     CHECK(response_handle) << "invalid response handle";
     response_handle_ = response_handle;
   }
@@ -94,11 +94,11 @@ class SimpleApp {
   /**
    * \brief returns the customer
    */
-  Customer* get_customer() { return obj_; }
+  virtual inline Customer* get_customer() { return obj_; }
 
  protected:
   /** \brief empty construct */
-  SimpleApp() : obj_(nullptr) {
+  inline SimpleApp() : obj_(nullptr) {
     request_handle_ = [](const SimpleData& recved, SimpleApp* app) {
       app->Response(recved);
     };
@@ -106,7 +106,7 @@ class SimpleApp {
   }
 
   /** \brief process a received message */
-  void Process(const Message& msg);
+  virtual inline void Process(const Message& msg);
 
   /** \brief ps internal object */
   Customer* obj_;
@@ -120,12 +120,12 @@ class SimpleApp {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SimpleApp::SimpleApp(int app_id) : SimpleApp() {
+inline SimpleApp::SimpleApp(int app_id) : SimpleApp() {
   using namespace std::placeholders;
   obj_ = new Customer(app_id, std::bind(&SimpleApp::Process, this, _1));
 }
 
-int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
+inline int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
   // setup message
   Message msg;
   msg.meta.head = req_head;
@@ -144,7 +144,7 @@ int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
   return ts;
 }
 
-void SimpleApp::Response(const SimpleData& req, const std::string& res_body) {
+inline void SimpleApp::Response(const SimpleData& req, const std::string& res_body) {
   // setup message
   Message msg;
   msg.meta.head = req.head;
@@ -160,7 +160,7 @@ void SimpleApp::Response(const SimpleData& req, const std::string& res_body) {
 }
 
 
-void SimpleApp::Process(const Message& msg) {
+inline void SimpleApp::Process(const Message& msg) {
   SimpleData recv;
   recv.sender    = msg.meta.sender;
   recv.head      = msg.meta.head;
