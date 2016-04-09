@@ -13,28 +13,28 @@
 #include "ps/kv_app.h"
 namespace ps {
 /** \brief Returns the number of worker nodes */
-int NumWorkers() { return Postoffice::Get()->num_workers(); }
+inline int NumWorkers() { return Postoffice::Get()->num_workers(); }
 /** \brief Returns the number of server nodes */
-int NumServers() { return Postoffice::Get()->num_servers(); }
+inline int NumServers() { return Postoffice::Get()->num_servers(); }
 /** \brief Returns true if this node is a worker node */
-bool IsWorker() { return Postoffice::Get()->is_worker(); }
+inline bool IsWorker() { return Postoffice::Get()->is_worker(); }
 /** \brief Returns true if this node is a server node. */
-bool IsServer() { return Postoffice::Get()->is_server(); }
+inline bool IsServer() { return Postoffice::Get()->is_server(); }
 /** \brief Returns true if this node is a scheduler node. */
-bool IsScheduler() { return Postoffice::Get()->is_scheduler(); }
+inline bool IsScheduler() { return Postoffice::Get()->is_scheduler(); }
 /** \brief Returns the rank of this node in its group
  *
  * Each worker will have a unique rank within [0, NumWorkers()). So are
  * servers. This function is available only after \ref Start has been called.
  */
-int MyRank() { return Postoffice::Get()->my_rank(); }
+inline int MyRank() { return Postoffice::Get()->my_rank(); }
 /**
  * \brief start the system
  *
  * This function will block until every nodes are started.
  * \param argv0 the program name, used for logging
  */
-void Start(const char* argv0 = nullptr) {
+inline void Start(const char* argv0 = nullptr) {
   Postoffice::Get()->Start(argv0);
 }
 /**
@@ -43,7 +43,7 @@ void Start(const char* argv0 = nullptr) {
  * All nodes should call this function before existing. It will block until
  * every node is finalized.
  */
-void Finalize() {
+inline void Finalize() {
   Postoffice::Get()->Finalize();
 }
 /**
@@ -61,7 +61,7 @@ void Finalize() {
  * \endcode
  * \param cb the callback function
  */
-void RegisterExitCallback(const std::function<void()>& cb) {
+inline void RegisterExitCallback(const std::function<void()>& cb) {
   Postoffice::Get()->RegisterExitCallback(cb);
 }
 
