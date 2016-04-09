@@ -16,11 +16,33 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #endif
 #include <string>
 
 namespace ps {
+
+
+static std::string ip_string(struct ifaddrs * ifa) {
+  char addressBuffer[INET6_ADDRSTRLEN];
+  std::string rv;
+  void * tmpAddrPtr = NULL;
+  if (ifa->ifa_addr->sa_family==AF_INET) {
+    // is a valid IP4 Address
+    tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+  } else if (ifa->ifa_addr->sa_family==AF_INET6) {
+    // is a valid IP6 Address
+    tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+  }
+
+  if (tmpAddrPtr) {
+    inet_ntop(ifa->ifa_addr->sa_family, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+    rv = addressBuffer;
+  }
+  return rv;
+}
+
 
 /**
  * \brief return the IP address for given interface eth0, eth1, ...
@@ -89,22 +111,21 @@ void GetIP(const std::string& interface, std::string* ip) {
 #else
   struct ifaddrs * ifAddrStruct = NULL;
   struct ifaddrs * ifa = NULL;
-  void * tmpAddrPtr = NULL;
 
   getifaddrs(&ifAddrStruct);
   for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL) continue;
-    if (ifa->ifa_addr->sa_family == AF_INET) {
-      // is a valid IP4 Address
-      tmpAddrPtr = &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr))->sin_addr;
-      char addressBuffer[INET_ADDRSTRLEN];
-      inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-      if (strncmp(ifa->ifa_name,
-                  interface.c_str(),
-                  interface.size()) == 0) {
-        *ip = addressBuffer;
+    for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+      if (ifa->ifa_addr == NULL) continue;
+
+      *ip = ip_string(ifa);
+
+      if (ip->empty() && strncmp(ifa->ifa_name,
+            interface.c_str(),
+            interface.size()) == 0) {
         break;
       }
+
     }
   }
   if (ifAddrStruct != NULL) freeifaddrs(ifAddrStruct);
@@ -200,15 +221,11 @@ void GetAvailableInterfaceAndIP(
   for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next) {
     if (nullptr == ifa->ifa_addr) continue;
 
-    if (AF_INET == ifa->ifa_addr->sa_family &&
-        0 == (ifa->ifa_flags & IFF_LOOPBACK)) {
-      char address_buffer[INET_ADDRSTRLEN];
-      void* sin_addr_ptr = &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr))->sin_addr;
-      inet_ntop(AF_INET, sin_addr_ptr, address_buffer, INET_ADDRSTRLEN);
+    std::string tmp_ip = ip_string(ifa);
 
-      *ip = address_buffer;
+    if (!tmp_ip.empty() && 0 == (ifa->ifa_flags & IFF_LOOPBACK)) {
       *interface = ifa->ifa_name;
-
+      *ip = tmp_ip;
       break;
     }
   }
@@ -224,35 +241,54 @@ void GetAvailableInterfaceAndIP(
  * \return 0 on failure
  */
 int GetAvailablePort() {
-  struct sockaddr_in addr;
-  addr.sin_port = htons(0);  // have system pick up a random port available for me
-  addr.sin_family = AF_INET;  // IPV4
-  addr.sin_addr.s_addr = htonl(INADDR_ANY);  // set our addr to any interface
+  struct addrinfo hints;
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = AI_PASSIVE;
+  struct addrinfo *result, *rp;
 
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (0 != bind(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
-    perror("bind():");
-    return 0;
-  }
-#ifdef _MSC_VER
-  int addr_len = sizeof(struct sockaddr_in);
-#else
-  socklen_t addr_len = sizeof(struct sockaddr_in);
-#endif
-
-  if (0 != getsockname(sock, (struct sockaddr*)&addr, &addr_len)) {
-    perror("getsockname():");
+  if (0 != getaddrinfo("localhost", NULL, &hints, &result)) {
+    perror("getaddrinfo():");
     return 0;
   }
 
-  int ret_port = ntohs(addr.sin_port);
+  unsigned short ret_port = 0;
+  for (rp = result; rp != nullptr; rp = rp->ai_next) {
+    int sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (sfd == -1) {
+      perror("socket():");
+    }
+
+    if (bind(sfd, rp->ai_addr, rp->ai_addrlen) != 0) {
+      perror("bind():");
+      goto finish;
+    }
+
+    if (0 != getsockname(sfd, rp->ai_addr, &rp->ai_addrlen)) {
+      perror("getsockname():");
+      goto finish;
+    }
+
+    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+    if (0 != getnameinfo(rp->ai_addr, rp->ai_addrlen, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf), NI_NUMERICSERV)) {
+      perror("getnameinfo():");
+      goto finish;
+    }
+    ret_port = atoi(sbuf);
+    close(sfd);
+    break;
+finish:
 #ifdef  _MSC_VER
-  closesocket(sock);
+    closesocket(sfd);
 #else
-  close(sock);
+    close(sfd);
 #endif
+  }
+  freeaddrinfo(result);
   return ret_port;
 }
+
 
 }  // namespace ps
 #endif  // PS_NETWORK_UTILS_H_
