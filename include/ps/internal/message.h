@@ -71,7 +71,7 @@ struct Node {
   std::string DebugString() const {
     std::stringstream ss;
     ss << "role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
-       << (id != kEmpty ? "id=" + std::to_string(id) : "")
+       << (id != kEmpty ? ", id=" + std::to_string(id) : "")
        << ", ip=" << hostname << ", port=" << port;
 
     return ss.str();
@@ -102,7 +102,8 @@ struct Control {
   /** \brief get debug string */
   std::string DebugString() const {
     if (empty()) return "";
-    std::vector<std::string> cmds = {"EMPTY", "TERMINATE", "ADD_NODE", "BARRIER" };
+    std::vector<std::string> cmds = {
+      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK"};
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
     if (node.size()) {
@@ -111,16 +112,19 @@ struct Control {
       ss << " }";
     }
     if (cmd == BARRIER) ss << ", barrier_group=" << barrier_group;
+    if (cmd == ACK) ss << ", msg_sig=" << msg_sig;
     return ss.str();
   }
   /** \brief all commands */
-  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER };
+  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK };
   /** \brief the command */
   Command cmd;
   /** \brief node infos */
   std::vector<Node> node;
   /** \brief the node group for a barrier, such as kWorkerGroup */
   int barrier_group;
+  /** message signature */
+  uint64_t msg_sig;
 };
 /**
  * \brief meta info of a message
@@ -134,11 +138,21 @@ struct Meta {
            request(false), simple_app(false) {}
   std::string DebugString() const {
     std::stringstream ss;
-    ss << "Meta: request=" << request << ", push=" << push
-       << ", simple_app=" << simple_app;
-    if (customer_id != kEmpty) ss << ", customer_id=" << customer_id;
+    if (sender == Node::kEmpty) {
+      ss << "?";
+    } else {
+      ss << sender;
+    }
+    ss <<  " => " << recver;
+    ss << ". Meta: request=" << request;
     if (timestamp != kEmpty) ss << ", timestamp=" << timestamp;
-    if (!control.empty()) ss << ", control={ " << control.DebugString() << " }";
+    if (!control.empty()) {
+      ss << ", control={ " << control.DebugString() << " }";
+    } else {
+      ss << ", customer_id=" << customer_id
+         << ", simple_app=" << simple_app
+         << ", push=" << push;
+    }
     if (head != kEmpty) ss << ", head=" << head;
     if (body.size()) ss << ", body=" << body;
     if (data_type.size()) {

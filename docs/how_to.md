@@ -27,7 +27,7 @@ Possible outputs are
 ```
 where `H`, `S` and `W` stand for scheduler, server, and worker respectively.
 
-### Use a Particular Network Interface ###
+## Use a Particular Network Interface
 
 In default PS-Lite automatically chooses an available network interface. But for
 machines have multiple interfaces, we can specify the network interface to use
@@ -56,3 +56,19 @@ environment variables.
 - `DMLC_ROLE` : the role of the current node, can be `worker`, `server`, or `scheduler`
 - `DMLC_PS_ROOT_URI` : the ip or hostname of the scheduler node
 - `DMLC_PS_ROOT_PORT` : the port that the scheduler node is listening
+
+## Retransmission for Unreliable Network
+
+It's not uncommon that a message disappear when sending from one node to another
+node. The program hangs when a critical message is not delivered
+successfully. In that case, we can let PS-Lite send an additional ACK for each
+message, and resend that message if the ACK is not received within a given
+time. To enable this feature, we can set the environment variables
+
+- `PS_RESEND` : if or not enable retransmission. Default is 0.
+- `PS_RESEND_TIMEOUT` : timeout in millisecond if an ACK message if not
+  received. PS-Lite then will resend that message. Default is 1000.
+
+We can set `PS_DROP_MSG`, the percent of probability to drop a received
+message, for testing. For example, `PS_DROP_MSG=10` will let a node drop a
+received message with 10% probability.

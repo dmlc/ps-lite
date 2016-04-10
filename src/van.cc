@@ -68,6 +68,10 @@ void Van::Start() {
   // connect to the scheduler
   Connect(scheduler_);
 
+  // for debug use
+  if (getenv("PS_DROP_MSG")) {
+    drop_rate_ = atoi(getenv("PS_DROP_MSG"));
+  }
   // start receiver
   receiver_thread_ = std::unique_ptr<std::thread>(
       new std::thread(&Van::Receiving, this));
@@ -78,11 +82,19 @@ void Van::Start() {
     msg.meta.recver = kScheduler;
     msg.meta.control.cmd = Control::ADD_NODE;
     msg.meta.control.node.push_back(my_node_);
+    msg.meta.timestamp = timestamp_++;
     Send(msg);
   }
   // wait until ready
   while (!ready_) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // resender
+  if (getenv("PS_RESEND") && atoi(getenv("PS_RESEND")) != 0) {
+    int timeout = 1000;
+    if (getenv("PS_RESEND_TIMEOUT")) timeout = atoi(getenv("PS_RESEND_TIMEOUT"));
+    resender_ = new Resender(timeout, 10, this);
   }
 }
 
@@ -93,6 +105,7 @@ void Van::Stop() {
   exit.meta.recver = my_node_.id;
   SendMsg(exit);
   receiver_thread_->join();
+  delete resender_;
 }
 
 int Van::Send(const Message& msg) {
@@ -101,8 +114,7 @@ int Van::Send(const Message& msg) {
   send_bytes_ += send_bytes_;
   if (resender_) resender_->AddOutgoing(msg);
   if (Postoffice::Get()->verbose() >= 2) {
-    PS_VLOG(2) << my_node_.ShortDebugString() << " => " << msg.meta.recver << ": "
-               << msg.DebugString();
+    PS_VLOG(2) << msg.DebugString();
   }
   return send_bytes;
 }
@@ -112,11 +124,20 @@ void Van::Receiving() {
   while (true) {
     Message msg;
     int recv_bytes = RecvMsg(&msg);
+
+    // For debug, drop received message
+    if (ready_ && drop_rate_ > 0) {
+      unsigned seed = time(NULL) + my_node_.id;
+      if (rand_r(&seed) % 100 < drop_rate_) {
+        LOG(WARNING) << "Drop message " << msg.DebugString();
+        continue;
+      }
+    }
+
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
     if (Postoffice::Get()->verbose() >= 2) {
-      PS_VLOG(2) << my_node_.ShortDebugString() << " <= " << msg.meta.sender << ": "
-                 << msg.DebugString();
+      PS_VLOG(2) << msg.DebugString();
     }
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
@@ -176,7 +197,9 @@ void Van::Receiving() {
             Message back; back.meta = nodes;
             for (int r : Postoffice::Get()->GetNodeIDs(
                      kWorkerGroup + kServerGroup)) {
-              back.meta.recver = r; SendMsg(back);
+              back.meta.recver = r;
+              back.meta.timestamp = timestamp_++;
+              Send(back);
             }
             PS_VLOG(1) << "the scheduler is connected to "
                     << num_workers_ << " workers and " << num_servers_ << " servers";
@@ -207,7 +230,8 @@ void Van::Receiving() {
             res.meta.control.cmd = Control::BARRIER;
             for (int r : Postoffice::Get()->GetNodeIDs(group)) {
               res.meta.recver = r;
-              CHECK_GT(SendMsg(res), 0);
+              res.meta.timestamp = timestamp_++;
+              CHECK_GT(Send(res), 0);
             }
           }
         } else {
@@ -240,7 +264,11 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   if (!meta.control.empty()) {
     auto ctrl = pb.mutable_control();
     ctrl->set_cmd(meta.control.cmd);
-    ctrl->set_barrier_group(meta.control.barrier_group);
+    if (meta.control.cmd == Control::BARRIER) {
+      ctrl->set_barrier_group(meta.control.barrier_group);
+    } else if (meta.control.cmd == Control::ACK) {
+      ctrl->set_msg_sig(meta.control.msg_sig);
+    }
     for (const auto& n : meta.control.node) {
       auto p = ctrl->add_node();
       p->set_id(n.id);
@@ -279,6 +307,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
     const auto& ctrl = pb.control();
     meta->control.cmd = static_cast<Control::Command>(ctrl.cmd());
     meta->control.barrier_group = ctrl.barrier_group();
+    meta->control.msg_sig = ctrl.msg_sig();
     for (int i = 0; i < ctrl.node_size(); ++i) {
       const auto& p = ctrl.node(i);
       Node n;

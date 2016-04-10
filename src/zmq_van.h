@@ -1,6 +1,7 @@
 #ifndef PS_ZMQ_VAN_
 #define PS_ZMQ_VAN_
 #include <zmq.h>
+#include <thread>
 #include <stdlib.h>
 #include "ps/internal/van.h"
 namespace ps {

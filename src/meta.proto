@@ -20,6 +20,7 @@ message PBControl {
   required int32 cmd = 1;
   repeated PBNode node = 2;
   optional int32 barrier_group = 3;
+  optional uint64 msg_sig = 4;
 }
 
 // mete information about a message

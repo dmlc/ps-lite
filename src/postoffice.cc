@@ -119,6 +119,7 @@ void Postoffice::Barrier(int node_group) {
   req.meta.request = true;
   req.meta.control.cmd = Control::BARRIER;
   req.meta.control.barrier_group = node_group;
+  req.meta.timestamp = van_->GetTimestamp();
   CHECK_GT(van_->Send(req), 0);
 
   barrier_cond_.wait(ulk, [this] {
