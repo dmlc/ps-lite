@@ -29,7 +29,7 @@ clean:
 	find src -name "*.pb.[ch]*" -delete
 
 lint:
-	python2 tests/lint.py ps all include/ps src
+	python tests/lint.py ps all include/ps src
 
 ps: build/libps.a
 

@@ -59,13 +59,11 @@ class Van {
    * stop receiving threads
    */
   virtual void Stop();
-
   /**
    * \brief get next available timestamp. thread safe
    */
-  int GetTimestamp() {
-    return timestamp_ ++;
-  }
+  int GetTimestamp() { return timestamp_++; }
+
  protected:
   /**
    * \brief connect to a node
@@ -115,9 +113,9 @@ class Van {
   std::vector<int> barrier_count_;
   /** msg resender */
   Resender* resender_ = nullptr;
-  DISALLOW_COPY_AND_ASSIGN(Van);
   int drop_rate_ = 0;
   std::atomic<int> timestamp_{0};
+  DISALLOW_COPY_AND_ASSIGN(Van);
 };
 }  // namespace ps
 #endif  // PS_INTERNAL_VAN_H_

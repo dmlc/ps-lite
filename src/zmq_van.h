@@ -1,8 +1,12 @@
-#ifndef PS_ZMQ_VAN_
-#define PS_ZMQ_VAN_
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
+#ifndef PS_ZMQ_VAN_H_
+#define PS_ZMQ_VAN_H_
 #include <zmq.h>
-#include <thread>
 #include <stdlib.h>
+#include <thread>
+#include <string>
 #include "ps/internal/van.h"
 namespace ps {
 /**
@@ -221,9 +225,9 @@ class ZMQVan : public Van {
   std::mutex mu_;
   void *receiver_ = nullptr;
 };
-} // namespace ps
+}  // namespace ps
 
-#endif  // PS_ZMQ_VAN_
+#endif  // PS_ZMQ_VAN_H_
 
 
 

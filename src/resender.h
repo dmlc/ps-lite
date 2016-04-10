@@ -1,6 +1,10 @@
+/**
+ *  Copyright (c) 2015 by Contributors
+ */
 #ifndef PS_RESENDER_H_
 #define PS_RESENDER_H_
 #include <chrono>
+#include <vector>
 #include <unordered_set>
 #include <unordered_map>
 namespace ps {
@@ -133,5 +137,5 @@ class Resender {
   int max_num_retry_;
   Van* van_;
 };
-} // namespace ps
-#endif  // RESENDER_H_
+}  // namespace ps
+#endif  // PS_RESENDER_H_
