@@ -2,7 +2,6 @@
  *  Copyright (c) 2015 by Contributors
  */
 #include "ps/internal/van.h"
-#include <zmq.h>
 #include <thread>
 #include <chrono>
 #include "ps/base.h"
@@ -11,15 +10,20 @@
 #include "ps/internal/customer.h"
 #include "./network_utils.h"
 #include "./meta.pb.h"
+#include "./zmq_van.h"
+#include "./resender.h"
 namespace ps {
 
-void Van::Start() {
-  // start zmq
-  context_ = zmq_ctx_new();
-  CHECK(context_ != NULL) << "create 0mq context failed";
-  zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, 65536);
-  // zmq_ctx_set(context_, ZMQ_IO_THREADS, 4);
+Van* Van::Create(const std::string& type) {
+  if (type == "zmq") {
+    return new ZMQVan();
+  } else {
+    LOG(FATAL) << "unsupported van type: " << type;
+    return nullptr;
+  }
+}
 
+void Van::Start() {
   // get scheduler info
   scheduler_.hostname = std::string(CHECK_NOTNULL(getenv("DMLC_PS_ROOT_URI")));
   scheduler_.port     = atoi(CHECK_NOTNULL(getenv("DMLC_PS_ROOT_PORT")));
@@ -56,24 +60,10 @@ void Van::Start() {
     // cannot determine my id now, the scheduler will assign it later
   }
 
-  // bind. do multiple retries on binding the port. since it's possible that
-  // different nodes on the same machine picked the same port. but no retry for
-  // the scheduler
-  receiver_ = zmq_socket(context_, ZMQ_ROUTER);
-  CHECK(receiver_ != NULL)
-      << "create receiver socket failed: " << zmq_strerror(errno);
-  int local = GetEnv("DMLC_LOCAL", 0);
-  std::string addr = local ? "ipc:///tmp/" : "tcp://*:";
-  int max_retry = is_scheduler_ ? 40 : 1;
-  for (int i = 0; i < max_retry; ++i) {
-    auto address = addr + std::to_string(my_node_.port);
-    if (zmq_bind(receiver_, address.c_str()) == 0) break;
-    CHECK_NE(i, max_retry - 1)
-        << "bind failed after " << max_retry << " retries";
-    srand(static_cast<int>(time(NULL)) + my_node_.port);
-    my_node_.port = 10000 + rand() % 40000;  // NOLINT
-  }
+  // bind.
+  my_node_.port = Bind(my_node_, is_scheduler_ ? 0 : 40);
   PS_VLOG(1) << "Bind to " << my_node_.DebugString();
+  CHECK_NE(my_node_.port, -1) << "bind failed";
 
   // connect to the scheduler
   Connect(scheduler_);
@@ -82,20 +72,13 @@ void Van::Start() {
   receiver_thread_ = std::unique_ptr<std::thread>(
       new std::thread(&Van::Receiving, this));
 
-  // aliveness monitor
-  CHECK(!zmq_socket_monitor(
-      senders_[kScheduler], "inproc://monitor", ZMQ_EVENT_ALL));
-  monitor_thread_ = std::unique_ptr<std::thread>(
-      new std::thread(&Van::Monitoring, this));
-  monitor_thread_->detach();
-
   if (!is_scheduler_) {
-    // let the schduler know myself
+    // let the scheduler know myself
     Message msg;
     msg.meta.recver = kScheduler;
     msg.meta.control.cmd = Control::ADD_NODE;
     msg.meta.control.node.push_back(my_node_);
-    Send_(msg);
+    Send(msg);
   }
   // wait until ready
   while (!ready_) {
@@ -108,197 +91,36 @@ void Van::Stop() {
   Message exit;
   exit.meta.control.cmd = Control::TERMINATE;
   exit.meta.recver = my_node_.id;
-  Send_(exit);
+  SendMsg(exit);
   receiver_thread_->join();
-
-  // close sockets
-  // commentted out due enabled monitor...
-  // zmq_close(receiver_);
-  // for (auto& it : senders_) zmq_close(it.second);
-  // zmq_ctx_destroy(context_);
 }
 
-void Van::Connect(const Node& node) {
-  CHECK_NE(node.id, node.kEmpty);
-  CHECK_NE(node.port, node.kEmpty);
-  CHECK(node.hostname.size());
-  int id = node.id;
-
-  if (senders_.find(id) != senders_.end()) {
-    return;
-  }
-
-  // worker doesn't need to connect to the other workers. same for server
-  if ((node.role == my_node_.role) &&
-      (node.id != my_node_.id)) {
-    return;
-  }
-
-  void *sender = zmq_socket(context_, ZMQ_DEALER);
-  CHECK(sender != NULL)
-      << zmq_strerror(errno)
-      << ". it often can be solved by \"sudo ulimit -n 65536\""
-      << " or edit /etc/security/limits.conf";
-
-  if (my_node_.id != Node::kEmpty) {
-    std::string my_id = "ps" + std::to_string(my_node_.id);
-    zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
-  }
-
-  // connect
-  std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
-  if (GetEnv("DMLC_LOCAL", 0)) {
-    addr = "ipc:///tmp/" + std::to_string(node.port);
-  }
-
-  if (zmq_connect(sender, addr.c_str()) != 0) {
-    LOG(FATAL) <<  "connect to " + addr + " failed: " + zmq_strerror(errno);
-  }
-  if (node.role == Node::SERVER) ++num_servers_;
-  if (node.role == Node::WORKER) ++num_workers_;
-  senders_[id] = sender;
-}
-
-/**
- * \brief be smart on freeing recved data
- */
-void FreeData(void *data, void *hint) {
-  if (hint == NULL) {
-    delete [] static_cast<char*>(data);
-  } else {
-    delete static_cast<SArray<char>*>(hint);
-  }
-}
-
-int Van::Send_(const Message& msg) {
-  std::lock_guard<std::mutex> lk(mu_);
-
-  // find the socket
-  int id = msg.meta.recver;
-  CHECK_NE(id, Meta::kEmpty);
-  auto it = senders_.find(id);
-  if (it == senders_.end()) {
-    LOG(WARNING) << "there is no socket to node " + id;
-    return -1;
-  }
-  void *socket = it->second;
-
-  // send meta
-
-  int meta_size; char* meta_buf;
-  PackMeta(msg.meta, &meta_buf, &meta_size);
-
-  int tag = ZMQ_SNDMORE;
-  int n = msg.data.size();
-  if (n == 0) tag = 0;
-  zmq_msg_t meta_msg;
-  zmq_msg_init_data(&meta_msg, meta_buf, meta_size, FreeData, NULL);
-
-  while (true) {
-    if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
-    if (errno == EINTR) continue;
-    LOG(WARNING) << "failed to send message to node [" << id
-                 << "] errno: " << errno << " " << zmq_strerror(errno);
-    return -1;
-  }
-  int send_bytes = meta_size;
-
-  // send data
-  for (int i = 0; i < n; ++i) {
-    zmq_msg_t data_msg;
-    SArray<char>* data = new SArray<char>(msg.data[i]);
-    int data_size = data->size();
-    zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
-    if (i == n - 1) tag = 0;
-    while (true) {
-      if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
-      if (errno == EINTR) continue;
-      LOG(WARNING) << "failed to send message to node [" << id
-                   << "] errno: " << errno << " " << zmq_strerror(errno)
-                   << ". " << i << "/" << n;
-      return -1;
-    }
-    send_bytes += data_size;
-  }
+int Van::Send(const Message& msg) {
+  int send_bytes = SendMsg(msg);
+  CHECK_NE(send_bytes, -1);
+  send_bytes_ += send_bytes_;
+  if (resender_) resender_->AddOutgoing(msg);
   if (Postoffice::Get()->verbose() >= 2) {
     PS_VLOG(2) << my_node_.ShortDebugString() << " => " << msg.meta.recver << ": "
                << msg.DebugString();
   }
-  send_bytes_ += send_bytes;
   return send_bytes;
 }
 
-int Van::GetNodeID(const char* buf, size_t size) {
-  if (size > 2 && buf[0] == 'p' && buf[1] == 's') {
-    int id = 0;
-    size_t i = 2;
-    for (; i < size; ++i) {
-      if (buf[i] >= '0' && buf[i] <= '9') {
-        id = id * 10 + buf[i] - '0';
-      } else {
-        break;
-      }
-    }
-    if (i == size) return id;
-  }
-  return Meta::kEmpty;
-}
-
-int Van::Recv(Message* msg) {
-  msg->data.clear();
-  size_t recv_bytes = 0;
-  for (int i = 0; ; ++i) {
-    zmq_msg_t* zmsg = new zmq_msg_t;
-    CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
-    while (true) {
-      if (zmq_msg_recv(zmsg, receiver_, 0) != -1) break;
-      if (errno == EINTR) continue;
-      LOG(WARNING) << "failed to receive message. errno: "
-                   << errno << " " << zmq_strerror(errno);
-      return -1;
-    }
-    char* buf = CHECK_NOTNULL((char *)zmq_msg_data(zmsg));
-    size_t size = zmq_msg_size(zmsg);
-    recv_bytes += size;
-
-    if (i == 0) {
-      // identify
-      msg->meta.sender = GetNodeID(buf, size);
-      msg->meta.recver = my_node_.id;
-      CHECK(zmq_msg_more(zmsg));
-      zmq_msg_close(zmsg);
-      delete zmsg;
-    } else if (i == 1) {
-      // task
-      UnpackMeta(buf, size, &(msg->meta));
-      zmq_msg_close(zmsg);
-      if (!zmq_msg_more(zmsg)) break;
-      delete zmsg;
-    } else {
-      // zero-copy
-      SArray<char> data;
-      data.reset(buf, size, [zmsg, size](char* buf) {
-          zmq_msg_close(zmsg);
-          delete zmsg;
-        });
-      msg->data.push_back(data);
-      if (!zmq_msg_more(zmsg)) { break; }
-    }
-  }
-  if (Postoffice::Get()->verbose() >= 2) {
-    PS_VLOG(2) << my_node_.ShortDebugString() << " <= " << msg->meta.sender << ": "
-               << msg->DebugString();
-  }
-  recv_bytes_ += recv_bytes;
-  return recv_bytes;
-}
-
 void Van::Receiving() {
-  // for scheduler usage
-  Meta nodes;
-
+  Meta nodes;  // for scheduler usage
   while (true) {
-    Message msg; CHECK_GE(Recv(&msg), 0);
+    Message msg;
+    int recv_bytes = RecvMsg(&msg);
+    CHECK_NE(recv_bytes, -1);
+    recv_bytes_ += recv_bytes;
+    if (Postoffice::Get()->verbose() >= 2) {
+      PS_VLOG(2) << my_node_.ShortDebugString() << " <= " << msg.meta.sender << ": "
+                 << msg.DebugString();
+    }
+    // duplicated message
+    if (resender_ && resender_->AddIncomming(msg)) continue;
+
     if (!msg.meta.control.empty()) {
       // do some management
       auto& ctrl = msg.meta.control;
@@ -346,13 +168,15 @@ void Van::Receiving() {
               PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
               node.id = id;
               Connect(node);
+              if (node.role == Node::SERVER) ++num_servers_;
+              if (node.role == Node::WORKER) ++num_workers_;
             }
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
             Message back; back.meta = nodes;
             for (int r : Postoffice::Get()->GetNodeIDs(
                      kWorkerGroup + kServerGroup)) {
-              back.meta.recver = r; Send_(back);
+              back.meta.recver = r; SendMsg(back);
             }
             PS_VLOG(1) << "the scheduler is connected to "
                     << num_workers_ << " workers and " << num_servers_ << " servers";
@@ -360,7 +184,11 @@ void Van::Receiving() {
           }
         } else {
           CHECK_EQ(ctrl.node.size(), num_nodes+1);
-          for (const auto& node : ctrl.node) Connect(node);
+          for (const auto& node : ctrl.node) {
+            Connect(node);
+            if (node.role == Node::SERVER) ++num_servers_;
+            if (node.role == Node::WORKER) ++num_workers_;
+          }
           PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
           ready_ = true;
         }
@@ -379,7 +207,7 @@ void Van::Receiving() {
             res.meta.control.cmd = Control::BARRIER;
             for (int r : Postoffice::Get()->GetNodeIDs(group)) {
               res.meta.recver = r;
-              CHECK_GT(Send_(res), 0);
+              CHECK_GT(SendMsg(res), 0);
             }
           }
         } else {
@@ -396,37 +224,6 @@ void Van::Receiving() {
       obj->Accept(msg);
     }
   }
-}
-
-void Van::Monitoring() {
-  void *s = CHECK_NOTNULL(zmq_socket(context_, ZMQ_PAIR));
-  CHECK(!zmq_connect(s, "inproc://monitor"));
-  while (true) {
-    //  First frame in message contains event number and value
-    zmq_msg_t msg;
-    zmq_msg_init(&msg);
-    if (zmq_msg_recv(&msg, s, 0) == -1) {
-      if (errno == EINTR) continue;
-      break;
-    }
-    uint8_t *data = static_cast<uint8_t*>(zmq_msg_data(&msg));
-    int event = *reinterpret_cast<uint16_t*>(data);
-    // int value = *(uint32_t *)(data + 2);
-
-    // Second frame in message contains event address. it's just the router's
-    // address. no help
-
-    if (event == ZMQ_EVENT_DISCONNECTED) {
-      if (!is_scheduler_) {
-        PS_VLOG(1) << my_node_.ShortDebugString() << ": scheduler is dead. exit.";
-        exit(-1);
-      }
-    }
-    if (event == ZMQ_EVENT_MONITOR_STOPPED) {
-      break;
-    }
-  }
-  zmq_close(s);
 }
 
 void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
@@ -459,7 +256,6 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   CHECK(pb.SerializeToArray(*meta_buf, *buf_size))
       << "failed to serialize protbuf";
 }
-
 
 void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   // to protobuf

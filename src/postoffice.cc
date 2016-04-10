@@ -9,7 +9,8 @@
 #include "ps/base.h"
 
 namespace ps {
-Postoffice::Postoffice() : van_(new Van()) {
+Postoffice::Postoffice() {
+  van_ = Van::Create("zmq");
   const char* val = NULL;
   val = CHECK_NOTNULL(getenv("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);

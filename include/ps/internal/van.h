@@ -13,37 +13,40 @@
 #include "ps/base.h"
 #include "ps/internal/message.h"
 namespace ps {
+class Resender;
 /**
  * \brief Van sends messages to remote nodes
+ *
+ * If environment variable PS_RESEND is set to be 1, then van will resend a
+ * message if it no ACK messsage is received within PS_RESEND_TIMEOUT millisecond
  */
 class Van {
  public:
-  /** \brief constructer, do nothing. use \ref Start for real things */
+  /**
+   * \brief create Van
+   * \param type zmq, socket, ...
+   */
+  static Van* Create(const std::string& type);
+  /** \brief constructer, do nothing. use \ref Start for real start */
   Van() { }
-  /**\brief deconstructer, do nothing. use \ref Stop for real staff */
-  ~Van() { }
+  /**\brief deconstructer, do nothing. use \ref Stop for real stop */
+  virtual ~Van() { }
   /**
    * \brief start van
    *
    * must call it before calling Send
-   * initalize all connections to other nodes
-   * start the receiving and monitoring threads.
    *
-   * the former keeps receiving messages. if it is a system control message,
-   * give it to postoffice::manager, otherwise, give it to the accoding app
-   *
-   * for the latter, if this is a scheduler node, then monitors the liveness
-   * other nodes. otherwise, monitor the liveness of the scheduler
+   * it initalizes all connections to other nodes.  start the receiving
+   * threads, which keeps receiving messages. if it is a system
+   * control message, give it to postoffice::manager, otherwise, give it to the
+   * accoding app.
    */
-  void Start();
+  virtual void Start();
   /**
-   * \brief send a message, thread-safe
+   * \brief send a message, It is thread-safe
    * \return the number of bytes sent. -1 if failed
    */
-  int Send(const Message& msg) {
-    CHECK(ready_) << "call Start() first";
-    return Send_(msg);
-  }
+  int Send(const Message& msg);
   /**
    * \brief return my node
    */
@@ -53,25 +56,32 @@ class Van {
   }
   /**
    * \brief stop van
-   *
-   * stop both receiving and monitoring threads
+   * stop receiving threads
    */
-  void Stop();
+  virtual void Stop();
 
- private:
-  /**
-   * \return interal version without ready check
-   */
-  int Send_(const Message& msg);
-  /**
-   * return the node id given the received identity
-   * \return -1 if not find
-   */
-  int GetNodeID(const char* buf, size_t size);
+ protected:
   /**
    * \brief connect to a node
    */
-  void Connect(const Node& node);
+  virtual void Connect(const Node& node) = 0;
+  /**
+   * \brief bind to my node
+   * do multiple retries on binding the port. since it's possible that
+   * different nodes on the same machine picked the same port
+   * \return return the port binded, -1 if failed.
+   */
+  virtual int Bind(const Node& node, int max_retry) = 0;
+  /**
+   * \brief block until received a message
+   * \return the number of bytes received. -1 if failed or timeout
+   */
+  virtual int RecvMsg(Message* msg) = 0;
+  /**
+   * \brief send a mesage
+   * \return the number of bytes sent
+   */
+  virtual int SendMsg(const Message& msg) = 0;
   /**
    * \brief pack meta into a string
    */
@@ -80,50 +90,25 @@ class Van {
    * \brief unpack meta from a string
    */
   void UnpackMeta(const char* meta_buf, int buf_size, Meta* meta);
-  /**
-   * \brief receive a packge
-   * \return the number of bytes received. -1 if failed
-   */
-  int Recv(Message* msg);
-  /**
-   * thread function for receving
-   */
-  void Receiving();
-  /**
-   * thread function for monioring
-   */
-  void Monitoring();
-  void *context_ = nullptr;
-  void *receiver_ = nullptr;
+
   Node scheduler_;
   Node my_node_;
   bool is_scheduler_;
-  /**
-   * whether it is ready for sending
-   */
+
+ private:
+  /** thread function for receving */
+  void Receiving();
+  /** whether it is ready for sending */
   std::atomic<bool> ready_{false};
-  /**
-   * in exiting if true
-   */
-  std::atomic<bool> exit_{true};
-  std::mutex mu_;
-  size_t send_bytes_ = 0;
+  std::atomic<size_t> send_bytes_{0};
   size_t recv_bytes_ = 0;
   int num_servers_ = 0;
   int num_workers_ = 0;
-  /**
-   * \brief node_id to the socket for sending data to this node
-   */
-  std::unordered_map<int, void *> senders_;
-  /**
-   * the thread for monitoering node liveness
-   */
-  std::unique_ptr<std::thread> monitor_thread_;
-  /**
-   * the thread for receiving messages
-   */
-  std::vector<int> barrier_count_;
+  /** the thread for receiving messages */
   std::unique_ptr<std::thread> receiver_thread_;
+  std::vector<int> barrier_count_;
+  /** msg resender */
+  Resender* resender_ = nullptr;
   DISALLOW_COPY_AND_ASSIGN(Van);
 };
 }  // namespace ps

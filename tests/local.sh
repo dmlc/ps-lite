@@ -24,14 +24,14 @@ ${bin} ${arg} &
 export DMLC_ROLE='server'
 for ((i=0; i<${DMLC_NUM_SERVER}; ++i)); do
     export HEAPPROFILE=./S${i}
-    ${bin} ${arg} &
+    ${bin} ${arg} 2>./S${i}.log &
 done
 
 # start workers
 export DMLC_ROLE='worker'
 for ((i=0; i<${DMLC_NUM_WORKER}; ++i)); do
     export HEAPPROFILE=./W${i}
-    ${bin} ${arg} &
+    ${bin} ${arg} 2>./W${i}.log &
 done
 
 wait
