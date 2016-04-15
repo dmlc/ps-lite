@@ -8,6 +8,10 @@
 #include <thread>
 #include <string>
 #include "ps/internal/van.h"
+#if _MSC_VER
+#define rand_r(x) rand()
+#endif
+
 namespace ps {
 /**
  * \brief be smart on freeing recved data
