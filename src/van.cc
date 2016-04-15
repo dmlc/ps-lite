@@ -25,8 +25,8 @@ Van* Van::Create(const std::string& type) {
 
 void Van::Start() {
   // get scheduler info
-  scheduler_.hostname = std::string(CHECK_NOTNULL(getenv("DMLC_PS_ROOT_URI")));
-  scheduler_.port     = atoi(CHECK_NOTNULL(getenv("DMLC_PS_ROOT_PORT")));
+  scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
+  scheduler_.port     = atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
   scheduler_.role     = Node::SCHEDULER;
   scheduler_.id       = kScheduler;
   is_scheduler_       = Postoffice::Get()->is_scheduler();
@@ -37,11 +37,11 @@ void Van::Start() {
   } else {
     auto role = is_scheduler_ ? Node::SCHEDULER :
                 (Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER);
-    const char* nhost = getenv("DMLC_NODE_HOST");
+    const char* nhost = Environment::Get()->find("DMLC_NODE_HOST");
     std::string ip;
     if (nhost) ip = std::string(nhost);
     if (ip.empty()) {
-      const char*  itf = getenv("DMLC_INTERFACE");
+      const char*  itf = Environment::Get()->find("DMLC_INTERFACE");
       std::string interface;
       if (itf) interface = std::string(itf);
       if (interface.size()) {
@@ -69,8 +69,8 @@ void Van::Start() {
   Connect(scheduler_);
 
   // for debug use
-  if (getenv("PS_DROP_MSG")) {
-    drop_rate_ = atoi(getenv("PS_DROP_MSG"));
+  if (Environment::Get()->find("PS_DROP_MSG")) {
+    drop_rate_ = atoi(Environment::Get()->find("PS_DROP_MSG"));
   }
   // start receiver
   receiver_thread_ = std::unique_ptr<std::thread>(
@@ -91,9 +91,11 @@ void Van::Start() {
   }
 
   // resender
-  if (getenv("PS_RESEND") && atoi(getenv("PS_RESEND")) != 0) {
+  if (Environment::Get()->find("PS_RESEND") && atoi(Environment::Get()->find("PS_RESEND")) != 0) {
     int timeout = 1000;
-    if (getenv("PS_RESEND_TIMEOUT")) timeout = atoi(getenv("PS_RESEND_TIMEOUT"));
+    if (Environment::Get()->find("PS_RESEND_TIMEOUT")) {
+      timeout = atoi(Environment::Get()->find("PS_RESEND_TIMEOUT"));
+    }
     resender_ = new Resender(timeout, 10, this);
   }
 }

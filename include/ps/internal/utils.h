@@ -4,6 +4,7 @@
 #ifndef PS_INTERNAL_UTILS_H_
 #define PS_INTERNAL_UTILS_H_
 #include "dmlc/logging.h"
+#include "ps/internal/env.h"
 namespace ps {
 
 #ifdef _MSC_VER
@@ -27,7 +28,7 @@ typedef unsigned __int64 uint64_t;
  */
 template<typename V>
 inline V GetEnv(const char *key, V default_val) {
-  const char *val = getenv(key);
+  const char *val = Environment::Get()->find(key);
   if (val == nullptr) {
     return default_val;
   } else {

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 #include "ps/range.h"
+#include "ps/internal/env.h"
 #include "ps/internal/customer.h"
 #include "ps/internal/van.h"
 namespace ps {
@@ -157,6 +158,8 @@ class Postoffice {
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
   Callback exit_callback_;
+  /** \brief Holding a shared_ptr to prevent it from being destructed too early */
+  std::shared_ptr<Environment> env_ref_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 
