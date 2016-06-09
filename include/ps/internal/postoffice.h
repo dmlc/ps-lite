@@ -146,6 +146,10 @@ class Postoffice {
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
+  /** thread function for timeout terminate checking */
+  void TimeoutTerminate();
+  /** the thread for timeout checking */    
+  std::unique_ptr<std::thread> timeout_thread_;
   Van* van_;
   mutable std::mutex mu_;
   std::unordered_map<int, Customer*> customers_;

@@ -98,6 +98,12 @@ void Van::Start() {
     }
     resender_ = new Resender(timeout, 10, this);
   }
+
+  if (!is_scheduler_) {
+    // start heartbeat thread
+    heartbeat_thread_ = std::unique_ptr<std::thread>(
+      new std::thread(&Van::Heartbeat, this));
+  }
 }
 
 void Van::Stop() {
@@ -107,6 +113,7 @@ void Van::Stop() {
   exit.meta.recver = my_node_.id;
   SendMsg(exit);
   receiver_thread_->join();
+  if (!is_scheduler_) heartbeat_thread_->join();
   delete resender_;
 }
 
@@ -138,6 +145,7 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
+    last_recv_time_ = time(NULL);
     if (Postoffice::Get()->verbose() >= 2) {
       PS_VLOG(2) << msg.DebugString();
     }
@@ -149,6 +157,8 @@ void Van::Receiving() {
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
         PS_VLOG(1) << my_node_.ShortDebugString() << " is stopped";
+        terminated_ = true;
+        ready_ = false;
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
         // assign an id
@@ -239,6 +249,12 @@ void Van::Receiving() {
         } else {
           Postoffice::Get()->Manage(msg);
         }
+      } else if (ctrl.cmd == Control::HEARTBEAT) {
+        CHECK(is_scheduler_);
+        PS_VLOG(0) << "Receive " << ctrl.node.size() << " heartbeat(s)";
+        for (auto &node : ctrl.node) {
+          PS_VLOG(0) << node.DebugString(); 
+        }
       }
     } else {
       CHECK_NE(msg.meta.sender, Meta::kEmpty);
@@ -324,4 +340,15 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   }
 }
 
+void Van::Heartbeat() {
+  while (ready_) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    Message msg;
+    msg.meta.recver = kScheduler;
+    msg.meta.control.cmd = Control::HEARTBEAT;
+    msg.meta.control.node.push_back(my_node_);
+    msg.meta.timestamp = timestamp_++;
+    Send(msg);
+  }
+}
 }  // namespace ps

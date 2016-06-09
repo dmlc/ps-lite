@@ -10,6 +10,7 @@
 #include <thread>
 #include <memory>
 #include <atomic>
+#include <ctime>
 #include "ps/base.h"
 #include "ps/internal/message.h"
 namespace ps {
@@ -63,6 +64,14 @@ class Van {
    * \brief get next available timestamp. thread safe
    */
   int GetTimestamp() { return timestamp_++; }
+  /**
+   * \brief get last received time. thread safe
+   */
+  int GetLastRecvTime() { return last_recv_time_; }
+  /**
+   * \brief whether the receiving thread is terminated. thread safe
+   */
+  bool IsTerminated() { return terminated_; }
 
  protected:
   /**
@@ -102,19 +111,26 @@ class Van {
  private:
   /** thread function for receving */
   void Receiving();
+  /** thread function for heartbeat */
+  void Heartbeat();
   /** whether it is ready for sending */
   std::atomic<bool> ready_{false};
+  /** whether the receiving thread is terminated */
+  std::atomic<bool> terminated_{false};
   std::atomic<size_t> send_bytes_{0};
   size_t recv_bytes_ = 0;
   int num_servers_ = 0;
   int num_workers_ = 0;
   /** the thread for receiving messages */
   std::unique_ptr<std::thread> receiver_thread_;
+  /** the thread for sending heartbeat */
+  std::unique_ptr<std::thread> heartbeat_thread_;
   std::vector<int> barrier_count_;
   /** msg resender */
   Resender* resender_ = nullptr;
   int drop_rate_ = 0;
   std::atomic<int> timestamp_{0};
+  std::atomic<time_t> last_recv_time_{time(NULL)};
   DISALLOW_COPY_AND_ASSIGN(Van);
 };
 }  // namespace ps
