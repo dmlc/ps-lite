@@ -114,7 +114,7 @@ void Van::Stop() {
   SendMsg(exit);
   receiver_thread_->join();
   if (!is_scheduler_) heartbeat_thread_->join();
-  delete resender_;
+  if (resender_) delete resender_;
 }
 
 int Van::Send(const Message& msg) {
@@ -250,10 +250,20 @@ void Van::Receiving() {
           Postoffice::Get()->Manage(msg);
         }
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        CHECK(is_scheduler_);
         PS_VLOG(0) << "Receive " << ctrl.node.size() << " heartbeat(s)";
+        time_t t = time(NULL);
         for (auto &node : ctrl.node) {
           PS_VLOG(0) << node.DebugString(); 
+          Postoffice::Get()->UpdateHeartbeat(node.id, t);
+          if (is_scheduler_) {
+            Message heartbeat_ack;
+            heartbeat_ack.meta.recver = node.id;
+            heartbeat_ack.meta.control.cmd = Control::HEARTBEAT;
+            heartbeat_ack.meta.control.node.push_back(my_node_);
+            heartbeat_ack.meta.timestamp = timestamp_++;
+            // send back heartbeat
+            Send(heartbeat_ack);
+          }
         }
       }
     } else {

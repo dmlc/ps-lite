@@ -161,6 +161,33 @@ void Postoffice::Manage(const Message& recv) {
   }
 }
 
+std::vector<int> Postoffice::GetDeadNodes(int t) {
+  std::vector<int> dead_nodes;
+  time_t curr_time = time(NULL);
+  const auto& nodes = is_scheduler_
+    ? GetNodeIDs(kWorkerGroup + kServerGroup)
+    : GetNodeIDs(kScheduler);
+  {
+    std::lock_guard<std::mutex> lk(heartbeat_mu_);
+    for (int r : nodes) {
+      if (heartbeats_.find(r) == heartbeats_.end()) continue; // FIXME
+      if (heartbeats_.find(r) == heartbeats_.end()
+            || heartbeats_[r] + t < curr_time) {
+        dead_nodes.push_back(r);
+      }
+    }
+  }
+  return dead_nodes;
+}
+
+void Postoffice::ForceReleaseBarrier() {
+  Message msg;
+  msg.meta.request = false;
+  msg.meta.control.cmd = Control::BARRIER;
+  msg.meta.recver = van_->my_node().id;
+  van_->Send(msg);
+}
+
 void Postoffice::TimeoutTerminate() {
   while (!van_->IsTerminated()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
