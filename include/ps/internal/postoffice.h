@@ -184,6 +184,7 @@ class Postoffice {
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */
   std::shared_ptr<Environment> env_ref_;
+  time_t start_time_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 

@@ -60,6 +60,9 @@ void Postoffice::Start(const char* argv0) {
   // start van
   van_->Start();
 
+  // record start time
+  start_time_ = time(NULL);
+
   // do a barrier here
   Barrier(kWorkerGroup + kServerGroup + kScheduler);
 
@@ -114,7 +117,7 @@ Customer* Postoffice::GetCustomer(int id, int timeout) const {
 }
 
 void Postoffice::Barrier(int node_group) {
-  if (GetNodeIDs(node_group).size() <= 1 || van_->IsTerminated()) return;
+  if (GetNodeIDs(node_group).size() <= 1) return;
   auto role = van_->my_node().role;
   if (role == Node::SCHEDULER) {
     CHECK(node_group & kScheduler);
@@ -163,6 +166,8 @@ void Postoffice::Manage(const Message& recv) {
 
 std::vector<int> Postoffice::GetDeadNodes(int t) {
   std::vector<int> dead_nodes;
+  if (!van_->IsReady()) return dead_nodes;
+
   time_t curr_time = time(NULL);
   const auto& nodes = is_scheduler_
     ? GetNodeIDs(kWorkerGroup + kServerGroup)
@@ -170,9 +175,9 @@ std::vector<int> Postoffice::GetDeadNodes(int t) {
   {
     std::lock_guard<std::mutex> lk(heartbeat_mu_);
     for (int r : nodes) {
-      if (heartbeats_.find(r) == heartbeats_.end()) continue; // FIXME
-      if (heartbeats_.find(r) == heartbeats_.end()
-            || heartbeats_[r] + t < curr_time) {
+      auto it = heartbeats_.find(r);
+      if ((it == heartbeats_.end() || it->second + t < curr_time)
+            && start_time_ + t < curr_time) {
         dead_nodes.push_back(r);
       }
     }
@@ -189,7 +194,7 @@ void Postoffice::ForceReleaseBarrier() {
 }
 
 void Postoffice::TimeoutTerminate() {
-  while (!van_->IsTerminated()) {
+  while (van_->IsReady()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     time_t curr_time = time(NULL);
     PS_VLOG(0) << "last recv time: " << van_->GetLastRecvTime()

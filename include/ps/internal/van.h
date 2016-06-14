@@ -69,9 +69,9 @@ class Van {
    */
   int GetLastRecvTime() { return last_recv_time_; }
   /**
-   * \brief whether the receiving thread is terminated. thread safe
+   * \brief whether it is ready for sending. thread safe
    */
-  bool IsTerminated() { return terminated_; }
+  bool IsReady() { return ready_; }
 
  protected:
   /**
