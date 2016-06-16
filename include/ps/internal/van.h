@@ -65,10 +65,6 @@ class Van {
    */
   int GetTimestamp() { return timestamp_++; }
   /**
-   * \brief get last received time. thread safe
-   */
-  int GetLastRecvTime() { return last_recv_time_; }
-  /**
    * \brief whether it is ready for sending. thread safe
    */
   bool IsReady() { return ready_; }
@@ -115,8 +111,6 @@ class Van {
   void Heartbeat();
   /** whether it is ready for sending */
   std::atomic<bool> ready_{false};
-  /** whether the receiving thread is terminated */
-  std::atomic<bool> terminated_{false};
   std::atomic<size_t> send_bytes_{0};
   size_t recv_bytes_ = 0;
   int num_servers_ = 0;
@@ -130,7 +124,6 @@ class Van {
   Resender* resender_ = nullptr;
   int drop_rate_ = 0;
   std::atomic<int> timestamp_{0};
-  std::atomic<time_t> last_recv_time_{time(NULL)};
   DISALLOW_COPY_AND_ASSIGN(Van);
 };
 }  // namespace ps

@@ -145,7 +145,6 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    last_recv_time_ = time(NULL);
     if (Postoffice::Get()->verbose() >= 2) {
       PS_VLOG(2) << msg.DebugString();
     }
@@ -157,7 +156,6 @@ void Van::Receiving() {
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
         PS_VLOG(1) << my_node_.ShortDebugString() << " is stopped";
-        terminated_ = true;
         ready_ = false;
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
@@ -250,10 +248,8 @@ void Van::Receiving() {
           Postoffice::Get()->Manage(msg);
         }
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        PS_VLOG(0) << "Receive " << ctrl.node.size() << " heartbeat(s)";
         time_t t = time(NULL);
         for (auto &node : ctrl.node) {
-          PS_VLOG(0) << node.DebugString(); 
           Postoffice::Get()->UpdateHeartbeat(node.id, t);
           if (is_scheduler_) {
             Message heartbeat_ack;
@@ -351,8 +347,10 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
 }
 
 void Van::Heartbeat() {
-  while (ready_) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+  const char* val = Environment::Get()->find("PS_HEARTBEAT_INTERVAL");
+  const int interval = val ? atoi(val) : 5;
+  while (interval > 0 && ready_) {
+    std::this_thread::sleep_for(std::chrono::seconds(interval));
     Message msg;
     msg.meta.recver = kScheduler;
     msg.meta.control.cmd = Control::HEARTBEAT;

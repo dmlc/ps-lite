@@ -65,20 +65,11 @@ void Postoffice::Start(const char* argv0) {
 
   // do a barrier here
   Barrier(kWorkerGroup + kServerGroup + kScheduler);
-
-  // start timeout terminating thread,
-  // when the instance has not received income message
-  // for PS_TIMEOUT seconds, terminate itself
-  //timeout_thread_ = std::unique_ptr<std::thread>(
-  //  new std::thread(&Postoffice::TimeoutTerminate, this));
 }
 
 void Postoffice::Finalize() {
   Barrier(kWorkerGroup + kServerGroup + kScheduler);
-  PS_VLOG(0) << "Finalized barrier done!";
   van_->Stop();
-  //timeout_thread_->join();
-  PS_VLOG(0) << "timeout thread joined";
   if (exit_callback_) exit_callback_();
 }
 
@@ -92,11 +83,9 @@ void Postoffice::AddCustomer(Customer* customer) {
 
 
 void Postoffice::RemoveCustomer(Customer* customer) {
-  PS_VLOG(0) << "Removing customer ...";
   std::lock_guard<std::mutex> lk(mu_);
   int id = CHECK_NOTNULL(customer)->id();
   customers_.erase(id);
-  PS_VLOG(0) << "Customer removed ...";
 }
 
 
@@ -184,33 +173,4 @@ std::vector<int> Postoffice::GetDeadNodes(int t) {
   }
   return dead_nodes;
 }
-
-void Postoffice::ForceReleaseBarrier() {
-  Message msg;
-  msg.meta.request = false;
-  msg.meta.control.cmd = Control::BARRIER;
-  msg.meta.recver = van_->my_node().id;
-  van_->Send(msg);
-}
-
-void Postoffice::TimeoutTerminate() {
-  while (van_->IsReady()) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    time_t curr_time = time(NULL);
-    PS_VLOG(0) << "last recv time: " << van_->GetLastRecvTime()
-      << ", current time: " << curr_time;
-    if (curr_time - van_->GetLastRecvTime() > 30) {
-      // trigger timeout terminating
-      PS_VLOG(0) << "Timeout! Terminating ...";
-      // release barrier
-      Message msg;
-      msg.meta.request = false;
-      msg.meta.control.cmd = Control::BARRIER;
-      msg.meta.recver = van_->my_node().id;
-      van_->Send(msg);
-      PS_VLOG(0) << "TimeoutTerminate thread return";
-      return;
-    }
-  }
-}  
 }  // namespace ps

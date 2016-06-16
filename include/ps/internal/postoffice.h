@@ -153,9 +153,9 @@ class Postoffice {
   }
   /**
    * \brief get node ids that haven't reported heartbeats for over t seconds
-   * \param t the timeout seconds
+   * \param t timeout in sec
    */
-  std::vector<int> GetDeadNodes(int t);
+  std::vector<int> GetDeadNodes(int t = 60);
   /**
    * \brief force to release the barrier
    */
@@ -164,10 +164,6 @@ class Postoffice {
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
-  /** thread function for timeout terminate checking */
-  void TimeoutTerminate();
-  /** the thread for timeout checking */    
-  std::unique_ptr<std::thread> timeout_thread_;
   Van* van_;
   mutable std::mutex mu_;
   std::unordered_map<int, Customer*> customers_;
