@@ -142,6 +142,24 @@ class Postoffice {
    * \param the received message
    */
   void Manage(const Message& recv);
+  /**
+   * \brief update the heartbeat record map
+   * \param node_id the \ref Node id
+   * \param t the last received heartbeat time
+   */
+  void UpdateHeartbeat(int node_id, time_t t) {
+    std::lock_guard<std::mutex> lk(heartbeat_mu_);
+    heartbeats_[node_id] = t;
+  }
+  /**
+   * \brief get node ids that haven't reported heartbeats for over t seconds
+   * \param t timeout in sec
+   */
+  std::vector<int> GetDeadNodes(int t = 60);
+  /**
+   * \brief force to release the barrier
+   */
+  void ForceReleaseBarrier();
 
  private:
   Postoffice();
@@ -157,9 +175,12 @@ class Postoffice {
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
+  std::mutex heartbeat_mu_;
+  std::unordered_map<int, time_t> heartbeats_;
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */
   std::shared_ptr<Environment> env_ref_;
+  time_t start_time_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 

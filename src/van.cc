@@ -98,6 +98,12 @@ void Van::Start() {
     }
     resender_ = new Resender(timeout, 10, this);
   }
+
+  if (!is_scheduler_) {
+    // start heartbeat thread
+    heartbeat_thread_ = std::unique_ptr<std::thread>(
+      new std::thread(&Van::Heartbeat, this));
+  }
 }
 
 void Van::Stop() {
@@ -107,7 +113,8 @@ void Van::Stop() {
   exit.meta.recver = my_node_.id;
   SendMsg(exit);
   receiver_thread_->join();
-  delete resender_;
+  if (!is_scheduler_) heartbeat_thread_->join();
+  if (resender_) delete resender_;
 }
 
 int Van::Send(const Message& msg) {
@@ -149,6 +156,7 @@ void Van::Receiving() {
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
         PS_VLOG(1) << my_node_.ShortDebugString() << " is stopped";
+        ready_ = false;
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
         // assign an id
@@ -239,6 +247,20 @@ void Van::Receiving() {
         } else {
           Postoffice::Get()->Manage(msg);
         }
+      } else if (ctrl.cmd == Control::HEARTBEAT) {
+        time_t t = time(NULL);
+        for (auto &node : ctrl.node) {
+          Postoffice::Get()->UpdateHeartbeat(node.id, t);
+          if (is_scheduler_) {
+            Message heartbeat_ack;
+            heartbeat_ack.meta.recver = node.id;
+            heartbeat_ack.meta.control.cmd = Control::HEARTBEAT;
+            heartbeat_ack.meta.control.node.push_back(my_node_);
+            heartbeat_ack.meta.timestamp = timestamp_++;
+            // send back heartbeat
+            Send(heartbeat_ack);
+          }
+        }
       }
     } else {
       CHECK_NE(msg.meta.sender, Meta::kEmpty);
@@ -324,4 +346,17 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   }
 }
 
+void Van::Heartbeat() {
+  const char* val = Environment::Get()->find("PS_HEARTBEAT_INTERVAL");
+  const int interval = val ? atoi(val) : 5;
+  while (interval > 0 && ready_) {
+    std::this_thread::sleep_for(std::chrono::seconds(interval));
+    Message msg;
+    msg.meta.recver = kScheduler;
+    msg.meta.control.cmd = Control::HEARTBEAT;
+    msg.meta.control.node.push_back(my_node_);
+    msg.meta.timestamp = timestamp_++;
+    Send(msg);
+  }
+}
 }  // namespace ps

@@ -10,6 +10,7 @@
 #include <thread>
 #include <memory>
 #include <atomic>
+#include <ctime>
 #include "ps/base.h"
 #include "ps/internal/message.h"
 namespace ps {
@@ -63,6 +64,10 @@ class Van {
    * \brief get next available timestamp. thread safe
    */
   int GetTimestamp() { return timestamp_++; }
+  /**
+   * \brief whether it is ready for sending. thread safe
+   */
+  bool IsReady() { return ready_; }
 
  protected:
   /**
@@ -102,6 +107,8 @@ class Van {
  private:
   /** thread function for receving */
   void Receiving();
+  /** thread function for heartbeat */
+  void Heartbeat();
   /** whether it is ready for sending */
   std::atomic<bool> ready_{false};
   std::atomic<size_t> send_bytes_{0};
@@ -110,6 +117,8 @@ class Van {
   int num_workers_ = 0;
   /** the thread for receiving messages */
   std::unique_ptr<std::thread> receiver_thread_;
+  /** the thread for sending heartbeat */
+  std::unique_ptr<std::thread> heartbeat_thread_;
   std::vector<int> barrier_count_;
   /** msg resender */
   Resender* resender_ = nullptr;

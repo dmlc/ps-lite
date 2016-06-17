@@ -60,6 +60,9 @@ void Postoffice::Start(const char* argv0) {
   // start van
   van_->Start();
 
+  // record start time
+  start_time_ = time(NULL);
+
   // do a barrier here
   Barrier(kWorkerGroup + kServerGroup + kScheduler);
 }
@@ -148,5 +151,26 @@ void Postoffice::Manage(const Message& recv) {
     barrier_mu_.unlock();
     barrier_cond_.notify_all();
   }
+}
+
+std::vector<int> Postoffice::GetDeadNodes(int t) {
+  std::vector<int> dead_nodes;
+  if (!van_->IsReady()) return dead_nodes;
+
+  time_t curr_time = time(NULL);
+  const auto& nodes = is_scheduler_
+    ? GetNodeIDs(kWorkerGroup + kServerGroup)
+    : GetNodeIDs(kScheduler);
+  {
+    std::lock_guard<std::mutex> lk(heartbeat_mu_);
+    for (int r : nodes) {
+      auto it = heartbeats_.find(r);
+      if ((it == heartbeats_.end() || it->second + t < curr_time)
+            && start_time_ + t < curr_time) {
+        dead_nodes.push_back(r);
+      }
+    }
+  }
+  return dead_nodes;
 }
 }  // namespace ps
