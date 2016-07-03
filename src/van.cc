@@ -131,6 +131,8 @@ int Van::Send(const Message& msg) {
 }
 
 void Van::Receiving() {
+  const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
+  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 5;
   Meta nodes;  // for scheduler usage
   while (true) {
     Message msg;
@@ -161,11 +163,40 @@ void Van::Receiving() {
         ready_ = false;
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
+        size_t num_nodes = Postoffice::Get()->num_servers() +
+                           Postoffice::Get()->num_workers();
         // assign an id
         if (msg.meta.sender == Meta::kEmpty) {
           CHECK(is_scheduler_);
           CHECK_EQ(ctrl.node.size(), 1);
-          nodes.control.node.push_back(ctrl.node[0]);
+          if (nodes.control.node.size() < num_nodes) {
+            nodes.control.node.push_back(ctrl.node[0]);
+          } else {
+            bool re_added = false;
+            auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+            PS_VLOG(1) << "dead_nodes size" << dead_nodes.size();
+            std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
+            for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
+              const auto& node = nodes.control.node[i];
+              PS_VLOG(1) << "check node id" << node.id;
+              if (dead_set.find(node.id) != dead_set.end()
+                    && node.role == ctrl.node[0].role) {
+                nodes.control.node[i] = ctrl.node[0];
+                nodes.control.node[i].is_recovery = true;
+                // assign previous node id
+                // ctrl.node[0].id = node.id;
+                re_added = true;
+                PS_VLOG(1) << "added";
+                break;
+              }
+            }
+            if (!re_added) continue;
+            nodes.control.node.pop_back();
+            for (auto& node : nodes.control.node) {
+              node.id = Node::kEmpty;
+            }
+            num_workers_ = 0; num_servers_ = 0;
+          }
         }
 
         // update my id
@@ -174,6 +205,7 @@ void Van::Receiving() {
           if (my_node_.hostname == node.hostname &&
               my_node_.port == node.port) {
             my_node_.id = node.id;
+            my_node_.is_recovery = node.is_recovery;
             std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
             _putenv_s("DMLC_RANK", rank.c_str());
@@ -183,8 +215,6 @@ void Van::Receiving() {
           }
         }
 
-        size_t num_nodes = Postoffice::Get()->num_servers() +
-                           Postoffice::Get()->num_workers();
         if (is_scheduler_) {
           if (nodes.control.node.size() == num_nodes) {
             // sort the nodes according their ip and port,
@@ -234,6 +264,7 @@ void Van::Receiving() {
           }
           int group = ctrl.barrier_group;
           ++barrier_count_[group];
+          PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
           if (barrier_count_[group] ==
               static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
             barrier_count_[group] = 0;
@@ -301,6 +332,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
       p->set_role(n.role);
       p->set_port(n.port);
       p->set_hostname(n.hostname);
+      p->set_is_recovery(n.is_recovery);
     }
   }
 
@@ -341,6 +373,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
       n.port = p.port();
       n.hostname = p.hostname();
       n.id = p.has_id() ? p.id() : Node::kEmpty;
+      n.is_recovery = p.is_recovery();
       meta->control.node.push_back(n);
     }
   } else {

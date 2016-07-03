@@ -64,7 +64,7 @@ void Postoffice::Start(const char* argv0) {
   start_time_ = time(NULL);
 
   // do a barrier here
-  Barrier(kWorkerGroup + kServerGroup + kScheduler);
+  //Barrier(kWorkerGroup + kServerGroup + kScheduler);
 }
 
 void Postoffice::Finalize() {

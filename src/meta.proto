@@ -13,6 +13,8 @@ message PBNode {
   optional string hostname = 3;
   // the port this node is binding
   optional int32 port = 4;
+  // whether this node is created by failover
+  optional bool is_recovery = 5;
 }
 
 // system control info

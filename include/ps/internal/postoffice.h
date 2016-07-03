@@ -132,6 +132,8 @@ class Postoffice {
   int is_scheduler() const { return is_scheduler_; }
   /** \brief Returns the verbose level. */
   int verbose() const { return verbose_; }
+  /** \brief Return whether this node is a recovery node */
+  bool is_recovery() const { return van_->my_node().is_recovery; }
   /**
    * \brief barrier
    * \param node_id the barrier group id
