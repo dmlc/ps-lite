@@ -52,6 +52,8 @@ void Van::Start() {
       CHECK(!interface.empty()) << "failed to get the interface";
     }
     int port = GetAvailablePort();
+    const char* pstr = Environment::Get()->find("PORT");
+    if (pstr) port = atoi(pstr);
     CHECK(!ip.empty()) << "failed to get ip";
     CHECK(port) << "failed to get a port";
     my_node_.hostname = ip;
