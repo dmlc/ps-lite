@@ -172,30 +172,47 @@ void Van::Receiving() {
           if (nodes.control.node.size() < num_nodes) {
             nodes.control.node.push_back(ctrl.node[0]);
           } else {
+            Meta recovery_nodes;
             bool re_added = false;
             auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
             PS_VLOG(1) << "dead_nodes size" << dead_nodes.size();
             std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
+              // TODO: node memory leak
               const auto& node = nodes.control.node[i];
               PS_VLOG(1) << "check node id" << node.id;
               if (dead_set.find(node.id) != dead_set.end()
                     && node.role == ctrl.node[0].role) {
-                nodes.control.node[i] = ctrl.node[0];
-                nodes.control.node[i].is_recovery = true;
+                auto& new_node = ctrl.node[0];
                 // assign previous node id
-                // ctrl.node[0].id = node.id;
+                new_node.id = node.id;
+                new_node.is_recovery = true;
+                nodes.control.node[i] = new_node;
+                Connect(new_node);
+                recovery_nodes.control.node.push_back(new_node);
                 re_added = true;
                 PS_VLOG(1) << "added";
                 break;
               }
             }
-            if (!re_added) continue;
-            nodes.control.node.pop_back();
-            for (auto& node : nodes.control.node) {
-              node.id = Node::kEmpty;
+            if (re_added) {
+              recovery_nodes.control.cmd = Control::ADD_NODE;
+              Message recovery; recovery.meta = recovery_nodes;
+              Message all; all.meta = nodes;
+              for (int r : Postoffice::Get()->GetNodeIDs(
+                       kWorkerGroup + kServerGroup)) {
+                if (r == recovery_nodes.control.node[0].id) {
+                  all.meta.recver = r;
+                  all.meta.timestamp = timestamp_++;
+                  Send(all);
+                } else {
+                  recovery.meta.recver = r;
+                  recovery.meta.timestamp = timestamp_++;
+                  Send(recovery);
+                }
+              }
             }
-            num_workers_ = 0; num_servers_ = 0;
+            continue;
           }
         }
 
@@ -248,9 +265,10 @@ void Van::Receiving() {
             ready_ = true;
           }
         } else {
-          CHECK_EQ(ctrl.node.size(), num_nodes+1);
+          //FIXME: CHECK_EQ(ctrl.node.size(), num_nodes+1);
           for (const auto& node : ctrl.node) {
             Connect(node);
+            // TODO: do not add num_servers_ & num_workers_
             if (node.role == Node::SERVER) ++num_servers_;
             if (node.role == Node::WORKER) ++num_workers_;
           }
