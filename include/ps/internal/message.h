@@ -65,6 +65,15 @@ struct Node {
   static const int kEmpty;
   /** \brief default constructor */
   Node() : id(kEmpty), port(kEmpty), is_recovery(false) {}
+  /** \brief copy constructor */
+  Node(const Node &ref)
+    : role(ref.role), id(ref.id), hostname(ref.hostname),
+      port(ref.port), is_recovery(static_cast<bool>(ref.is_recovery)) {}
+  /** \brief = operator overload */
+  Node& operator=(Node other) {
+    std::swap(other, *this);
+    return *this;
+  }
   /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
   /** \brief get debug string */
@@ -91,7 +100,7 @@ struct Node {
   /** \brief the port this node is binding */
   int port;
   /** \brief whether this node is created by failover */
-  bool is_recovery;
+  std::atomic<bool> is_recovery;
 };
 /**
  * \brief meta info of a system control message

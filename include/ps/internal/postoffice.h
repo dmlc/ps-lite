@@ -158,10 +158,6 @@ class Postoffice {
    * \param t timeout in sec
    */
   std::vector<int> GetDeadNodes(int t = 60);
-  /**
-   * \brief force to release the barrier
-   */
-  void ForceReleaseBarrier();
 
  private:
   Postoffice();

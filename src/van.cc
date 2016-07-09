@@ -165,6 +165,8 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::ADD_NODE) {
         size_t num_nodes = Postoffice::Get()->num_servers() +
                            Postoffice::Get()->num_workers();
+        Meta recovery_nodes; // store recovery nodes
+        recovery_nodes.control.cmd = Control::ADD_NODE;
         // assign an id
         if (msg.meta.sender == Meta::kEmpty) {
           CHECK(is_scheduler_);
@@ -172,47 +174,23 @@ void Van::Receiving() {
           if (nodes.control.node.size() < num_nodes) {
             nodes.control.node.push_back(ctrl.node[0]);
           } else {
-            Meta recovery_nodes;
-            bool re_added = false;
             auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
-            PS_VLOG(1) << "dead_nodes size" << dead_nodes.size();
             std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
-              // TODO: node memory leak
               const auto& node = nodes.control.node[i];
-              PS_VLOG(1) << "check node id" << node.id;
-              if (dead_set.find(node.id) != dead_set.end()
-                    && node.role == ctrl.node[0].role) {
-                auto& new_node = ctrl.node[0];
+              if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
+                auto& recovery_node = ctrl.node[0];
                 // assign previous node id
-                new_node.id = node.id;
-                new_node.is_recovery = true;
-                nodes.control.node[i] = new_node;
-                Connect(new_node);
-                recovery_nodes.control.node.push_back(new_node);
-                re_added = true;
-                PS_VLOG(1) << "added";
+                recovery_node.id = node.id;
+                recovery_node.is_recovery = true;
+                PS_VLOG(1) << "replace dead node " << node.DebugString()
+                           << " by node " << recovery_node.DebugString();
+                nodes.control.node[i] = recovery_node;
+                Connect(recovery_node);
+                recovery_nodes.control.node.push_back(recovery_node);
                 break;
               }
             }
-            if (re_added) {
-              recovery_nodes.control.cmd = Control::ADD_NODE;
-              Message recovery; recovery.meta = recovery_nodes;
-              Message all; all.meta = nodes;
-              for (int r : Postoffice::Get()->GetNodeIDs(
-                       kWorkerGroup + kServerGroup)) {
-                if (r == recovery_nodes.control.node[0].id) {
-                  all.meta.recver = r;
-                  all.meta.timestamp = timestamp_++;
-                  Send(all);
-                } else {
-                  recovery.meta.recver = r;
-                  recovery.meta.timestamp = timestamp_++;
-                  Send(recovery);
-                }
-              }
-            }
-            continue;
           }
         }
 
@@ -221,8 +199,7 @@ void Van::Receiving() {
           const auto& node = ctrl.node[i];
           if (my_node_.hostname == node.hostname &&
               my_node_.port == node.port) {
-            my_node_.id = node.id;
-            my_node_.is_recovery = node.is_recovery;
+            my_node_ = node;
             std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
             _putenv_s("DMLC_RANK", rank.c_str());
@@ -263,14 +240,25 @@ void Van::Receiving() {
             PS_VLOG(1) << "the scheduler is connected to "
                     << num_workers_ << " workers and " << num_servers_ << " servers";
             ready_ = true;
+          } else if (recovery_nodes.control.node.size() > 0) {
+            // send back the recovery node
+            CHECK_EQ(recovery_nodes.control.node.size(), 1);
+            Message back;
+            for (int r : Postoffice::Get()->GetNodeIDs(
+                     kWorkerGroup + kServerGroup)) {
+              // only send recovery_node to nodes already exist
+              // but send all nodes to the recovery_node
+              back.meta = (r == recovery_nodes.control.node[0].id) ? nodes : recovery_nodes;
+              back.meta.recver = r;
+              back.meta.timestamp = timestamp_++;
+              Send(back);
+            }
           }
         } else {
-          //FIXME: CHECK_EQ(ctrl.node.size(), num_nodes+1);
           for (const auto& node : ctrl.node) {
             Connect(node);
-            // TODO: do not add num_servers_ & num_workers_
-            if (node.role == Node::SERVER) ++num_servers_;
-            if (node.role == Node::WORKER) ++num_workers_;
+            if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
+            if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
           }
           PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
           ready_ = true;
