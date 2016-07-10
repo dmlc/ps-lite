@@ -25,7 +25,7 @@ Postoffice::Postoffice() {
   verbose_ = GetEnv("PS_VERBOSE", 0);
 }
 
-void Postoffice::Start(const char* argv0) {
+void Postoffice::Start(const char* argv0, const bool do_barrier) {
   // init glog
   if (argv0) {
     dmlc::InitLogging(argv0);
@@ -63,7 +63,8 @@ void Postoffice::Start(const char* argv0) {
   // record start time
   start_time_ = time(NULL);
 
-  // leave application to decide whether to do a barrier here
+  // do a barrier here
+  if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
 }
 
 void Postoffice::Finalize() {

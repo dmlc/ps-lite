@@ -28,9 +28,10 @@ class Postoffice {
    * \brief start the system
    *
    * This function will block until every nodes are started.
-   * \param argv0 the program name, used for logging
+   * \param argv0 the program name, used for logging.
+   * \param do_barrier whether to block until every nodes are started.
    */
-  void Start(const char* argv0);
+  void Start(const char* argv0, const bool do_barrier);
   /**
    * \brief terminate the system
    *

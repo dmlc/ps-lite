@@ -8,6 +8,7 @@
 #include <string>
 #include <sstream>
 #include <atomic>
+#include <algorithm>
 #include "ps/sarray.h"
 namespace ps {
 /** \brief data type */
@@ -67,12 +68,18 @@ struct Node {
   /** \brief default constructor */
   Node() : id(kEmpty), port(kEmpty), is_recovery(false) {}
   /** \brief copy constructor */
-  Node(const Node &ref)
-    : role(ref.role), id(ref.id), hostname(ref.hostname),
-      port(ref.port), is_recovery(static_cast<bool>(ref.is_recovery)) {}
+  Node(const Node &other) : role(other.role), id(other.id),
+    hostname(other.hostname), port(other.port),
+    is_recovery(static_cast<bool>(other.is_recovery)) {}
   /** \brief = operator overload */
-  Node& operator=(Node other) {
-    std::swap(other, *this);
+  Node& operator=(const Node& other) {
+    if (this != &other) {
+      role = other.role;
+      id = other.id;
+      hostname = other.hostname;
+      port = other.port;
+      is_recovery = static_cast<bool>(other.is_recovery);
+    }
     return *this;
   }
   /** \brief node roles */

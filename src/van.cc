@@ -165,6 +165,8 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::ADD_NODE) {
         size_t num_nodes = Postoffice::Get()->num_servers() +
                            Postoffice::Get()->num_workers();
+        auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+        std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
         Meta recovery_nodes;  // store recovery nodes
         recovery_nodes.control.cmd = Control::ADD_NODE;
         // assign an id
@@ -176,8 +178,6 @@ void Van::Receiving() {
           } else {
             // some node dies and restarts
             CHECK(ready_);
-            auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
-            std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
               const auto& node = nodes.control.node[i];
               if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
@@ -188,7 +188,6 @@ void Van::Receiving() {
                 PS_VLOG(1) << "replace dead node " << node.DebugString()
                            << " by node " << recovery_node.DebugString();
                 nodes.control.node[i] = recovery_node;
-                Connect(recovery_node);
                 recovery_nodes.control.node.push_back(recovery_node);
                 break;
               }
@@ -212,6 +211,7 @@ void Van::Receiving() {
         }
 
         if (is_scheduler_) {
+          time_t t = time(NULL);
           if (nodes.control.node.size() == num_nodes) {
             // sort the nodes according their ip and port,
             std::sort(nodes.control.node.begin(), nodes.control.node.end(),
@@ -229,6 +229,7 @@ void Van::Receiving() {
               Connect(node);
               if (node.role == Node::SERVER) ++num_servers_;
               if (node.role == Node::WORKER) ++num_workers_;
+              Postoffice::Get()->UpdateHeartbeat(node.id, t);
             }
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
@@ -245,9 +246,16 @@ void Van::Receiving() {
           } else if (recovery_nodes.control.node.size() > 0) {
             // send back the recovery node
             CHECK_EQ(recovery_nodes.control.node.size(), 1);
+            Connect(recovery_nodes.control.node[0]);
+            Postoffice::Get()->UpdateHeartbeat(recovery_nodes.control.node[0].id, t);
             Message back;
             for (int r : Postoffice::Get()->GetNodeIDs(
                      kWorkerGroup + kServerGroup)) {
+              if (r != recovery_nodes.control.node[0].id
+                    && dead_set.find(r) != dead_set.end()) {
+                // do not try to send anything to dead node
+                continue;
+              }
               // only send recovery_node to nodes already exist
               // but send all nodes to the recovery_node
               back.meta = (r == recovery_nodes.control.node[0].id) ? nodes : recovery_nodes;
