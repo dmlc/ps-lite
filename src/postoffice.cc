@@ -63,8 +63,7 @@ void Postoffice::Start(const char* argv0) {
   // record start time
   start_time_ = time(NULL);
 
-  // do a barrier here
-  //Barrier(kWorkerGroup + kServerGroup + kScheduler);
+  // leave application to decide whether to do a barrier here
 }
 
 void Postoffice::Finalize() {

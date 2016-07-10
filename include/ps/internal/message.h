@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <sstream>
+#include <atomic>
 #include "ps/sarray.h"
 namespace ps {
 /** \brief data type */

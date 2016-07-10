@@ -165,7 +165,7 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::ADD_NODE) {
         size_t num_nodes = Postoffice::Get()->num_servers() +
                            Postoffice::Get()->num_workers();
-        Meta recovery_nodes; // store recovery nodes
+        Meta recovery_nodes;  // store recovery nodes
         recovery_nodes.control.cmd = Control::ADD_NODE;
         // assign an id
         if (msg.meta.sender == Meta::kEmpty) {
@@ -174,6 +174,8 @@ void Van::Receiving() {
           if (nodes.control.node.size() < num_nodes) {
             nodes.control.node.push_back(ctrl.node[0]);
           } else {
+            // some node dies and restarts
+            CHECK(ready_);
             auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
             std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
