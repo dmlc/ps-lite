@@ -7,8 +7,6 @@
 #include <limits>
 #include <string>
 #include <sstream>
-#include <atomic>
-#include <algorithm>
 #include "ps/sarray.h"
 namespace ps {
 /** \brief data type */
@@ -67,21 +65,6 @@ struct Node {
   static const int kEmpty;
   /** \brief default constructor */
   Node() : id(kEmpty), port(kEmpty), is_recovery(false) {}
-  /** \brief copy constructor */
-  Node(const Node &other) : role(other.role), id(other.id),
-    hostname(other.hostname), port(other.port),
-    is_recovery(static_cast<bool>(other.is_recovery)) {}
-  /** \brief = operator overload */
-  Node& operator=(const Node& other) {
-    if (this != &other) {
-      role = other.role;
-      id = other.id;
-      hostname = other.hostname;
-      port = other.port;
-      is_recovery = static_cast<bool>(other.is_recovery);
-    }
-    return *this;
-  }
   /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
   /** \brief get debug string */
@@ -108,7 +91,7 @@ struct Node {
   /** \brief the port this node is binding */
   int port;
   /** \brief whether this node is created by failover */
-  std::atomic<bool> is_recovery;
+  bool is_recovery;
 };
 /**
  * \brief meta info of a system control message

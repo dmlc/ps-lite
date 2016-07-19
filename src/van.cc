@@ -60,6 +60,8 @@ void Van::Start() {
     my_node_.role     = role;
     my_node_.port     = port;
     // cannot determine my id now, the scheduler will assign it later
+    // set it explicitly to make re-register within a same process possible
+    my_node_.id = Node::kEmpty;
   }
 
   // bind.
