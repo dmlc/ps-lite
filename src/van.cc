@@ -60,6 +60,8 @@ void Van::Start() {
     my_node_.role     = role;
     my_node_.port     = port;
     // cannot determine my id now, the scheduler will assign it later
+    // set it explicitly to make re-register within a same process possible
+    my_node_.id = Node::kEmpty;
   }
 
   // bind.
@@ -131,6 +133,8 @@ int Van::Send(const Message& msg) {
 }
 
 void Van::Receiving() {
+  const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
+  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 5;
   Meta nodes;  // for scheduler usage
   while (true) {
     Message msg;
@@ -161,11 +165,36 @@ void Van::Receiving() {
         ready_ = false;
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
+        size_t num_nodes = Postoffice::Get()->num_servers() +
+                           Postoffice::Get()->num_workers();
+        auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+        std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
+        Meta recovery_nodes;  // store recovery nodes
+        recovery_nodes.control.cmd = Control::ADD_NODE;
         // assign an id
         if (msg.meta.sender == Meta::kEmpty) {
           CHECK(is_scheduler_);
           CHECK_EQ(ctrl.node.size(), 1);
-          nodes.control.node.push_back(ctrl.node[0]);
+          if (nodes.control.node.size() < num_nodes) {
+            nodes.control.node.push_back(ctrl.node[0]);
+          } else {
+            // some node dies and restarts
+            CHECK(ready_);
+            for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
+              const auto& node = nodes.control.node[i];
+              if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
+                auto& recovery_node = ctrl.node[0];
+                // assign previous node id
+                recovery_node.id = node.id;
+                recovery_node.is_recovery = true;
+                PS_VLOG(1) << "replace dead node " << node.DebugString()
+                           << " by node " << recovery_node.DebugString();
+                nodes.control.node[i] = recovery_node;
+                recovery_nodes.control.node.push_back(recovery_node);
+                break;
+              }
+            }
+          }
         }
 
         // update my id
@@ -173,7 +202,7 @@ void Van::Receiving() {
           const auto& node = ctrl.node[i];
           if (my_node_.hostname == node.hostname &&
               my_node_.port == node.port) {
-            my_node_.id = node.id;
+            my_node_ = node;
             std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
             _putenv_s("DMLC_RANK", rank.c_str());
@@ -183,9 +212,8 @@ void Van::Receiving() {
           }
         }
 
-        size_t num_nodes = Postoffice::Get()->num_servers() +
-                           Postoffice::Get()->num_workers();
         if (is_scheduler_) {
+          time_t t = time(NULL);
           if (nodes.control.node.size() == num_nodes) {
             // sort the nodes according their ip and port,
             std::sort(nodes.control.node.begin(), nodes.control.node.end(),
@@ -203,6 +231,7 @@ void Van::Receiving() {
               Connect(node);
               if (node.role == Node::SERVER) ++num_servers_;
               if (node.role == Node::WORKER) ++num_workers_;
+              Postoffice::Get()->UpdateHeartbeat(node.id, t);
             }
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
@@ -216,13 +245,32 @@ void Van::Receiving() {
             PS_VLOG(1) << "the scheduler is connected to "
                     << num_workers_ << " workers and " << num_servers_ << " servers";
             ready_ = true;
+          } else if (recovery_nodes.control.node.size() > 0) {
+            // send back the recovery node
+            CHECK_EQ(recovery_nodes.control.node.size(), 1);
+            Connect(recovery_nodes.control.node[0]);
+            Postoffice::Get()->UpdateHeartbeat(recovery_nodes.control.node[0].id, t);
+            Message back;
+            for (int r : Postoffice::Get()->GetNodeIDs(
+                     kWorkerGroup + kServerGroup)) {
+              if (r != recovery_nodes.control.node[0].id
+                    && dead_set.find(r) != dead_set.end()) {
+                // do not try to send anything to dead node
+                continue;
+              }
+              // only send recovery_node to nodes already exist
+              // but send all nodes to the recovery_node
+              back.meta = (r == recovery_nodes.control.node[0].id) ? nodes : recovery_nodes;
+              back.meta.recver = r;
+              back.meta.timestamp = timestamp_++;
+              Send(back);
+            }
           }
         } else {
-          CHECK_EQ(ctrl.node.size(), num_nodes+1);
           for (const auto& node : ctrl.node) {
             Connect(node);
-            if (node.role == Node::SERVER) ++num_servers_;
-            if (node.role == Node::WORKER) ++num_workers_;
+            if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
+            if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
           }
           PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
           ready_ = true;
@@ -234,6 +282,7 @@ void Van::Receiving() {
           }
           int group = ctrl.barrier_group;
           ++barrier_count_[group];
+          PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
           if (barrier_count_[group] ==
               static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
             barrier_count_[group] = 0;
@@ -301,6 +350,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
       p->set_role(n.role);
       p->set_port(n.port);
       p->set_hostname(n.hostname);
+      p->set_is_recovery(n.is_recovery);
     }
   }
 
@@ -341,6 +391,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
       n.port = p.port();
       n.hostname = p.hostname();
       n.id = p.has_id() ? p.id() : Node::kEmpty;
+      n.is_recovery = p.is_recovery();
       meta->control.node.push_back(n);
     }
   } else {

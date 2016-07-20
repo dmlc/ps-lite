@@ -35,7 +35,16 @@ inline int MyRank() { return Postoffice::Get()->my_rank(); }
  * \param argv0 the program name, used for logging
  */
 inline void Start(const char* argv0 = nullptr) {
-  Postoffice::Get()->Start(argv0);
+  Postoffice::Get()->Start(argv0, true);
+}
+/**
+ * \brief start the system
+ *
+ * This function will NOT block.
+ * \param argv0 the program name, used for logging
+ */
+inline void StartAsync(const char* argv0 = nullptr) {
+  Postoffice::Get()->Start(argv0, false);
 }
 /**
  * \brief terminate the system

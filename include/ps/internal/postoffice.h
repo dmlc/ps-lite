@@ -28,9 +28,10 @@ class Postoffice {
    * \brief start the system
    *
    * This function will block until every nodes are started.
-   * \param argv0 the program name, used for logging
+   * \param argv0 the program name, used for logging.
+   * \param do_barrier whether to block until every nodes are started.
    */
-  void Start(const char* argv0);
+  void Start(const char* argv0, const bool do_barrier);
   /**
    * \brief terminate the system
    *
@@ -132,6 +133,8 @@ class Postoffice {
   int is_scheduler() const { return is_scheduler_; }
   /** \brief Returns the verbose level. */
   int verbose() const { return verbose_; }
+  /** \brief Return whether this node is a recovery node */
+  bool is_recovery() const { return van_->my_node().is_recovery; }
   /**
    * \brief barrier
    * \param node_id the barrier group id
@@ -156,10 +159,6 @@ class Postoffice {
    * \param t timeout in sec
    */
   std::vector<int> GetDeadNodes(int t = 60);
-  /**
-   * \brief force to release the barrier
-   */
-  void ForceReleaseBarrier();
 
  private:
   Postoffice();

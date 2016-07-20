@@ -64,7 +64,7 @@ struct Node {
   /** \brief the empty value */
   static const int kEmpty;
   /** \brief default constructor */
-  Node() : id(kEmpty), port(kEmpty) {}
+  Node() : id(kEmpty), port(kEmpty), is_recovery(false) {}
   /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
   /** \brief get debug string */
@@ -72,7 +72,7 @@ struct Node {
     std::stringstream ss;
     ss << "role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
        << (id != kEmpty ? ", id=" + std::to_string(id) : "")
-       << ", ip=" << hostname << ", port=" << port;
+       << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery;
 
     return ss.str();
   }
@@ -90,6 +90,8 @@ struct Node {
   std::string hostname;
   /** \brief the port this node is binding */
   int port;
+  /** \brief whether this node is created by failover */
+  bool is_recovery;
 };
 /**
  * \brief meta info of a system control message
