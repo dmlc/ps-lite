@@ -83,7 +83,7 @@ learning algorithms codes into different projects such as `dmlc-core` and
    - more flexible user-defined callbacks, which facilitate other language
    bindings
    - let the users, such as the dependency
-     engine of mxnet, manangement the data consistency
+     engine of mxnet, manage the data consistency
 
 ### Research papers
   1. Mu Li, Dave Andersen, Alex Smola, Junwoo Park, Amr Ahmed, Vanja Josifovski,
