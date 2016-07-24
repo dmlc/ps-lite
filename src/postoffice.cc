@@ -67,8 +67,8 @@ void Postoffice::Start(const char* argv0, const bool do_barrier) {
   if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
 }
 
-void Postoffice::Finalize() {
-  Barrier(kWorkerGroup + kServerGroup + kScheduler);
+void Postoffice::Finalize(const bool do_barrier) {
+  if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
   van_->Stop();
   if (exit_callback_) exit_callback_();
 }

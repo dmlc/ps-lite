@@ -49,11 +49,11 @@ inline void StartAsync(const char* argv0 = nullptr) {
 /**
  * \brief terminate the system
  *
- * All nodes should call this function before existing. It will block until
- * every node is finalized.
+ * All nodes should call this function before existing. 
+ * \param do_barrier whether to block until every node is finalized, default true.
  */
-inline void Finalize() {
-  Postoffice::Get()->Finalize();
+inline void Finalize(const bool do_barrier = true) {
+  Postoffice::Get()->Finalize(do_barrier);
 }
 /**
  * \brief Register a callback to the system which is called after Finalize()

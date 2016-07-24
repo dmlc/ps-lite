@@ -35,10 +35,10 @@ class Postoffice {
   /**
    * \brief terminate the system
    *
-   * All nodes should call this function before existing. It will block until
-   * every node is finalized.
+   * All nodes should call this function before existing. 
+   * \param do_barrier whether to do block until every node is finalized, default true.
    */
-  void Finalize();
+  void Finalize(const bool do_barrier = true);
   /**
    * \brief add an customer to the system. threadsafe
    */
