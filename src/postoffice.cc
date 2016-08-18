@@ -7,6 +7,7 @@
 #include "ps/internal/postoffice.h"
 #include "ps/internal/message.h"
 #include "ps/base.h"
+#include "ps/internal/utils.h"
 
 namespace ps {
 Postoffice::Postoffice() {
