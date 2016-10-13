@@ -124,7 +124,7 @@ void Van::Stop() {
 int Van::Send(const Message& msg) {
   int send_bytes = SendMsg(msg);
   CHECK_NE(send_bytes, -1);
-  send_bytes_ += send_bytes_;
+  send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
   if (Postoffice::Get()->verbose() >= 2) {
     PS_VLOG(2) << msg.DebugString();
