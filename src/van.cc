@@ -14,6 +14,12 @@
 #include "./resender.h"
 namespace ps {
 
+// interval in second between to heartbeast signals. 0 means no heartbeat.
+// don't send heartbeast in default. because if the scheduler received a
+// heartbeart signal from a node before connected to that node, then it could be
+// problem.
+const static int kDefaultHeartbeatInterval = 0;
+
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
     return new ZMQVan();
@@ -134,7 +140,7 @@ int Van::Send(const Message& msg) {
 
 void Van::Receiving() {
   const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
-  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 5;
+  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
   Meta nodes;  // for scheduler usage
   while (true) {
     Message msg;
@@ -401,7 +407,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
 
 void Van::Heartbeat() {
   const char* val = Environment::Get()->find("PS_HEARTBEAT_INTERVAL");
-  const int interval = val ? atoi(val) : 5;
+  const int interval = val ? atoi(val) : kDefaultHeartbeatInterval;
   while (interval > 0 && ready_) {
     std::this_thread::sleep_for(std::chrono::seconds(interval));
     Message msg;
