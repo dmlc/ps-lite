@@ -3,7 +3,7 @@
 The parameter server aims for high-performance distributed machine learning
 applications. In this framework, multiple nodes runs over multiple machines to
 solve machine learning problems.
-There are often a single schdule node, and several worker and servers nodes.
+There are often a single schedule node, and several worker and servers nodes.
 
 ![ps arch](https://raw.githubusercontent.com/dmlc/dmlc.github.io/master/img/ps-arch.png)
 
