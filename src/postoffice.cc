@@ -156,7 +156,7 @@ void Postoffice::Manage(const Message& recv) {
 
 std::vector<int> Postoffice::GetDeadNodes(int t) {
   std::vector<int> dead_nodes;
-  if (!van_->IsReady()) return dead_nodes;
+  if (!van_->IsReady() || t == 0) return dead_nodes;
 
   time_t curr_time = time(NULL);
   const auto& nodes = is_scheduler_
