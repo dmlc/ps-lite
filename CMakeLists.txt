@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 2.8.7)
 
 project(pslite C CXX)
 
+set(CMAKE_PREFIX_PATH deps)
+
 if(NOT MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 endif()
@@ -56,5 +58,5 @@ list(APPEND pslite_LINKER_LIBS_L ${PROTOBUF_LIBRARIES})
 list(APPEND pslite_INCLUDE_DIR_L "${PROJECT_SOURCE_DIR}/include")
 list(APPEND pslite_INCLUDE_DIR_L ${PROTOBUF_INCLUDE_DIR})
 
-set(pslite_LINKER_LIBS ${pslite_LINKER_LIBS_L} PARENT_SCOPE)
-set(pslite_INCLUDE_DIR ${pslite_INCLUDE_DIR_L} PARENT_SCOPE)
+set(pslite_LINKER_LIBS ${pslite_LINKER_LIBS_L})
+set(pslite_INCLUDE_DIR ${pslite_INCLUDE_DIR_L})
