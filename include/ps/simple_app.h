@@ -155,6 +155,7 @@ inline void SimpleApp::Response(const SimpleData& req, const std::string& res_bo
   msg.meta.simple_app = true;
   msg.meta.customer_id = obj_->id();
   msg.meta.recver = req.sender;
+  msg.meta.sender = Postoffice::Get()->van()->my_node().id;
 
   // send
   Postoffice::Get()->van()->Send(msg);
