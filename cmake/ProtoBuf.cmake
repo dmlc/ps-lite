@@ -2,7 +2,7 @@
 # the standard cmake script with version and python generation support
 
 find_package( Protobuf REQUIRED )
-include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
+include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIRS})
 list(APPEND pslite_LINKER_LIBS ${PROTOBUF_LIBRARIES})
 
 # As of Ubuntu 14.04 protoc is no longer a part of libprotobuf-dev package
@@ -12,7 +12,6 @@ if(EXISTS ${PROTOBUF_PROTOC_EXECUTABLE})
 else()
   message(FATAL_ERROR "Could not find PROTOBUF Compiler")
 endif()
-
 
 # place where to generate protobuf sources
 set(proto_gen_folder "${PROJECT_BINARY_DIR}/include/pslite/proto")
@@ -66,7 +65,7 @@ function(pslite_protobuf_generate_cpp_py output_dir srcs_var hdrs_var python_var
     list(APPEND ${srcs_var} "${o_fil_path}/${fil_we}.pb.cc")
     list(APPEND ${hdrs_var} "${o_fil_path}/${fil_we}.pb.h")
     list(APPEND ${python_var} "${o_fil_path}/${fil_we}_pb2.py")
-	
+
     add_custom_command(
       OUTPUT "${o_fil_path}/${fil_we}.pb.cc"
              "${o_fil_path}/${fil_we}.pb.h"
