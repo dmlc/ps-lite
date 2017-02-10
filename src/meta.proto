@@ -37,13 +37,17 @@ message PBMeta {
   // false: the response task to the request task with the same *time*
   optional bool request = 4 [default = false];
   // the unique id of an customer
-  optional int32 customer_id = 7;
+  optional int32 customer_id = 5;
   // the timestamp of this message
-  optional int32 timestamp = 8;
+  optional int32 timestamp = 6;
   // data type of message.data[i]
-  repeated int32 data_type = 9 [packed=true];
+  repeated int32 data_type = 7 [packed=true];
   // whether or not a push message
-  optional bool push = 5;
+  optional bool push = 8;
   // whether or not it's for SimpleApp
-  optional bool simple_app = 6 [default = false];
+  optional bool simple_app = 9 [default = false];
+  // sender id
+  optional int32 sender = 10;
+  // recver id
+  optional int32 recver = 11;
 }
