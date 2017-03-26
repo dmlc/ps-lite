@@ -231,6 +231,7 @@ int GetAvailablePort() {
 
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   if (0 != bind(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
+    close(sock);
     perror("bind():");
     return 0;
   }
@@ -241,6 +242,7 @@ int GetAvailablePort() {
 #endif
 
   if (0 != getsockname(sock, (struct sockaddr*)&addr, &addr_len)) {
+    close(sock);
     perror("getsockname():");
     return 0;
   }
