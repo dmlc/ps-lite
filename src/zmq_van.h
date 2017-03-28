@@ -197,12 +197,13 @@ class ZMQVan : public Van {
       } else {
         // zero-copy
         SArray<char> data;
+        bool more = zmq_msg_more(zmsg);
         data.reset(buf, size, [zmsg, size](char* buf) {
             zmq_msg_close(zmsg);
             delete zmsg;
           });
         msg->data.push_back(data);
-        if (!zmq_msg_more(zmsg)) { break; }
+        if (!more) break;
       }
     }
     return recv_bytes;
