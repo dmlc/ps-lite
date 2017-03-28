@@ -3,7 +3,7 @@
 
 find_package( Protobuf REQUIRED )
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
-list(APPEND pslite_LINKER_LIBS ${PROTOBUF_LIBRARIES})
+
 
 # As of Ubuntu 14.04 protoc is no longer a part of libprotobuf-dev package
 # and should be installed separately as in: sudo apt-get install protobuf-compiler
