@@ -11,7 +11,7 @@ ${PROTOBUF}:
 	$(eval FILE=protobuf-2.5.0.tar.gz)
 	$(eval DIR=protobuf-2.5.0)
 	rm -rf $(FILE) $(DIR)
-	$(WGET) $(URL)/$(FILE) && tar -zxf $(FILE)
+	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
 	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
@@ -22,7 +22,7 @@ ${ZMQ}:
 	$(eval FILE=zeromq-4.1.4.tar.gz)
 	$(eval DIR=zeromq-4.1.4)
 	rm -rf $(FILE) $(DIR)
-	$(WGET) $(URL)/$(FILE) && tar -zxf $(FILE)
+	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
 	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) --with-libsodium=no --with-libgssapi_krb5=no && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
@@ -32,7 +32,7 @@ ${LZ4}:
 	$(eval FILE=lz4-r129.tar.gz)
 	$(eval DIR=lz4-r129)
 	rm -rf $(FILE) $(DIR)
-	wget $(URL)/$(FILE) && tar -zxf $(FILE)
+	wget $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
 	cd $(DIR) && $(MAKE) && PREFIX=$(DEPS_PATH) $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
@@ -42,7 +42,7 @@ ${CITYHASH}:
 	$(eval FILE=cityhash-1.1.1.tar.gz)
 	$(eval DIR=cityhash-1.1.1)
 	rm -rf $(FILE) $(DIR)
-	wget $(URL)/$(FILE) && tar -zxf $(FILE)
+	wget $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
 	cd $(DIR) && ./configure -prefix=$(DEPS_PATH) --enable-sse4.2 && $(MAKE) CXXFLAGS="-g -O3 -msse4.2" && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
