@@ -10,13 +10,14 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
 include(ExternalProject) 
 set(pslite_LINKER_LIBS_L "" )
+set(pslite_LINKER_LIBS_L_RELEASE "" )
+set(pslite_LINKER_LIBS_L_DEBUG "" )
 set(pslite_INCLUDE_DIR_L "" )
 
 # ---[ zmq
 include("cmake/External/zmq.cmake")
 include_directories(pslite ${ZMQ_INCLUDE_DIRS})
 list(APPEND pslite_LINKER_LIBS_L ${ZMQ_LIBRARIES})
-
 # ---[ Google-protobuf
 include(cmake/ProtoBuf.cmake)
 
@@ -52,9 +53,13 @@ list(APPEND SOURCE ${proto_srcs})
 add_library(pslite ${SOURCE}) 
 
 target_link_libraries(pslite ${pslite_LINKER_LIBS})
-list(APPEND pslite_LINKER_LIBS_L ${PROTOBUF_LIBRARIES})
+
+list(APPEND pslite_LINKER_LIBS_L_RELEASE ${Protobuf_LIBRARY})
+list(APPEND pslite_LINKER_LIBS_L_DEBUG ${Protobuf_LIBRARY_DEBUG})
 list(APPEND pslite_INCLUDE_DIR_L "${PROJECT_SOURCE_DIR}/include")
 list(APPEND pslite_INCLUDE_DIR_L ${PROTOBUF_INCLUDE_DIR})
 
 set(pslite_LINKER_LIBS ${pslite_LINKER_LIBS_L} PARENT_SCOPE)
+set(pslite_LINKER_LIBS_RELEASE ${pslite_LINKER_LIBS_L_RELEASE} PARENT_SCOPE)
+set(pslite_LINKER_LIBS_DEBUG ${pslite_LINKER_LIBS_L_DEBUG} PARENT_SCOPE)
 set(pslite_INCLUDE_DIR ${pslite_INCLUDE_DIR_L} PARENT_SCOPE)
