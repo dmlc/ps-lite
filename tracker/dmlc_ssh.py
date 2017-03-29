@@ -11,6 +11,7 @@ import os
 import subprocess
 import tracker
 import logging
+import time
 from threading import Thread
 
 class SSHLauncher(object):
@@ -80,6 +81,7 @@ class SSHLauncher(object):
                 thread = Thread(target = run, args=(prog,))
                 thread.setDaemon(True)
                 thread.start()
+                time.sleep(5) # wait until the worker goes online.
 
         return ssh_submit
 
