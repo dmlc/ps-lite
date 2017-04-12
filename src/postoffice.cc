@@ -120,6 +120,7 @@ void Postoffice::Barrier(int node_group) {
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   barrier_done_ = false;
   Message req;
+  req.meta.sender = van_->my_node().id;
   req.meta.recver = kScheduler;
   req.meta.request = true;
   req.meta.control.cmd = Control::BARRIER;
