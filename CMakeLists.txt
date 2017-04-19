@@ -52,6 +52,8 @@ endif()
 list(APPEND SOURCE ${proto_srcs}) 
 add_library(pslite ${SOURCE}) 
 
+set_target_properties(pslite PROPERTIES OUTPUT_NAME "ps")
+
 target_link_libraries(pslite ${pslite_LINKER_LIBS})
 
 list(APPEND pslite_LINKER_LIBS_L_RELEASE ${Protobuf_LIBRARY})
