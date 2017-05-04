@@ -18,7 +18,7 @@ namespace ps {
 // don't send heartbeast in default. because if the scheduler received a
 // heartbeart signal from a node before connected to that node, then it could be
 // problem.
-const static int kDefaultHeartbeatInterval = 0;
+static const int kDefaultHeartbeatInterval = 0;
 
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
@@ -140,7 +140,8 @@ int Van::Send(const Message& msg) {
 
 void Van::Receiving() {
   const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
-  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
+  const int heartbeat_timeout =
+    heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
   Meta nodes;  // for scheduler usage
   while (true) {
     Message msg;
@@ -241,7 +242,7 @@ void Van::Receiving() {
             }
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
-            Message back; 
+            Message back;
             back.meta = nodes;
             back.meta.sender = my_node_.id;
             for (int r : Postoffice::Get()->GetNodeIDs(
@@ -369,8 +370,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
 
   // to string
   *buf_size = pb.ByteSize();
-  //*meta_buf = new char[*buf_size+1];
-  *meta_buf = new char[*buf_size];
+  *meta_buf = new char[*buf_size+1];
   CHECK(pb.SerializeToArray(*meta_buf, *buf_size))
       << "failed to serialize protbuf";
 }
