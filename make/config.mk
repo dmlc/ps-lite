@@ -13,3 +13,6 @@
 export CC = gcc
 export CXX = g++
 export MPICXX = mpicxx
+
+# feature id type, use uint32 or uint64
+USE_KEY32 = 0
