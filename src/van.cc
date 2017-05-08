@@ -299,6 +299,7 @@ void Van::Receiving() {
             Message res;
             res.meta.request = false;
             res.meta.control.cmd = Control::BARRIER;
+            res.meta.control.barrier_group = group;
             res.meta.sender = my_node_.id;
             for (int r : Postoffice::Get()->GetNodeIDs(group)) {
               res.meta.recver = r;
