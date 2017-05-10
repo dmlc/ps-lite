@@ -105,7 +105,7 @@ void Van::Start() {
     if (Environment::Get()->find("PS_RESEND_TIMEOUT")) {
       timeout = atoi(Environment::Get()->find("PS_RESEND_TIMEOUT"));
     }
-    resender_ = new Resender(timeout, 10, this);
+    resender_ = new Resender(timeout, 100, this);
   }
 
   if (!is_scheduler_) {
@@ -158,9 +158,8 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    if (Postoffice::Get()->verbose() >= 2) {
-      PS_VLOG(2) << msg.DebugString();
-    }
+    PS_VLOG(2) << msg.DebugString();
+
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
 
@@ -187,6 +186,8 @@ void Van::Receiving() {
           } else {
             // some node dies and restarts
             CHECK(ready_);
+            CHECK_GT(heartbeat_timeout, 0);
+            bool recovery_found = false;
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
               const auto& node = nodes.control.node[i];
               if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
@@ -198,8 +199,35 @@ void Van::Receiving() {
                            << " by node " << recovery_node.DebugString();
                 nodes.control.node[i] = recovery_node;
                 recovery_nodes.control.node.push_back(recovery_node);
+                recovery_found = true;
                 break;
               }
+            }
+            if (!recovery_found) {
+              PS_VLOG(1) << "sleep one more heartbeat cycle to find dead node for "
+                        << ctrl.node[0].DebugString();
+              std::this_thread::sleep_for(std::chrono::seconds(heartbeat_timeout));
+              dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+              dead_set = std::unordered_set<int>(dead_nodes.begin(), dead_nodes.end());
+              for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
+                const auto& node = nodes.control.node[i];
+                if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
+                  auto& recovery_node = ctrl.node[0];
+                  // assign previous node id
+                  recovery_node.id = node.id;
+                  recovery_node.is_recovery = true;
+                  PS_VLOG(1) << "replace dead node " << node.DebugString()
+                            << " by node " << recovery_node.DebugString();
+                  nodes.control.node[i] = recovery_node;
+                  recovery_nodes.control.node.push_back(recovery_node);
+                  recovery_found = true;
+                  break;
+                }
+              }
+            }
+            if (!recovery_found) {
+              LOG(ERROR) << "no dead node be found for recovery node "
+                        << ctrl.node[0].DebugString();
             }
           }
         }
@@ -240,6 +268,8 @@ void Van::Receiving() {
               if (node.role == Node::WORKER) ++num_workers_;
               Postoffice::Get()->UpdateHeartbeat(node.id, t);
             }
+            CHECK_EQ(Postoffice::Get()->num_servers(), num_servers_);
+            CHECK_EQ(Postoffice::Get()->num_workers(), num_workers_);
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
             Message back;
