@@ -18,7 +18,7 @@ namespace ps {
 // don't send heartbeast in default. because if the scheduler received a
 // heartbeart signal from a node before connected to that node, then it could be
 // problem.
-const static int kDefaultHeartbeatInterval = 0;
+static const int kDefaultHeartbeatInterval = 0;
 
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
@@ -41,8 +41,7 @@ void Van::Start() {
   if (is_scheduler_) {
     my_node_ = scheduler_;
   } else {
-    auto role = is_scheduler_ ? Node::SCHEDULER :
-                (Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER);
+    auto role = Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER;
     const char* nhost = Environment::Get()->find("DMLC_NODE_HOST");
     std::string ip;
     if (nhost) ip = std::string(nhost);
@@ -106,7 +105,7 @@ void Van::Start() {
     if (Environment::Get()->find("PS_RESEND_TIMEOUT")) {
       timeout = atoi(Environment::Get()->find("PS_RESEND_TIMEOUT"));
     }
-    resender_ = new Resender(timeout, 10, this);
+    resender_ = new Resender(timeout, 100, this);
   }
 
   if (!is_scheduler_) {
@@ -120,6 +119,7 @@ void Van::Stop() {
   // stop threads
   Message exit;
   exit.meta.control.cmd = Control::TERMINATE;
+  exit.meta.sender = my_node_.id;
   exit.meta.recver = my_node_.id;
   SendMsg(exit);
   receiver_thread_->join();
@@ -140,7 +140,8 @@ int Van::Send(const Message& msg) {
 
 void Van::Receiving() {
   const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
-  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
+  const int heartbeat_timeout =
+    heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
   Meta nodes;  // for scheduler usage
   while (true) {
     Message msg;
@@ -157,9 +158,8 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    if (Postoffice::Get()->verbose() >= 2) {
-      PS_VLOG(2) << msg.DebugString();
-    }
+    PS_VLOG(2) << msg.DebugString();
+
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
 
@@ -186,6 +186,8 @@ void Van::Receiving() {
           } else {
             // some node dies and restarts
             CHECK(ready_);
+            CHECK_GT(heartbeat_timeout, 0);
+            bool recovery_found = false;
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
               const auto& node = nodes.control.node[i];
               if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
@@ -197,8 +199,35 @@ void Van::Receiving() {
                            << " by node " << recovery_node.DebugString();
                 nodes.control.node[i] = recovery_node;
                 recovery_nodes.control.node.push_back(recovery_node);
+                recovery_found = true;
                 break;
               }
+            }
+            if (!recovery_found) {
+              PS_VLOG(1) << "sleep one more heartbeat cycle to find dead node for "
+                        << ctrl.node[0].DebugString();
+              std::this_thread::sleep_for(std::chrono::seconds(heartbeat_timeout));
+              dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+              dead_set = std::unordered_set<int>(dead_nodes.begin(), dead_nodes.end());
+              for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
+                const auto& node = nodes.control.node[i];
+                if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
+                  auto& recovery_node = ctrl.node[0];
+                  // assign previous node id
+                  recovery_node.id = node.id;
+                  recovery_node.is_recovery = true;
+                  PS_VLOG(1) << "replace dead node " << node.DebugString()
+                            << " by node " << recovery_node.DebugString();
+                  nodes.control.node[i] = recovery_node;
+                  recovery_nodes.control.node.push_back(recovery_node);
+                  recovery_found = true;
+                  break;
+                }
+              }
+            }
+            if (!recovery_found) {
+              LOG(ERROR) << "no dead node be found for recovery node "
+                        << ctrl.node[0].DebugString();
             }
           }
         }
@@ -239,9 +268,13 @@ void Van::Receiving() {
               if (node.role == Node::WORKER) ++num_workers_;
               Postoffice::Get()->UpdateHeartbeat(node.id, t);
             }
+            CHECK_EQ(Postoffice::Get()->num_servers(), num_servers_);
+            CHECK_EQ(Postoffice::Get()->num_workers(), num_workers_);
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
-            Message back; back.meta = nodes;
+            Message back;
+            back.meta = nodes;
+            back.meta.sender = my_node_.id;
             for (int r : Postoffice::Get()->GetNodeIDs(
                      kWorkerGroup + kServerGroup)) {
               back.meta.recver = r;
@@ -257,6 +290,7 @@ void Van::Receiving() {
             Connect(recovery_nodes.control.node[0]);
             Postoffice::Get()->UpdateHeartbeat(recovery_nodes.control.node[0].id, t);
             Message back;
+            back.meta.sender = my_node_.id;
             for (int r : Postoffice::Get()->GetNodeIDs(
                      kWorkerGroup + kServerGroup)) {
               if (r != recovery_nodes.control.node[0].id
@@ -295,6 +329,8 @@ void Van::Receiving() {
             Message res;
             res.meta.request = false;
             res.meta.control.cmd = Control::BARRIER;
+            res.meta.control.barrier_group = group;
+            res.meta.sender = my_node_.id;
             for (int r : Postoffice::Get()->GetNodeIDs(group)) {
               res.meta.recver = r;
               res.meta.timestamp = timestamp_++;
@@ -310,6 +346,7 @@ void Van::Receiving() {
           Postoffice::Get()->UpdateHeartbeat(node.id, t);
           if (is_scheduler_) {
             Message heartbeat_ack;
+            heartbeat_ack.meta.sender = my_node_.id;
             heartbeat_ack.meta.recver = node.id;
             heartbeat_ack.meta.control.cmd = Control::HEARTBEAT;
             heartbeat_ack.meta.control.node.push_back(my_node_);
@@ -341,6 +378,8 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   pb.set_push(meta.push);
   pb.set_request(meta.request);
   pb.set_simple_app(meta.simple_app);
+  if (meta.sender != Meta::kEmpty) pb.set_sender(meta.sender);
+  if (meta.recver != Meta::kEmpty) pb.set_recver(meta.recver);
   for (auto d : meta.data_type) pb.add_data_type(d);
   if (!meta.control.empty()) {
     auto ctrl = pb.mutable_control();
@@ -381,6 +420,8 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   meta->push = pb.push();
   meta->simple_app = pb.simple_app();
   meta->body = pb.body();
+  meta->sender = pb.has_sender() ? pb.sender() : Meta::kEmpty;
+  meta->recver = pb.has_recver()? pb.recver() : Meta::kEmpty;
   meta->data_type.resize(pb.data_type_size());
   for (int i = 0; i < pb.data_type_size(); ++i) {
     meta->data_type[i] = static_cast<DataType>(pb.data_type(i));
@@ -411,6 +452,7 @@ void Van::Heartbeat() {
   while (interval > 0 && ready_) {
     std::this_thread::sleep_for(std::chrono::seconds(interval));
     Message msg;
+    msg.meta.sender = my_node_.id;
     msg.meta.recver = kScheduler;
     msg.meta.control.cmd = Control::HEARTBEAT;
     msg.meta.control.node.push_back(my_node_);

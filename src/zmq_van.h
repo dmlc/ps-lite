@@ -165,6 +165,7 @@ class ZMQVan : public Van {
 
   int RecvMsg(Message* msg) override {
     msg->data.clear();
+    int identify_id = Meta::kEmpty;
     size_t recv_bytes = 0;
     for (int i = 0; ; ++i) {
       zmq_msg_t* zmsg = new zmq_msg_t;
@@ -182,14 +183,16 @@ class ZMQVan : public Van {
 
       if (i == 0) {
         // identify
-        msg->meta.sender = GetNodeID(buf, size);
-        msg->meta.recver = my_node_.id;
+        identify_id = GetNodeID(buf, size);
         CHECK(zmq_msg_more(zmsg));
         zmq_msg_close(zmsg);
         delete zmsg;
       } else if (i == 1) {
         // task
         UnpackMeta(buf, size, &(msg->meta));
+        if (!Postoffice::Get()->is_scheduler()) {
+          CHECK_EQ(identify_id, msg->meta.sender);
+        }
         zmq_msg_close(zmsg);
         bool more = zmq_msg_more(zmsg);
         delete zmsg;

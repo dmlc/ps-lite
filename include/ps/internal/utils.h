@@ -39,7 +39,7 @@ inline V GetEnv(const char *key, V default_val) {
 #ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&);               \
-  void operator=(const TypeName&)
+  void operator=(const TypeName&);
 #endif
 
 #define LL LOG(ERROR)

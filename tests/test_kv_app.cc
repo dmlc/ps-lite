@@ -1,3 +1,4 @@
+#include <cmath>
 #include "ps/ps.h"
 using namespace ps;
 
@@ -13,7 +14,7 @@ void RunWorker() {
   KVWorker<float> kv(0);
 
   // init
-  int num = 10000;
+  int num = 10;
   std::vector<Key> keys(num);
   std::vector<float> vals(num);
 
@@ -22,6 +23,7 @@ void RunWorker() {
   for (int i = 0; i < num; ++i) {
     keys[i] = kMaxKey / num * i + rank;
     vals[i] = (rand() % 1000);
+    std::cout << "origin key: " << keys[i] << " value:" << vals[i] << std::endl;
   }
 
   // push
@@ -41,6 +43,7 @@ void RunWorker() {
 
   float res = 0;
   for (int i = 0; i < num; ++i) {
+    std::cout << "pull key: " << keys[i] << " value:" << rets[i] << std::endl;
     res += fabs(rets[i] - vals[i] * repeat);
   }
   CHECK_LT(res / repeat, 1e-5);
