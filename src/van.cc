@@ -187,6 +187,7 @@ void Van::Receiving() {
           } else {
             // some node dies and restarts
             CHECK(ready_);
+            CHECK_GT(heartbeat_timeout, 0);
             for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
               const auto& node = nodes.control.node[i];
               if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
@@ -240,6 +241,8 @@ void Van::Receiving() {
               if (node.role == Node::WORKER) ++num_workers_;
               Postoffice::Get()->UpdateHeartbeat(node.id, t);
             }
+            CHECK_EQ(Postoffice::Get()->num_servers(), num_servers_);
+            CHECK_EQ(Postoffice::Get()->num_workers(), num_workers_);
             nodes.control.node.push_back(my_node_);
             nodes.control.cmd = Control::ADD_NODE;
             Message back;
@@ -282,6 +285,8 @@ void Van::Receiving() {
             if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
             if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
           }
+          CHECK_EQ(Postoffice::Get()->num_servers(), num_servers_);
+          CHECK_EQ(Postoffice::Get()->num_workers(), num_workers_);
           PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
           ready_ = true;
         }
