@@ -24,7 +24,7 @@ enum AssignOp {
  * \brief return an assignment function: right op= left
  */
 template<typename T>
-inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
+inline void AssignFunc(const T& left, AssignOp op, T* right) {
   switch (op) {
     case ASSIGN:
       *right = left; break;
@@ -46,7 +46,7 @@ inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
  * works for integers
  */
 template<typename T>
-inline void AssignFuncInt(const T& lhs, AssignOp op, T* rhs) {
+inline void AssignFuncInt(const T& left, AssignOp op, T* right) {
   switch (op) {
     case ASSIGN:
       *right = left; break;
