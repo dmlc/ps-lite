@@ -160,6 +160,13 @@ class Postoffice {
    */
   std::vector<int> GetDeadNodes(int t = 60);
 
+  /**
+   * \brief get max key id
+   */
+  Key MaxKey() {
+    return max_id_;
+  }
+
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
@@ -180,6 +187,7 @@ class Postoffice {
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */
   std::shared_ptr<Environment> env_ref_;
   time_t start_time_;
+  Key max_id_ = kMaxKey;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 

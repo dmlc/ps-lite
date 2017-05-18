@@ -20,7 +20,7 @@ void RunWorker() {
   int rank = MyRank();
   srand(rank + 7);
   for (int i = 0; i < num; ++i) {
-    keys[i] = kMaxKey / num * i + rank;
+    keys[i] = Postoffice::Get()->MaxKey() / num * i + rank;
     vals[i] = (rand() % 1000);
     std::cout << "origin key: " << keys[i] << " value:" << vals[i] << std::endl;
   }
