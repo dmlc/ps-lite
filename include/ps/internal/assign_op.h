@@ -1,5 +1,5 @@
 /**
- *  Copyrhs (c) 2015 by Contributors
+ *  Copyright (c) 2015 by Contributors
  * \file   assign_op.h
  * \brief  assignment operator
  * http://en.cppreference.com/w/cpp/language/operator_assignment
