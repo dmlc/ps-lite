@@ -30,7 +30,7 @@ template <typename K, typename V>
 void ParallelOrderedMatch(
     const K* src_key, const K* src_key_end, const V* src_val,
     const K* dst_key, const K* dst_key_end, V* dst_val,
-    int k, AsOp op, size_t grainsize, size_t* n) {
+    int k, AssignOp op, size_t grainsize, size_t* n) {
   size_t src_len = std::distance(src_key, src_key_end);
   size_t dst_len = std::distance(dst_key, dst_key_end);
   if (dst_len == 0 || src_len == 0) return;
@@ -46,7 +46,7 @@ void ParallelOrderedMatch(
       } else {
         if (!(*dst_key < *src_key)) {
           for (int i = 0; i < k; ++i) {
-            AssignOp(dst_val[i], src_val[i], op);
+            AssignFunc(dst_val[i], src_val[i], op);
           }
           ++src_key; src_val += k;
           *n += k;
