@@ -21,21 +21,21 @@ enum AssignOp {
 };
 
 /**
- * \brief return an assignment function: right op= left
+ * \brief return an assignment function: rhs op= lhs
  */
 template<typename T>
 inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {
     case ASSIGN:
-      *right = left; break;
+      *rhs = lhs; break;
     case PLUS:
-      *right += left; break;
+      *rhs += lhs; break;
     case MINUS:
-      *right -= left; break;
+      *rhs -= lhs; break;
     case TIMES:
-      *right *= left; break;
+      *rhs *= lhs; break;
     case DIVIDE:
-      *right /= left; break;
+      *rhs /= lhs; break;
     default:
       LOG(FATAL) << "use AssignOpInt..";
   }
@@ -49,21 +49,21 @@ template<typename T>
 inline void AssignFuncInt(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {
     case ASSIGN:
-      *right = left; break;
+      *rhs = lhs; break;
     case PLUS:
-      *right += left; break;
+      *rhs += lhs; break;
     case MINUS:
-      *right -= left; break;
+      *rhs -= lhs; break;
     case TIMES:
-      *right *= left; break;
+      *rhs *= lhs; break;
     case DIVIDE:
-      *right /= left; break;
+      *rhs /= lhs; break;
     case AND:
-      *right &= left; break;
+      *rhs &= lhs; break;
     case OR:
-      *right |= left; break;
+      *rhs |= lhs; break;
     case XOR:
-      *right ^= left; break;
+      *rhs ^= lhs; break;
   }
 }
 

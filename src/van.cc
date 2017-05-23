@@ -18,7 +18,7 @@ namespace ps {
 // don't send heartbeast in default. because if the scheduler received a
 // heartbeart signal from a node before connected to that node, then it could be
 // problem.
-const static int kDefaultHeartbeatInterval = 0;
+static const int kDefaultHeartbeatInterval = 0;
 
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
@@ -140,7 +140,8 @@ int Van::Send(const Message& msg) {
 
 void Van::Receiving() {
   const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
-  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
+  const int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val)
+                                                      : kDefaultHeartbeatInterval;
   Meta nodes;  // for scheduler usage
   while (true) {
     Message msg;
