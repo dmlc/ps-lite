@@ -111,9 +111,10 @@ class KVWorker : public SimpleApp {
            const std::vector<Val>& vals,
            const std::vector<int>& lens = {},
            int cmd = 0,
-           const Callback& cb = nullptr) {
+           const Callback& cb = nullptr,
+           bool reset = false) {
     return ZPush(
-        SArray<Key>(keys), SArray<Val>(vals), SArray<int>(lens), cmd, cb);
+        SArray<Key>(keys), SArray<Val>(vals), SArray<int>(lens), cmd, cb, reset);
   }
 
   /**
@@ -176,14 +177,15 @@ class KVWorker : public SimpleApp {
             const SArray<Val>& vals,
             const SArray<int>& lens = {},
             int cmd = 0,
-            const Callback& cb = nullptr) {
+            const Callback& cb = nullptr,
+            bool reset = false) {
     int ts = obj_->NewRequest(kServerGroup);
     AddCallback(ts, cb);
     KVPairs<Val> kvs;
     kvs.keys = keys;
     kvs.vals = vals;
     kvs.lens = lens;
-    Send(ts, true, cmd, kvs);
+    Send(ts, true, cmd, kvs, reset);
     return ts;
   }
 
@@ -249,8 +251,9 @@ class KVWorker : public SimpleApp {
    * @param timestamp the timestamp of the request
    * @param push whether or not it is a push request
    * @param cmd command
+   * @param reset whether or not it is a reset request
    */
-  void Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs);
+  void Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs, bool reset = false);
   /** \brief internal receive handle */
   void Process(const Message& msg);
   /** \brief default kv slicer */
@@ -274,6 +277,8 @@ struct KVMeta {
   int cmd;
   /** \brief whether or not this is a push request */
   bool push;
+  /** \brief whether or not this is a reset request */
+  bool reset;
   /** \brief sender's node id */
   int sender;
   /** \brief the associated timestamp */
@@ -299,7 +304,7 @@ class KVServer : public SimpleApp {
   virtual ~KVServer() { delete obj_; obj_ = nullptr; }
 
   /**
-   * \brief the handle to process a push/pull request from a worker
+   * \brief the handle to process a push/reset/pull request from a worker
    * \param req_meta meta-info of this request
    * \param req_data kv pairs of this request
    * \param server this pointer
@@ -313,7 +318,7 @@ class KVServer : public SimpleApp {
   }
 
   /**
-   * \brief response to the push/pull request
+   * \brief response to the push/reset/pull request
    * \param req the meta-info of the request
    * \param res the kv pairs that will send back to the worker
    */
@@ -328,7 +333,7 @@ class KVServer : public SimpleApp {
 
 
 /**
- * \brief an example handle adding pushed kv into store
+ * \brief an example handle adding pushed or reseted kv into store
  */
 template <typename Val>
 struct KVServerDefaultHandle {
@@ -344,7 +349,12 @@ struct KVServerDefaultHandle {
     for (size_t i = 0; i < n; ++i) {
       Key key = req_data.keys[i];
       if (req_meta.push) {
-        store[key] += req_data.vals[i];
+        if (req_meta.reset) {
+          store[key] = req_data.vals[i];
+        }
+        else {
+          store[key] += req_data.vals[i];
+        }
       } else {
         res.vals[i] = store[key];
       }
@@ -365,6 +375,7 @@ void KVServer<Val>::Process(const Message& msg) {
   KVMeta meta;
   meta.cmd       = msg.meta.head;
   meta.push      = msg.meta.push;
+  meta.reset      = msg.meta.reset;
   meta.sender    = msg.meta.sender;
   meta.timestamp = msg.meta.timestamp;
   KVPairs<Val> data;
@@ -389,6 +400,7 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
   msg.meta.customer_id = obj_->id();
   msg.meta.request     = false;
   msg.meta.push        = req.push;
+  msg.meta.reset       = req.reset;
   msg.meta.head        = req.cmd;
   msg.meta.timestamp   = req.timestamp;
   msg.meta.recver      = req.sender;
@@ -460,7 +472,7 @@ void KVWorker<Val>::DefaultSlicer(
 }
 
 template <typename Val>
-void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs) {
+void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs, bool reset) {
   // slice the message
   SlicedKVs sliced;
   slicer_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
@@ -482,6 +494,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
     msg.meta.customer_id = obj_->id();
     msg.meta.request     = true;
     msg.meta.push        = push;
+    msg.meta.reset       = reset;
     msg.meta.head        = cmd;
     msg.meta.timestamp   = timestamp;
     msg.meta.recver      = Postoffice::Get()->ServerRankToID(i);
