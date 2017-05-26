@@ -178,6 +178,8 @@ struct Meta {
   bool request;
   /** \brief whether or not a push message */
   bool push;
+  /** \brief whether or not a reset message */
+  bool reset;
   /** \brief whether or not it's for SimpleApp */
   bool simple_app;
   /** \brief an string body */
