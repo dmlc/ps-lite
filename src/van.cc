@@ -116,6 +116,9 @@ void Van::Start() {
 }
 
 void Van::Stop() {
+  if (!is_scheduler_) heartbeat_thread_->join();
+  if (resender_) delete resender_;
+
   // stop threads
   Message exit;
   exit.meta.control.cmd = Control::TERMINATE;
@@ -123,8 +126,6 @@ void Van::Stop() {
   exit.meta.recver = my_node_.id;
   SendMsg(exit);
   receiver_thread_->join();
-  if (!is_scheduler_) heartbeat_thread_->join();
-  if (resender_) delete resender_;
 }
 
 int Van::Send(const Message& msg) {
