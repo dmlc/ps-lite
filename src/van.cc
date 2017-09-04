@@ -34,18 +34,19 @@ void Van::ProcessTerminateCommand() {
   ready_ = false;
 }
 
-void Van::ProcessAddNodeCommandAtScheduler(Message* msg, Meta& nodes, Meta& recovery_nodes) {
-  recovery_nodes.control.cmd = Control::ADD_NODE;
+void Van::ProcessAddNodeCommandAtScheduler(
+        Message* msg, Meta* nodes, Meta* recovery_nodes) {
+  recovery_nodes -> control.cmd = Control::ADD_NODE;
   time_t t = time(NULL);
   size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
-  if (nodes.control.node.size() == num_nodes) {
+  if (nodes -> control.node.size() == num_nodes) {
     // sort the nodes according their ip and port,
-    std::sort(nodes.control.node.begin(), nodes.control.node.end(),
+    std::sort(nodes -> control.node.begin(), nodes -> control.node.end(),
               [](const Node& a, const Node& b) {
                   return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
               });
     // assign node rank
-    for (auto& node : nodes.control.node) {
+    for (auto& node : nodes -> control.node) {
       CHECK_EQ(node.id, Node::kEmpty);
       int id = node.role == Node::SERVER ?
                Postoffice::ServerRankToID(num_servers_) :
@@ -57,10 +58,10 @@ void Van::ProcessAddNodeCommandAtScheduler(Message* msg, Meta& nodes, Meta& reco
       if (node.role == Node::WORKER) num_workers_++;
       Postoffice::Get()->UpdateHeartbeat(node.id, t);
     }
-    nodes.control.node.push_back(my_node_);
-    nodes.control.cmd = Control::ADD_NODE;
+    nodes -> control.node.push_back(my_node_);
+    nodes -> control.cmd = Control::ADD_NODE;
     Message back;
-    back.meta = nodes;
+    back.meta = *nodes;
     for (int r : Postoffice::Get()->GetNodeIDs(
             kWorkerGroup + kServerGroup)) {
       back.meta.recver = r;
@@ -70,24 +71,24 @@ void Van::ProcessAddNodeCommandAtScheduler(Message* msg, Meta& nodes, Meta& reco
     PS_VLOG(1) << "the scheduler is connected to "
                << num_workers_ << " workers and " << num_servers_ << " servers";
     ready_ = true;
-  } else if (!recovery_nodes.control.node.empty()) {
+  } else if (!recovery_nodes -> control.node.empty()) {
     auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
     std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
     // send back the recovery node
-    CHECK_EQ(recovery_nodes.control.node.size(), 1);
-    Connect(recovery_nodes.control.node[0]);
-    Postoffice::Get()->UpdateHeartbeat(recovery_nodes.control.node[0].id, t);
+    CHECK_EQ(recovery_nodes -> control.node.size(), 1);
+    Connect(recovery_nodes -> control.node[0]);
+    Postoffice::Get()->UpdateHeartbeat(recovery_nodes -> control.node[0].id, t);
     Message back;
     for (int r : Postoffice::Get()->GetNodeIDs(
             kWorkerGroup + kServerGroup)) {
-      if (r != recovery_nodes.control.node[0].id
+      if (r != recovery_nodes -> control.node[0].id
           && dead_set.find(r) != dead_set.end()) {
         // do not try to send anything to dead node
         continue;
       }
       // only send recovery_node to nodes already exist
       // but send all nodes to the recovery_node
-      back.meta = (r == recovery_nodes.control.node[0].id) ? nodes : recovery_nodes;
+      back.meta = (r == recovery_nodes -> control.node[0].id) ? *nodes : *recovery_nodes;
       back.meta.recver = r;
       back.meta.timestamp = timestamp_++;
       Send(back);
@@ -95,30 +96,31 @@ void Van::ProcessAddNodeCommandAtScheduler(Message* msg, Meta& nodes, Meta& reco
   }
 }
 
-void Van::UpdateLocalID(Message& msg, std::unordered_set<int>& deadnodes_set,
-                        Meta& nodes, Meta& recovery_nodes) {
-  auto& ctrl = msg.meta.control;
-  size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
+void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
+                        Meta* nodes, Meta* recovery_nodes) {
+  auto& ctrl = msg -> meta.control;
+  int num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
   // assign an id
-  if (msg.meta.sender == Meta::kEmpty) {
+  if (msg -> meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
     CHECK_EQ(ctrl.node.size(), 1);
-    if (nodes.control.node.size() < num_nodes) {
-      nodes.control.node.push_back(ctrl.node[0]);
+    if (nodes -> control.node.size() < num_nodes) {
+      nodes -> control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
       CHECK(ready_);
-      for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
-        const auto& node = nodes.control.node[i];
-        if (deadnodes_set.find(node.id) != deadnodes_set.end() && node.role == ctrl.node[0].role) {
+      for (size_t i = 0; i < nodes -> control.node.size() - 1; ++i) {
+        const auto& node = nodes -> control.node[i];
+        if (deadnodes_set -> find(node.id) != deadnodes_set -> end() &&
+                node.role == ctrl.node[0].role) {
           auto& recovery_node = ctrl.node[0];
           // assign previous node id
           recovery_node.id = node.id;
           recovery_node.is_recovery = true;
           PS_VLOG(1) << "replace dead node " << node.DebugString()
                      << " by node " << recovery_node.DebugString();
-          nodes.control.node[i] = recovery_node;
-          recovery_nodes.control.node.push_back(recovery_node);
+          nodes -> control.node[i] = recovery_node;
+          recovery_nodes -> control.node.push_back(recovery_node);
           break;
         }
       }
@@ -140,8 +142,8 @@ void Van::UpdateLocalID(Message& msg, std::unordered_set<int>& deadnodes_set,
   }
 }
 
-void Van::ProcessHearbeat(Message &msg) {
-  auto& ctrl = msg.meta.control;
+void Van::ProcessHearbeat(Message* msg) {
+  auto& ctrl = msg -> meta.control;
   time_t t = time(NULL);
   for (auto &node : ctrl.node) {
     Postoffice::Get()->UpdateHeartbeat(node.id, t);
@@ -157,9 +159,9 @@ void Van::ProcessHearbeat(Message &msg) {
   }
 }
 
-void Van::ProcessBarrierCommand(Message& msg) {
-  auto& ctrl = msg.meta.control;
-  if (msg.meta.request) {
+void Van::ProcessBarrierCommand(Message* msg) {
+  auto& ctrl = msg -> meta.control;
+  if (msg -> meta.request) {
     if (barrier_count_.empty()) {
       barrier_count_.resize(8, 0);
     }
@@ -179,30 +181,30 @@ void Van::ProcessBarrierCommand(Message& msg) {
       }
     }
   } else {
-    Postoffice::Get()->Manage(msg);
+    Postoffice::Get()->Manage(*msg);
   }
 }
 
-void Van::ProcessDataMsg(Message &msg) {
+void Van::ProcessDataMsg(Message* msg) {
   // data msg
-  CHECK_NE(msg.meta.sender, Meta::kEmpty);
-  CHECK_NE(msg.meta.recver, Meta::kEmpty);
-  CHECK_NE(msg.meta.customer_id, Meta::kEmpty);
-  int id = msg.meta.customer_id;
+  CHECK_NE(msg -> meta.sender, Meta::kEmpty);
+  CHECK_NE(msg -> meta.recver, Meta::kEmpty);
+  CHECK_NE(msg -> meta.customer_id, Meta::kEmpty);
+  int id = msg -> meta.customer_id;
   auto* obj = Postoffice::Get()->GetCustomer(id, 5);
   CHECK(obj) << "timeout (5 sec) to wait App " << id << " ready";
-  obj->Accept(msg);
+  obj->Accept(*msg);
 }
 
-void Van::ProcessAddNodeCommand(Message& msg, Meta& nodes, Meta& recovery_nodes) {
+void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes) {
   auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
   std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
-  auto& ctrl = msg.meta.control;
+  auto& ctrl = msg -> meta.control;
 
-  UpdateLocalID(msg, dead_set, nodes, recovery_nodes);
+  UpdateLocalID(msg, &dead_set, nodes, recovery_nodes);
 
   if (is_scheduler_) {
-    ProcessAddNodeCommandAtScheduler(&msg, nodes, recovery_nodes);
+    ProcessAddNodeCommandAtScheduler(msg, nodes, recovery_nodes);
   } else {
     for (const auto& node : ctrl.node) {
       Connect(node);
@@ -356,14 +358,14 @@ void Van::Receiving() {
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
-        ProcessAddNodeCommand(msg, nodes, recovery_nodes);
+        ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
-        ProcessBarrierCommand(msg);
+        ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        ProcessHearbeat(msg);
+        ProcessHearbeat(&msg);
       }
     } else {
-      ProcessDataMsg(msg);
+      ProcessDataMsg(&msg);
     }
   }
 }

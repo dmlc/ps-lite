@@ -24,7 +24,7 @@ class Resender;
  * message if it no ACK messsage is received within PS_RESEND_TIMEOUT millisecond
  */
 class Van {
-  public:
+ public:
     /**
      * \brief create Van
      * \param type zmq, socket, ...
@@ -79,7 +79,7 @@ class Van {
      */
     bool IsReady() { return ready_; }
 
-  protected:
+ protected:
     /**
      * \brief connect to a node
      */
@@ -119,7 +119,7 @@ class Van {
     Node my_node_;
     bool is_scheduler_;
 
-  private:
+ private:
     /** thread function for receving */
     void Receiving();
 
@@ -144,20 +144,20 @@ class Van {
     DISALLOW_COPY_AND_ASSIGN(Van);
 
 
-    void ProcessAddNodeCommandAtScheduler(Message* msg, Meta& nodes, Meta& recovery_nodes);
+    void ProcessAddNodeCommandAtScheduler(Message* msg, Meta* nodes, Meta* recovery_nodes);
 
     void ProcessTerminateCommand();
 
-    void ProcessAddNodeCommand(Message& msg, Meta& nodes, Meta& recovery_nodes);
+    void ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes);
 
-    void ProcessBarrierCommand(Message &msg);
+    void ProcessBarrierCommand(Message* msg);
 
-    void ProcessHearbeat(Message &msg);
+    void ProcessHearbeat(Message* msg);
 
-    void ProcessDataMsg(Message &msg);
+    void ProcessDataMsg(Message* msg);
 
-    void UpdateLocalID(Message &msg, std::unordered_set<int> &deadnodes_set, Meta& nodes,
-                       Meta &recovery_nodes);
+    void UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set, Meta* nodes,
+                       Meta* recovery_nodes);
 
     const char *heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
     int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 0;
