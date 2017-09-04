@@ -141,8 +141,6 @@ class Van {
     Resender *resender_ = nullptr;
     int drop_rate_ = 0;
     std::atomic<int> timestamp_{0};
-    DISALLOW_COPY_AND_ASSIGN(Van);
-
 
     void ProcessAddNodeCommandAtScheduler(Message* msg, Meta* nodes, Meta* recovery_nodes);
 
@@ -161,6 +159,8 @@ class Van {
 
     const char *heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
     int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 0;
+
+    DISALLOW_COPY_AND_ASSIGN(Van);
 };
-} // namespace ps
+}  // namespace ps
 #endif  // PS_INTERNAL_VAN_H_

@@ -326,7 +326,6 @@ int Van::Send(const Message& msg) {
 }
 
 void Van::Receiving() {
-
   Meta nodes;
   Meta recovery_nodes;  // store recovery nodes
   recovery_nodes.control.cmd = Control::ADD_NODE;
