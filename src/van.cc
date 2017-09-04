@@ -29,6 +29,191 @@ Van* Van::Create(const std::string& type) {
   }
 }
 
+void Van::ProcessTerminateCommand() {
+  PS_VLOG(1) << my_node().ShortDebugString() << " is stopped";
+  ready_ = false;
+}
+
+void Van::ProcessAddNodeCommandAtScheduler(Message* msg, Meta& nodes, Meta& recovery_nodes) {
+  recovery_nodes.control.cmd = Control::ADD_NODE;
+  time_t t = time(NULL);
+  size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
+  if (nodes.control.node.size() == num_nodes) {
+    // sort the nodes according their ip and port,
+    std::sort(nodes.control.node.begin(), nodes.control.node.end(),
+              [](const Node& a, const Node& b) {
+                  return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
+              });
+    // assign node rank
+    for (auto& node : nodes.control.node) {
+      CHECK_EQ(node.id, Node::kEmpty);
+      int id = node.role == Node::SERVER ?
+               Postoffice::ServerRankToID(num_servers_) :
+               Postoffice::WorkerRankToID(num_workers_);
+      PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
+      node.id = id;
+      Connect(node);
+      if (node.role == Node::SERVER) num_servers_++;
+      if (node.role == Node::WORKER) num_workers_++;
+      Postoffice::Get()->UpdateHeartbeat(node.id, t);
+    }
+    nodes.control.node.push_back(my_node_);
+    nodes.control.cmd = Control::ADD_NODE;
+    Message back;
+    back.meta = nodes;
+    for (int r : Postoffice::Get()->GetNodeIDs(
+            kWorkerGroup + kServerGroup)) {
+      back.meta.recver = r;
+      back.meta.timestamp = timestamp_++;
+      Send(back);
+    }
+    PS_VLOG(1) << "the scheduler is connected to "
+               << num_workers_ << " workers and " << num_servers_ << " servers";
+    ready_ = true;
+  } else if (!recovery_nodes.control.node.empty()) {
+    auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+    std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
+    // send back the recovery node
+    CHECK_EQ(recovery_nodes.control.node.size(), 1);
+    Connect(recovery_nodes.control.node[0]);
+    Postoffice::Get()->UpdateHeartbeat(recovery_nodes.control.node[0].id, t);
+    Message back;
+    for (int r : Postoffice::Get()->GetNodeIDs(
+            kWorkerGroup + kServerGroup)) {
+      if (r != recovery_nodes.control.node[0].id
+          && dead_set.find(r) != dead_set.end()) {
+        // do not try to send anything to dead node
+        continue;
+      }
+      // only send recovery_node to nodes already exist
+      // but send all nodes to the recovery_node
+      back.meta = (r == recovery_nodes.control.node[0].id) ? nodes : recovery_nodes;
+      back.meta.recver = r;
+      back.meta.timestamp = timestamp_++;
+      Send(back);
+    }
+  }
+}
+
+void Van::UpdateLocalID(Message& msg, std::unordered_set<int>& deadnodes_set,
+                        Meta& nodes, Meta& recovery_nodes) {
+  auto& ctrl = msg.meta.control;
+  size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
+  // assign an id
+  if (msg.meta.sender == Meta::kEmpty) {
+    CHECK(is_scheduler_);
+    CHECK_EQ(ctrl.node.size(), 1);
+    if (nodes.control.node.size() < num_nodes) {
+      nodes.control.node.push_back(ctrl.node[0]);
+    } else {
+      // some node dies and restarts
+      CHECK(ready_);
+      for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
+        const auto& node = nodes.control.node[i];
+        if (deadnodes_set.find(node.id) != deadnodes_set.end() && node.role == ctrl.node[0].role) {
+          auto& recovery_node = ctrl.node[0];
+          // assign previous node id
+          recovery_node.id = node.id;
+          recovery_node.is_recovery = true;
+          PS_VLOG(1) << "replace dead node " << node.DebugString()
+                     << " by node " << recovery_node.DebugString();
+          nodes.control.node[i] = recovery_node;
+          recovery_nodes.control.node.push_back(recovery_node);
+          break;
+        }
+      }
+    }
+  }
+
+  // update my id
+  for (size_t i = 0; i < ctrl.node.size(); ++i) {
+    const auto& node = ctrl.node[i];
+    if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
+      my_node_ = node;
+      std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
+#ifdef _MSC_VER
+      _putenv_s("DMLC_RANK", rank.c_str());
+#else
+      setenv("DMLC_RANK", rank.c_str(), true);
+#endif
+    }
+  }
+}
+
+void Van::ProcessHearbeat(Message &msg) {
+  auto& ctrl = msg.meta.control;
+  time_t t = time(NULL);
+  for (auto &node : ctrl.node) {
+    Postoffice::Get()->UpdateHeartbeat(node.id, t);
+    if (is_scheduler_) {
+      Message heartbeat_ack;
+      heartbeat_ack.meta.recver = node.id;
+      heartbeat_ack.meta.control.cmd = Control::HEARTBEAT;
+      heartbeat_ack.meta.control.node.push_back(my_node_);
+      heartbeat_ack.meta.timestamp = timestamp_++;
+      // send back heartbeat
+      Send(heartbeat_ack);
+    }
+  }
+}
+
+void Van::ProcessBarrierCommand(Message& msg) {
+  auto& ctrl = msg.meta.control;
+  if (msg.meta.request) {
+    if (barrier_count_.empty()) {
+      barrier_count_.resize(8, 0);
+    }
+    int group = ctrl.barrier_group;
+    ++barrier_count_[group];
+    PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
+    if (barrier_count_[group] ==
+        static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
+      barrier_count_[group] = 0;
+      Message res;
+      res.meta.request = false;
+      res.meta.control.cmd = Control::BARRIER;
+      for (int r : Postoffice::Get()->GetNodeIDs(group)) {
+        res.meta.recver = r;
+        res.meta.timestamp = timestamp_++;
+        CHECK_GT(Send(res), 0);
+      }
+    }
+  } else {
+    Postoffice::Get()->Manage(msg);
+  }
+}
+
+void Van::ProcessDataMsg(Message &msg) {
+  // data msg
+  CHECK_NE(msg.meta.sender, Meta::kEmpty);
+  CHECK_NE(msg.meta.recver, Meta::kEmpty);
+  CHECK_NE(msg.meta.customer_id, Meta::kEmpty);
+  int id = msg.meta.customer_id;
+  auto* obj = Postoffice::Get()->GetCustomer(id, 5);
+  CHECK(obj) << "timeout (5 sec) to wait App " << id << " ready";
+  obj->Accept(msg);
+}
+
+void Van::ProcessAddNodeCommand(Message& msg, Meta& nodes, Meta& recovery_nodes) {
+  auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
+  std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
+  auto& ctrl = msg.meta.control;
+
+  UpdateLocalID(msg, dead_set, nodes, recovery_nodes);
+
+  if (is_scheduler_) {
+    ProcessAddNodeCommandAtScheduler(&msg, nodes, recovery_nodes);
+  } else {
+    for (const auto& node : ctrl.node) {
+      Connect(node);
+      if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
+      if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
+    }
+    PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
+    ready_ = true;
+  }
+}
+
 void Van::Start() {
   // get scheduler info
   scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
@@ -139,14 +324,14 @@ int Van::Send(const Message& msg) {
 }
 
 void Van::Receiving() {
-  const char* heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
-  const int heartbeat_timeout
-      = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : kDefaultHeartbeatInterval;
-  Meta nodes;  // for scheduler usage
+
+  Meta nodes;
+  Meta recovery_nodes;  // store recovery nodes
+  recovery_nodes.control.cmd = Control::ADD_NODE;
+
   while (true) {
     Message msg;
     int recv_bytes = RecvMsg(&msg);
-
     // For debug, drop received message
     if (ready_ && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;
@@ -165,169 +350,20 @@ void Van::Receiving() {
     if (resender_ && resender_->AddIncomming(msg)) continue;
 
     if (!msg.meta.control.empty()) {
-      // do some management
+      // control msg
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
-        PS_VLOG(1) << my_node_.ShortDebugString() << " is stopped";
-        ready_ = false;
+        ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
-        size_t num_nodes = Postoffice::Get()->num_servers() +
-                           Postoffice::Get()->num_workers();
-        auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout);
-        std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
-        Meta recovery_nodes;  // store recovery nodes
-        recovery_nodes.control.cmd = Control::ADD_NODE;
-        // assign an id
-        if (msg.meta.sender == Meta::kEmpty) {
-          CHECK(is_scheduler_);
-          CHECK_EQ(ctrl.node.size(), 1);
-          if (nodes.control.node.size() < num_nodes) {
-            nodes.control.node.push_back(ctrl.node[0]);
-          } else {
-            // some node dies and restarts
-            CHECK(ready_);
-            for (size_t i = 0; i < nodes.control.node.size() - 1; ++i) {
-              const auto& node = nodes.control.node[i];
-              if (dead_set.find(node.id) != dead_set.end() && node.role == ctrl.node[0].role) {
-                auto& recovery_node = ctrl.node[0];
-                // assign previous node id
-                recovery_node.id = node.id;
-                recovery_node.is_recovery = true;
-                PS_VLOG(1) << "replace dead node " << node.DebugString()
-                           << " by node " << recovery_node.DebugString();
-                nodes.control.node[i] = recovery_node;
-                recovery_nodes.control.node.push_back(recovery_node);
-                break;
-              }
-            }
-          }
-        }
-
-        // update my id
-        for (size_t i = 0; i < ctrl.node.size(); ++i) {
-          const auto& node = ctrl.node[i];
-          if (my_node_.hostname == node.hostname &&
-              my_node_.port == node.port) {
-            my_node_ = node;
-            std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
-#ifdef _MSC_VER
-            _putenv_s("DMLC_RANK", rank.c_str());
-#else
-            setenv("DMLC_RANK", rank.c_str(), true);
-#endif
-          }
-        }
-
-        if (is_scheduler_) {
-          time_t t = time(NULL);
-          if (nodes.control.node.size() == num_nodes) {
-            // sort the nodes according their ip and port,
-            std::sort(nodes.control.node.begin(), nodes.control.node.end(),
-                      [](const Node& a, const Node& b) {
-                        return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
-                      });
-            // assign node rank
-            for (auto& node : nodes.control.node) {
-              CHECK_EQ(node.id, Node::kEmpty);
-              int id = node.role == Node::SERVER ?
-                       Postoffice::ServerRankToID(num_servers_) :
-                       Postoffice::WorkerRankToID(num_workers_);
-              PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
-              node.id = id;
-              Connect(node);
-              if (node.role == Node::SERVER) ++num_servers_;
-              if (node.role == Node::WORKER) ++num_workers_;
-              Postoffice::Get()->UpdateHeartbeat(node.id, t);
-            }
-            nodes.control.node.push_back(my_node_);
-            nodes.control.cmd = Control::ADD_NODE;
-            Message back; back.meta = nodes;
-            for (int r : Postoffice::Get()->GetNodeIDs(
-                     kWorkerGroup + kServerGroup)) {
-              back.meta.recver = r;
-              back.meta.timestamp = timestamp_++;
-              Send(back);
-            }
-            PS_VLOG(1) << "the scheduler is connected to "
-                    << num_workers_ << " workers and " << num_servers_ << " servers";
-            ready_ = true;
-          } else if (recovery_nodes.control.node.size() > 0) {
-            // send back the recovery node
-            CHECK_EQ(recovery_nodes.control.node.size(), 1);
-            Connect(recovery_nodes.control.node[0]);
-            Postoffice::Get()->UpdateHeartbeat(recovery_nodes.control.node[0].id, t);
-            Message back;
-            for (int r : Postoffice::Get()->GetNodeIDs(
-                     kWorkerGroup + kServerGroup)) {
-              if (r != recovery_nodes.control.node[0].id
-                    && dead_set.find(r) != dead_set.end()) {
-                // do not try to send anything to dead node
-                continue;
-              }
-              // only send recovery_node to nodes already exist
-              // but send all nodes to the recovery_node
-              back.meta = (r == recovery_nodes.control.node[0].id) ? nodes : recovery_nodes;
-              back.meta.recver = r;
-              back.meta.timestamp = timestamp_++;
-              Send(back);
-            }
-          }
-        } else {
-          for (const auto& node : ctrl.node) {
-            Connect(node);
-            if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
-            if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
-          }
-          PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
-          ready_ = true;
-        }
+        ProcessAddNodeCommand(msg, nodes, recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
-        if (msg.meta.request) {
-          if (barrier_count_.empty()) {
-            barrier_count_.resize(8, 0);
-          }
-          int group = ctrl.barrier_group;
-          ++barrier_count_[group];
-          PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
-          if (barrier_count_[group] ==
-              static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
-            barrier_count_[group] = 0;
-            Message res;
-            res.meta.request = false;
-            res.meta.control.cmd = Control::BARRIER;
-            for (int r : Postoffice::Get()->GetNodeIDs(group)) {
-              res.meta.recver = r;
-              res.meta.timestamp = timestamp_++;
-              CHECK_GT(Send(res), 0);
-            }
-          }
-        } else {
-          Postoffice::Get()->Manage(msg);
-        }
+        ProcessBarrierCommand(msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        time_t t = time(NULL);
-        for (auto &node : ctrl.node) {
-          Postoffice::Get()->UpdateHeartbeat(node.id, t);
-          if (is_scheduler_) {
-            Message heartbeat_ack;
-            heartbeat_ack.meta.recver = node.id;
-            heartbeat_ack.meta.control.cmd = Control::HEARTBEAT;
-            heartbeat_ack.meta.control.node.push_back(my_node_);
-            heartbeat_ack.meta.timestamp = timestamp_++;
-            // send back heartbeat
-            Send(heartbeat_ack);
-          }
-        }
+        ProcessHearbeat(msg);
       }
     } else {
-      CHECK_NE(msg.meta.sender, Meta::kEmpty);
-      CHECK_NE(msg.meta.recver, Meta::kEmpty);
-      CHECK_NE(msg.meta.customer_id, Meta::kEmpty);
-      int id = msg.meta.customer_id;
-      auto* obj = Postoffice::Get()->GetCustomer(id, 5);
-      CHECK(obj) << "timeout (5 sec) to wait App " << id << " ready";
-      obj->Accept(msg);
+      ProcessDataMsg(msg);
     }
   }
 }
