@@ -15,6 +15,7 @@
 #include "ps/internal/message.h"
 namespace ps {
 class Resender;
+class PBMeta;
 /**
  * \brief Van sends messages to remote nodes
  *
@@ -91,6 +92,12 @@ class Van {
    * \return the number of bytes sent
    */
   virtual int SendMsg(const Message& msg) = 0;
+
+  /**
+   * \brief pack meta into protobuf
+   */
+  void PackMetaPB(const Meta& meta, PBMeta *pb);
+
   /**
    * \brief pack meta into a string
    */

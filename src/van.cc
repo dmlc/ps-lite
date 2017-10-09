@@ -11,6 +11,7 @@
 #include "./network_utils.h"
 #include "./meta.pb.h"
 #include "./zmq_van.h"
+#include "./rdma_van.h"
 #include "./resender.h"
 namespace ps {
 
@@ -23,6 +24,10 @@ static const int kDefaultHeartbeatInterval = 0;
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
     return new ZMQVan();
+#ifdef MXNET_USE_RDMA
+  } else if (type == "rdma") {
+    return new RDMAVan();
+#endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
     return nullptr;
@@ -332,6 +337,35 @@ void Van::Receiving() {
   }
 }
 
+void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
+  pb->set_head(meta.head);
+  if (meta.customer_id != Meta::kEmpty) pb->set_customer_id(meta.customer_id);
+  if (meta.timestamp != Meta::kEmpty) pb->set_timestamp(meta.timestamp);
+  if (meta.body.size()) pb->set_body(meta.body);
+  pb->set_push(meta.push);
+  pb->set_request(meta.request);
+  pb->set_simple_app(meta.simple_app);
+  for (auto d : meta.data_type) pb->add_data_type(d);
+  if (!meta.control.empty()) {
+    auto ctrl = pb->mutable_control();
+    ctrl->set_cmd(meta.control.cmd);
+    if (meta.control.cmd == Control::BARRIER) {
+      ctrl->set_barrier_group(meta.control.barrier_group);
+    } else if (meta.control.cmd == Control::ACK) {
+      ctrl->set_msg_sig(meta.control.msg_sig);
+    }
+    for (const auto& n : meta.control.node) {
+      auto p = ctrl->add_node();
+      p->set_id(n.id);
+      p->set_role(n.role);
+      p->set_port(n.port);
+      p->set_hostname(n.hostname);
+      p->set_is_recovery(n.is_recovery);
+    }
+  }
+  pb->set_data_size(meta.data_size);
+}
+
 void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   // convert into protobuf
   PBMeta pb;
@@ -360,10 +394,14 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
       p->set_is_recovery(n.is_recovery);
     }
   }
+  pb.set_data_size(meta.data_size);
 
   // to string
   *buf_size = pb.ByteSize();
-  *meta_buf = new char[*buf_size+1];
+  // allocate buffer only when needed
+  if (*meta_buf == nullptr) {
+    *meta_buf = new char[*buf_size+1];
+  }
   CHECK(pb.SerializeToArray(*meta_buf, *buf_size))
       << "failed to serialize protbuf";
 }
