@@ -10,7 +10,11 @@
 #include <sstream>
 #include "ps/internal/utils.h"
 #include "ps/range.h"
+#include "ps/srmem.h"
 namespace ps {
+
+template<typename V>
+class SRMem;
 
 /**
  * \brief Shared array
@@ -53,7 +57,6 @@ class SArray {
    */
   explicit SArray(size_t size, V val = 0) { resize(size, val); }
 
-
   /**
    * \brief construct from another SArray.
    *
@@ -74,6 +77,32 @@ class SArray {
    * \param arr the source array
    */
   template <typename W> void operator=(const SArray<W>& arr) {
+    size_ = arr.size() * sizeof(W) / sizeof(V);
+    CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
+    capacity_ = arr.capacity() * sizeof(W) / sizeof(V);
+    ptr_ = std::shared_ptr<V>(arr.ptr(), reinterpret_cast<V*>(arr.data()));
+  }
+
+  /**
+   * \brief construct from SRMem
+   *
+   * Zero-copy constructor, namely just copy the pointer
+   *
+   * \tparam W the value type of the source array
+   * \param arr the source array
+   */
+  template <typename W>
+  explicit SArray(const SRMem<W>& arr) { *this = arr; }
+
+  /**
+   * \brief construct from SRMem
+   *
+   * Zero-copy constructor, namely just copy the pointer
+   *
+   * \tparam W the value type of the source array
+   * \param arr the source array
+   */
+  template <typename W> void operator=(const SRMem<W>& arr) {
     size_ = arr.size() * sizeof(W) / sizeof(V);
     CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
     capacity_ = arr.capacity() * sizeof(W) / sizeof(V);

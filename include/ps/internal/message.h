@@ -191,6 +191,8 @@ struct Meta {
   std::vector<DataType> data_type;
   /** \brief system control message */
   Control control;
+  /** \brief the byte size */
+  int data_size = 0;
 };
 /**
  * \brief messages that communicated amaong nodes.
@@ -207,7 +209,9 @@ struct Message {
   void AddData(const SArray<V>& val) {
     CHECK_EQ(data.size(), meta.data_type.size());
     meta.data_type.push_back(GetDataType<V>());
-    data.push_back(SArray<char>(val));
+    SArray<char> bytes(val);
+    meta.data_size += bytes.size();
+    data.push_back(bytes);
   }
   std::string DebugString() const {
     std::stringstream ss;

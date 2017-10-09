@@ -135,7 +135,7 @@ class ZMQVan : public Van {
     void *socket = it->second;
 
     // send meta
-    int meta_size; char* meta_buf;
+    int meta_size; char* meta_buf = nullptr;
     PackMeta(msg.meta, &meta_buf, &meta_size);
     int tag = ZMQ_SNDMORE;
     int n = msg.data.size();
