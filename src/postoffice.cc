@@ -10,12 +10,18 @@
 
 namespace ps {
 Postoffice::Postoffice() {
-  van_ = Van::Create("zmq");
   env_ref_ = Environment::_GetSharedRef();
 }
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
+  int enable_rdma = GetEnv("DMLC_ENABLE_RDMA", 0);
+  if (enable_rdma) {
+    LOG(INFO) << "enable RDMA for networking";
+    van_ = Van::Create("rdma");
+  } else {
+    van_ = Van::Create("zmq");
+  }
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
   val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));

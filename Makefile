@@ -19,6 +19,13 @@ endif
 
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++11 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
+LIBS = -pthread
+
+ifeq ($(USE_RDMA), 1)
+LIBS += -lrdmacm -libverbs
+CFLAGS += -DMXNET_USE_RDMA
+endif
+
 
 all: ps test
 
@@ -33,14 +40,14 @@ lint:
 
 ps: build/libps.a
 
-OBJS = $(addprefix build/, customer.o postoffice.o van.o meta.pb.o)
+OBJS = $(addprefix build/, bfc_allocator.o customer.o postoffice.o van.o meta.pb.o)
 build/libps.a: $(OBJS)
 	ar crv $@ $(filter %.o, $?)
 
 build/%.o: src/%.cc ${ZMQ} src/meta.pb.h
 	@mkdir -p $(@D)
 	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
-	$(CXX) $(CFLAGS) -c $< -o $@
+	$(CXX) $(CFLAGS) $(LIBS) -c $< -o $@
 
 src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 	$(PROTOC) --cpp_out=./src --proto_path=./src $<

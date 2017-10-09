@@ -1,5 +1,7 @@
 #include <cmath>
 #include "ps/ps.h"
+#include <cmath>
+
 using namespace ps;
 
 void StartServer() {
@@ -44,7 +46,7 @@ void RunWorker() {
 
   float res = 0;
   for (int i = 0; i < num; ++i) {
-    res += fabs(rets[i] - vals[i] * repeat);
+    res += std::fabs(rets[i] - vals[i] * repeat);
   }
   CHECK_LT(res / repeat, 1e-5);
   LL << "error: " << res / repeat;

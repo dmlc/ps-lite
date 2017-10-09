@@ -47,6 +47,14 @@ git clone https://github.com/dmlc/ps-lite
 cd ps-lite && make -j4
 ```
 
+### Build with RDMA support
+
+You can add `USE_RDMA=1` to enable RDMA support.
+
+```bash
+make -j $(nproc) USE_RDMA=1
+```
+
 ### How to use
 
 `ps-lite` provides asynchronous communication for other projects: 

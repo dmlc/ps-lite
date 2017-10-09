@@ -51,4 +51,6 @@ message PBMeta {
   optional bool push = 5;
   // whether or not it's for SimpleApp
   optional bool simple_app = 6 [default = false];
+  // message.data_size 
+  optional int32 data_size = 11;
 }
