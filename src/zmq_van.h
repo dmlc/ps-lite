@@ -33,13 +33,13 @@ class ZMQVan : public Van {
   virtual ~ZMQVan() { }
 
  protected:
-  void Start() override {
+  void Start(int customer_id) override {
     // start zmq
     context_ = zmq_ctx_new();
     CHECK(context_ != NULL) << "create 0mq context failed";
     zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, 65536);
     // zmq_ctx_set(context_, ZMQ_IO_THREADS, 4);
-    Van::Start();
+    Van::Start(customer_id);
   }
 
   void Stop() override {
@@ -134,8 +134,9 @@ class ZMQVan : public Van {
     zmq_msg_init_data(&meta_msg, meta_buf, meta_size, FreeData, NULL);
     while (true) {
       if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
+      std::cout<< "sent on node " << id << "\n";
       if (errno == EINTR) continue;
-      LOG(WARNING) << "failed to send message to node [" << id
+      std::cout << "failed to send message to node [" << id
                    << "] errno: " << errno << " " << zmq_strerror(errno);
       return -1;
     }

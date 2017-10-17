@@ -86,6 +86,8 @@ struct Node {
   Role role;
   /** \brief node id */
   int id;
+  /** \brief customer id */
+  int customer_id;
   /** \brief hostname or ip */
   std::string hostname;
   /** \brief the port this node is binding */
@@ -135,9 +137,9 @@ struct Meta {
   /** \brief the empty value */
   static const int kEmpty;
   /** \brief default constructor */
-  Meta() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
+  Meta() : head(kEmpty), app_id(kEmpty), timestamp(kEmpty),
            sender(kEmpty), recver(kEmpty),
-           request(false), push(false), simple_app(false) {}
+           request(false), simple_app(false) {}
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {
@@ -151,7 +153,7 @@ struct Meta {
     if (!control.empty()) {
       ss << ", control={ " << control.DebugString() << " }";
     } else {
-      ss << ", customer_id=" << customer_id
+      ss << ", app_id=" << app_id
          << ", simple_app=" << simple_app
          << ", push=" << push;
     }
@@ -166,7 +168,9 @@ struct Meta {
   }
   /** \brief an int head */
   int head;
-  /** \brief the unique id of the customer is messsage is for*/
+  /** \brief the unique id of the application of messsage is for*/
+  int app_id;
+  /** \brief customer id*/
   int customer_id;
   /** \brief the timestamp of this message */
   int timestamp;

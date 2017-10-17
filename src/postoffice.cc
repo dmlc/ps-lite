@@ -25,46 +25,58 @@ Postoffice::Postoffice() {
   verbose_ = GetEnv("PS_VERBOSE", 0);
 }
 
-void Postoffice::Start(const char* argv0, const bool do_barrier) {
-  // init glog
-  if (argv0) {
-    dmlc::InitLogging(argv0);
-  } else {
-    dmlc::InitLogging("ps-lite\0");
-  }
-
-  // init node info.
-  for (int i = 0; i < num_workers_; ++i) {
-    int id = WorkerRankToID(i);
-    for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
-            kWorkerGroup + kScheduler,
-            kWorkerGroup + kServerGroup + kScheduler}) {
-      node_ids_[g].push_back(id);
+void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier) {
+  std::cout << "starting\n";
+  // std::lock_guard<std::mutex> lk(start_mu_);
+  start_mu_.lock();
+  if (init_stage == 0) {
+    // init glog
+    if (argv0) {
+      dmlc::InitLogging(argv0);
+    } else {
+      dmlc::InitLogging("ps-lite\0");
     }
-  }
 
-  for (int i = 0; i < num_servers_; ++i) {
-    int id = ServerRankToID(i);
-    for (int g : {id, kServerGroup, kWorkerGroup + kServerGroup,
-            kServerGroup + kScheduler,
-            kWorkerGroup + kServerGroup + kScheduler}) {
-      node_ids_[g].push_back(id);
+    // init node info.
+    for (int i = 0; i < num_workers_; ++i) {
+      int id = WorkerRankToID(i);
+      for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
+                    kWorkerGroup + kScheduler,
+                    kWorkerGroup + kServerGroup + kScheduler}) {
+        node_ids_[g].push_back(id);
+      }
     }
-  }
 
-  for (int g : {kScheduler, kScheduler + kServerGroup + kWorkerGroup,
-          kScheduler + kWorkerGroup, kScheduler + kServerGroup}) {
-    node_ids_[g].push_back(kScheduler);
+    for (int i = 0; i < num_servers_; ++i) {
+      int id = ServerRankToID(i);
+      for (int g : {id, kServerGroup, kWorkerGroup + kServerGroup,
+                    kServerGroup + kScheduler,
+                    kWorkerGroup + kServerGroup + kScheduler}) {
+        node_ids_[g].push_back(id);
+      }
+    }
+
+    for (int g : {kScheduler, kScheduler + kServerGroup + kWorkerGroup,
+                  kScheduler + kWorkerGroup, kScheduler + kServerGroup}) {
+      node_ids_[g].push_back(kScheduler);
+    }
+    init_stage++;
   }
+  start_mu_.unlock();
 
   // start van
-  van_->Start();
+  van_->Start(customer_id);
 
-  // record start time
-  start_time_ = time(NULL);
-
-  // do a barrier here
-  if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
+  start_mu_.lock();
+  if (init_stage == 1) {
+    // record start time
+    start_time_ = time(NULL);
+    // do a barrier here
+    if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
+    init_stage++;
+    std::cout << "set started as true \n";
+  }
+  start_mu_.unlock();
 }
 
 void Postoffice::Finalize(const bool do_barrier) {
@@ -76,27 +88,38 @@ void Postoffice::Finalize(const bool do_barrier) {
 
 void Postoffice::AddCustomer(Customer* customer) {
   std::lock_guard<std::mutex> lk(mu_);
-  int id = CHECK_NOTNULL(customer)->id();
-  CHECK_EQ(customers_.count(id), (size_t)0) << "id " << id << " already exists";
-  customers_[id] = customer;
+  int app_id = CHECK_NOTNULL(customer)->app_id();
+  if (customers_.find(app_id) == customers_.end()) {
+    customers_[app_id] = *(new std::unordered_map<int, Customer*>());
+  }
+  // check if the customer id has existed
+  int customer_id = CHECK_NOTNULL(customer)->customer_id();
+  CHECK_EQ(customers_[app_id].count(customer_id), (size_t)0) << "app_id " \
+    << customer_id << " already exists";
+  customers_[app_id][customer_id] = customer;
 }
 
 
 void Postoffice::RemoveCustomer(Customer* customer) {
   std::lock_guard<std::mutex> lk(mu_);
-  int id = CHECK_NOTNULL(customer)->id();
-  customers_.erase(id);
+  int app_id = CHECK_NOTNULL(customer)->app_id();
+  int customer_id = CHECK_NOTNULL(customer)->customer_id();
+  customers_[app_id].erase(customer_id);
+  if (customers_[app_id].empty()) {
+    customers_.erase(app_id);
+  }
 }
 
 
-Customer* Postoffice::GetCustomer(int id, int timeout) const {
+Customer* Postoffice::GetCustomer(int app_id, int customer_id, int timeout) const {
   Customer* obj = nullptr;
-  for (int i = 0; i < timeout*1000+1; ++i) {
+  for (int i = 0; i < timeout * 1000 + 1; ++i) {
     {
       std::lock_guard<std::mutex> lk(mu_);
-      const auto it = customers_.find(id);
+      const auto it = customers_.find(app_id);
       if (it != customers_.end()) {
-        obj = it->second;
+        std::unordered_map<int, Customer*> customers_in_app = it->second;
+        obj = customers_in_app[customer_id];
         break;
       }
     }

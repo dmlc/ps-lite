@@ -15,7 +15,7 @@
 #include "ps/base.h"
 #include "ps/internal/message.h"
 namespace ps {
-class Resender;
+    class Resender;
 
 /**
  * \brief Van sends messages to remote nodes
@@ -24,7 +24,7 @@ class Resender;
  * message if it no ACK messsage is received within PS_RESEND_TIMEOUT millisecond
  */
 class Van {
- public:
+  public:
     /**
      * \brief create Van
      * \param type zmq, socket, ...
@@ -47,7 +47,7 @@ class Van {
      * control message, give it to postoffice::manager, otherwise, give it to the
      * accoding app.
      */
-    virtual void Start();
+    virtual void Start(int customer_id);
 
     /**
      * \brief send a message, It is thread-safe
@@ -79,7 +79,7 @@ class Van {
      */
     bool IsReady() { return ready_; }
 
- protected:
+  protected:
     /**
      * \brief connect to a node
      */
@@ -119,7 +119,7 @@ class Van {
     Node my_node_;
     bool is_scheduler_;
 
- private:
+  private:
     /** thread function for receving */
     void Receiving();
 
@@ -141,6 +141,8 @@ class Van {
     Resender *resender_ = nullptr;
     int drop_rate_ = 0;
     std::atomic<int> timestamp_{0};
+    std::mutex start_mu_;
+    int init_stage = 0;
 
     void ProcessAddNodeCommandAtScheduler(Message* msg, Meta* nodes, Meta* recovery_nodes);
 

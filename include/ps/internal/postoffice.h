@@ -31,7 +31,7 @@ class Postoffice {
    * \param argv0 the program name, used for logging.
    * \param do_barrier whether to block until every nodes are started.
    */
-  void Start(const char* argv0, const bool do_barrier);
+  void Start(int customer_id, const char* argv0, const bool do_barrier);
   /**
    * \brief terminate the system
    *
@@ -49,11 +49,12 @@ class Postoffice {
   void RemoveCustomer(Customer* customer);
   /**
    * \brief get the customer by id, threadsafe
-   * \param id the customer id
+   * \param app_id the application id
+   * \param customer_id the customer id
    * \param timeout timeout in sec
    * \return return nullptr if doesn't exist and timeout
    */
-  Customer* GetCustomer(int id, int timeout = 0) const;
+  Customer* GetCustomer(int app_id, int customer_id, int timeout = 0) const;
   /**
    * \brief get the id of a node (group), threadsafe
    *
@@ -165,7 +166,8 @@ class Postoffice {
   ~Postoffice() { delete van_; }
   Van* van_;
   mutable std::mutex mu_;
-  std::unordered_map<int, Customer*> customers_;
+  // app_id -> (customer_id -> customer pointer)
+  std::unordered_map<int, std::unordered_map<int, Customer*>> customers_;
   std::unordered_map<int, std::vector<int>> node_ids_;
   std::vector<Range> server_key_ranges_;
   bool is_worker_, is_server_, is_scheduler_;
@@ -175,6 +177,8 @@ class Postoffice {
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
   std::mutex heartbeat_mu_;
+  std::mutex start_mu_;
+  int init_stage = 0;
   std::unordered_map<int, time_t> heartbeats_;
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */

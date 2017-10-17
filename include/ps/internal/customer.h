@@ -33,10 +33,10 @@ class Customer {
 
   /**
    * \brief constructor
-   * \param id the unique id, any received message with
+   * \param app_id the unique id, any received message with
    * \param recv_handle the functino for processing a received message
    */
-  Customer(int id, const RecvHandle& recv_handle);
+  Customer(int app_id, int customer_id, const RecvHandle& recv_handle);
 
   /**
    * \brief desconstructor
@@ -44,9 +44,15 @@ class Customer {
   ~Customer();
 
   /**
-   * \brief return the unique id
+   * \brief return the globally unique application id
    */
-  int id() { return id_; }
+  int app_id() { return app_id_; }
+
+
+  /**
+   * \brief return the locally unique customer id
+   */
+  int customer_id() { return customer_id_; }
 
   /**
    * \brief get a timestamp for a new request. threadsafe
@@ -77,7 +83,9 @@ class Customer {
    * \brief accept a received message from \ref Van. threadsafe
    * \param recved the received the message
    */
-  void Accept(const Message& recved) { recv_queue_.Push(recved); }
+  void Accept(const Message& recved) {
+    recv_queue_.Push(recved);
+  }
 
  private:
   /**
@@ -85,7 +93,9 @@ class Customer {
    */
   void Receiving();
 
-  int id_;
+  int app_id_;
+
+  int customer_id_;
 
   RecvHandle recv_handle_;
   ThreadsafeQueue<Message> recv_queue_;

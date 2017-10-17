@@ -66,11 +66,12 @@ class KVWorker : public SimpleApp {
    * \brief constructor
    *
    * \param app_id the app id, should match with \ref KVServer's id
+   * \param customer_id the customer id which is unique locally
    */
-  explicit KVWorker(int app_id) : SimpleApp() {
+  explicit KVWorker(int app_id, int customer_id) : SimpleApp() {
     using namespace std::placeholders;
     slicer_ = std::bind(&KVWorker<Val>::DefaultSlicer, this, _1, _2, _3);
-    obj_ = new Customer(app_id, std::bind(&KVWorker<Val>::Process, this, _1));
+    obj_ = new Customer(app_id, customer_id, std::bind(&KVWorker<Val>::Process, this, _1));
   }
 
   /** \brief deconstructor */
@@ -278,6 +279,8 @@ struct KVMeta {
   int sender;
   /** \brief the associated timestamp */
   int timestamp;
+  /** \brief the customer id of worker */
+  int customer_id;
 };
 
 /**
@@ -292,7 +295,7 @@ class KVServer : public SimpleApp {
    */
   explicit KVServer(int app_id) : SimpleApp() {
     using namespace std::placeholders;
-    obj_ = new Customer(app_id, std::bind(&KVServer<Val>::Process, this, _1));
+    obj_ = new Customer(app_id, app_id, std::bind(&KVServer<Val>::Process, this, _1));
   }
 
   /** \brief deconstructor */
@@ -367,6 +370,7 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.push      = msg.meta.push;
   meta.sender    = msg.meta.sender;
   meta.timestamp = msg.meta.timestamp;
+  meta.customer_id = msg.meta.customer_id;
   KVPairs<Val> data;
   int n = msg.data.size();
   if (n) {
@@ -386,7 +390,8 @@ void KVServer<Val>::Process(const Message& msg) {
 template <typename Val>
 void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
   Message msg;
-  msg.meta.customer_id = obj_->id();
+  msg.meta.app_id = obj_->app_id();
+  msg.meta.customer_id = req.customer_id;
   msg.meta.request     = false;
   msg.meta.push        = req.push;
   msg.meta.head        = req.cmd;
@@ -479,7 +484,8 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
     const auto& s = sliced[i];
     if (!s.first) continue;
     Message msg;
-    msg.meta.customer_id = obj_->id();
+    msg.meta.app_id = obj_->app_id();
+    msg.meta.customer_id = obj_->customer_id();
     msg.meta.request     = true;
     msg.meta.push        = push;
     msg.meta.head        = cmd;
@@ -503,7 +509,6 @@ void KVWorker<Val>::Process(const Message& msg) {
   if (msg.meta.simple_app) {
     SimpleApp::Process(msg); return;
   }
-
   // store the data for pulling
   int ts = msg.meta.timestamp;
   if (!msg.meta.push && msg.data.size()) {
