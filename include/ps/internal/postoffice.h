@@ -38,7 +38,7 @@ class Postoffice {
    * All nodes should call this function before existing. 
    * \param do_barrier whether to do block until every node is finalized, default true.
    */
-  void Finalize(const bool do_barrier = true);
+  void Finalize(const int customer_id, const bool do_barrier = true);
   /**
    * \brief add an customer to the system. threadsafe
    */
@@ -140,7 +140,7 @@ class Postoffice {
    * \brief barrier
    * \param node_id the barrier group id
    */
-  void Barrier(int node_id);
+  void Barrier(int customer_id, int node_group);
   /**
    * \brief process a control message, called by van
    * \param the received message
@@ -172,7 +172,7 @@ class Postoffice {
   std::vector<Range> server_key_ranges_;
   bool is_worker_, is_server_, is_scheduler_;
   int num_servers_, num_workers_;
-  bool barrier_done_;
+  std::unordered_map<int, std::unordered_map<int, bool>> barrier_done_;
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;

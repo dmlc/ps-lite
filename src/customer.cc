@@ -12,7 +12,6 @@ Customer::Customer(int app_id, int customer_id, const Customer::RecvHandle& recv
     : app_id_(app_id), customer_id_(customer_id), recv_handle_(recv_handle) {
   Postoffice::Get()->AddCustomer(this);
   recv_thread_ = std::unique_ptr<std::thread>(new std::thread(&Customer::Receiving, this));
-  std::cout << "started customer " << customer_id << " for application " << app_id << "\n";
 }
 
 Customer::~Customer() {

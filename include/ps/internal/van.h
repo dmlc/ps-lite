@@ -126,6 +126,11 @@ class Van {
     /** thread function for heartbeat */
     void Heartbeat();
 
+    // when multiple customers share the same node,
+    std::unordered_map<std::string, int> connected_nodes;
+    // the node shared by multiple customers, more like the virtual node concept
+    std::unordered_map<int, int> shared_node_mapping;
+
     /** whether it is ready for sending */
     std::atomic<bool> ready_{false};
     std::atomic<size_t> send_bytes_{0};

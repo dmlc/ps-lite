@@ -10,7 +10,7 @@ void StartServer() {
 
 void RunWorker() {
   if (!IsWorker()) return;
-  KVWorker<float> kv(0);
+  KVWorker<float> kv(0, 0);
 
   // init
   int num = 10000;
@@ -51,10 +51,10 @@ int main(int argc, char *argv[]) {
   // setup server nodes
   StartServer();
   // start system
-  Start();
+  Start(0);
   // run worker nodes
   RunWorker();
   // stop system
-  Finalize();
+  Finalize(0, true);
   return 0;
 }

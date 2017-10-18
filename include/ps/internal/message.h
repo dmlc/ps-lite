@@ -137,9 +137,9 @@ struct Meta {
   /** \brief the empty value */
   static const int kEmpty;
   /** \brief default constructor */
-  Meta() : head(kEmpty), app_id(kEmpty), timestamp(kEmpty),
-           sender(kEmpty), recver(kEmpty),
-           request(false), simple_app(false) {}
+  Meta() : head(kEmpty), app_id(kEmpty), customer_id(kEmpty),
+           timestamp(kEmpty), sender(kEmpty), recver(kEmpty),
+           request(false), push(false), simple_app(false) {}
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {
@@ -154,6 +154,7 @@ struct Meta {
       ss << ", control={ " << control.DebugString() << " }";
     } else {
       ss << ", app_id=" << app_id
+         << ", customer_id=" << customer_id
          << ", simple_app=" << simple_app
          << ", push=" << push;
     }

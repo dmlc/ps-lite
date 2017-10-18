@@ -134,10 +134,7 @@ class ZMQVan : public Van {
     zmq_msg_init_data(&meta_msg, meta_buf, meta_size, FreeData, NULL);
     while (true) {
       if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
-      std::cout<< "sent on node " << id << "\n";
       if (errno == EINTR) continue;
-      std::cout << "failed to send message to node [" << id
-                   << "] errno: " << errno << " " << zmq_strerror(errno);
       return -1;
     }
     zmq_msg_close(&meta_msg);

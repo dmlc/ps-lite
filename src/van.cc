@@ -48,23 +48,37 @@ void Van::ProcessAddNodeCommandAtScheduler(
               });
     // assign node rank
     for (auto& node : nodes -> control.node) {
-      CHECK_EQ(node.id, Node::kEmpty);
-      int id = node.role == Node::SERVER ?
-               Postoffice::ServerRankToID(num_servers_) :
-               Postoffice::WorkerRankToID(num_workers_);
-      PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
-      node.id = id;
-      Connect(node);
+      std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
+      if (connected_nodes.find(node_host_ip) == connected_nodes.end()) {
+        CHECK_EQ(node.id, Node::kEmpty);
+        int id = node.role == Node::SERVER ?
+                 Postoffice::ServerRankToID(num_servers_) :
+                 Postoffice::WorkerRankToID(num_workers_);
+        PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
+        node.id = id;
+        Connect(node);
+        Postoffice::Get()->UpdateHeartbeat(node.id, t);
+        connected_nodes[node_host_ip] = id;
+      } else {
+        int id = node.role == Node::SERVER ?
+                 Postoffice::ServerRankToID(num_servers_) :
+                 Postoffice::WorkerRankToID(num_workers_);
+        shared_node_mapping[id] = connected_nodes[node_host_ip];
+        node.id = connected_nodes[node_host_ip];
+      }
       if (node.role == Node::SERVER) num_servers_++;
       if (node.role == Node::WORKER) num_workers_++;
-      Postoffice::Get()->UpdateHeartbeat(node.id, t);
     }
     nodes->control.node.push_back(my_node_);
-    nodes -> control.cmd = Control::ADD_NODE;
+    nodes->control.cmd = Control::ADD_NODE;
     Message back;
     back.meta = *nodes;
     for (int r : Postoffice::Get()->GetNodeIDs(kWorkerGroup + kServerGroup)) {
-      back.meta.recver = r;
+      int recver_id = r;
+      if (shared_node_mapping.find(r) != shared_node_mapping.end()) {
+        recver_id = shared_node_mapping[r];
+      }
+      back.meta.recver = recver_id;
       back.meta.timestamp = timestamp_++;
       Send(back);
     }
@@ -130,7 +144,9 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   for (size_t i = 0; i < ctrl.node.size(); ++i) {
     const auto& node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
+      std::cout << "+++++++" << my_node_.customer_id << "," << my_node_.id << "\n";
       my_node_ = node;
+      std::cout << "+++++++++++++" << my_node_.customer_id << "," << my_node_.id << "\n";
       std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
       _putenv_s("DMLC_RANK", rank.c_str());
@@ -172,16 +188,22 @@ void Van::ProcessBarrierCommand(Message* msg) {
       barrier_count_[group] = 0;
       Message res;
       res.meta.request = false;
+      res.meta.app_id = msg->meta.app_id;
+      res.meta.customer_id = msg->meta.customer_id;
       res.meta.control.cmd = Control::BARRIER;
       for (int r : Postoffice::Get()->GetNodeIDs(group)) {
-        res.meta.recver = r;
+        int recver_id = r;
+        if (shared_node_mapping.find(r) != shared_node_mapping.end()) {
+          recver_id = shared_node_mapping[r];
+        }
+        res.meta.recver = recver_id;
         res.meta.timestamp = timestamp_++;
         CHECK_GT(Send(res), 0);
         std::cout<< "sent barrier response for receiver " << r << "\n";
       }
     } else {
-      std::cout << "wait for more nodes " << barrier_count_[group] << ","  << \
-        static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())<< "\n";
+      std::cout << "wait for more nodes in group " << group <<  barrier_count_[group] << "," \
+        << static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())<< "\n";
     }
   } else {
     Postoffice::Get()->Manage(*msg);
@@ -194,9 +216,10 @@ void Van::ProcessDataMsg(Message* msg) {
   CHECK_NE(msg -> meta.recver, Meta::kEmpty);
   CHECK_NE(msg -> meta.app_id, Meta::kEmpty);
   int app_id = msg -> meta.app_id;
-  int customer_id = msg -> meta.customer_id;
+  int customer_id = Postoffice::Get()->is_worker() ? msg->meta.customer_id : app_id;
   auto* obj = Postoffice::Get()->GetCustomer(app_id, customer_id, 5);
-  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " ready";
+  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer " << customer_id \
+    << " ready ";
   obj->Accept(*msg);
 }
 
@@ -263,6 +286,7 @@ void Van::Start(int customer_id) {
       // cannot determine my id now, the scheduler will assign it later
       // set it explicitly to make re-register within a same process possible
       my_node_.id = Node::kEmpty;
+      my_node_.customer_id = customer_id;
     }
 
     // bind.
@@ -294,6 +318,7 @@ void Van::Start(int customer_id) {
     msg.meta.control.cmd = Control::ADD_NODE;
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;
+    // msg.meta.customer_id = my_node_.customer_id;
     std::cout<< "sending to scheduler in " << ps::Environment::Get()->find("DMLC_ROLE") << "\n";
     Send(msg);
     std::cout<< "sent to scheduler in " << ps::Environment::Get()->find("DMLC_ROLE") << "\n";
@@ -331,6 +356,7 @@ void Van::Stop() {
   Message exit;
   exit.meta.control.cmd = Control::TERMINATE;
   exit.meta.recver = my_node_.id;
+  exit.meta.customer_id = my_node_.customer_id;
   SendMsg(exit);
   receiver_thread_->join();
   if (!is_scheduler_) heartbeat_thread_->join();
@@ -382,6 +408,7 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::ADD_NODE) {
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
+        std::cout<<"received barrier msg for customer " << msg.meta.customer_id << "\n";
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);
@@ -402,6 +429,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   pb.set_push(meta.push);
   pb.set_request(meta.request);
   pb.set_simple_app(meta.simple_app);
+  pb.set_customer_id(meta.customer_id);
   for (auto d : meta.data_type) pb.add_data_type(d);
   if (!meta.control.empty()) {
     auto ctrl = pb.mutable_control();
@@ -443,6 +471,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   meta->push = pb.push();
   meta->simple_app = pb.simple_app();
   meta->body = pb.body();
+  meta->customer_id = pb.customer_id();
   meta->data_type.resize(pb.data_type_size());
   for (int i = 0; i < pb.data_type_size(); ++i) {
     meta->data_type[i] = static_cast<DataType>(pb.data_type(i));

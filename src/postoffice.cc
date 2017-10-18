@@ -26,8 +26,6 @@ Postoffice::Postoffice() {
 }
 
 void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier) {
-  std::cout << "starting\n";
-  // std::lock_guard<std::mutex> lk(start_mu_);
   start_mu_.lock();
   if (init_stage == 0) {
     // init glog
@@ -72,17 +70,18 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     // record start time
     start_time_ = time(NULL);
     // do a barrier here
-    if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
     init_stage++;
-    std::cout << "set started as true \n";
   }
   start_mu_.unlock();
+  if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
 }
 
-void Postoffice::Finalize(const bool do_barrier) {
-  if (do_barrier) Barrier(kWorkerGroup + kServerGroup + kScheduler);
-  van_->Stop();
-  if (exit_callback_) exit_callback_();
+void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
+  if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  if (customer_id == 0) {
+    van_->Stop();
+    if (exit_callback_) exit_callback_();
+  }
 }
 
 
@@ -94,9 +93,13 @@ void Postoffice::AddCustomer(Customer* customer) {
   }
   // check if the customer id has existed
   int customer_id = CHECK_NOTNULL(customer)->customer_id();
-  CHECK_EQ(customers_[app_id].count(customer_id), (size_t)0) << "app_id " \
-    << customer_id << " already exists";
+  CHECK_EQ(customers_[app_id].count(customer_id), (size_t)0) << "customer_id " \
+    << customer_id << " already exists\n";
   customers_[app_id][customer_id] = customer;
+  if (barrier_done_.find(app_id) == barrier_done_.end()) {
+    barrier_done_[app_id] = *(new std::unordered_map<int, bool>());
+  }
+  barrier_done_[app_id][customer_id] = false;
 }
 
 
@@ -128,7 +131,7 @@ Customer* Postoffice::GetCustomer(int app_id, int customer_id, int timeout) cons
   return obj;
 }
 
-void Postoffice::Barrier(int node_group) {
+void Postoffice::Barrier(int customer_id, int node_group) {
   if (GetNodeIDs(node_group).size() <= 1) return;
   auto role = van_->my_node().role;
   if (role == Node::SCHEDULER) {
@@ -140,17 +143,18 @@ void Postoffice::Barrier(int node_group) {
   }
 
   std::unique_lock<std::mutex> ulk(barrier_mu_);
-  barrier_done_ = false;
+  barrier_done_[0][customer_id] = false;
   Message req;
   req.meta.recver = kScheduler;
   req.meta.request = true;
   req.meta.control.cmd = Control::BARRIER;
+  req.meta.app_id = 0;
+  req.meta.customer_id = customer_id;
   req.meta.control.barrier_group = node_group;
   req.meta.timestamp = van_->GetTimestamp();
   CHECK_GT(van_->Send(req), 0);
-
-  barrier_cond_.wait(ulk, [this] {
-      return barrier_done_;
+  barrier_cond_.wait(ulk, [this, customer_id] {
+      return barrier_done_[0][customer_id];
     });
 }
 
@@ -170,7 +174,10 @@ void Postoffice::Manage(const Message& recv) {
   const auto& ctrl = recv.meta.control;
   if (ctrl.cmd == Control::BARRIER && !recv.meta.request) {
     barrier_mu_.lock();
-    barrier_done_ = true;
+    for (int customer_id = 0; customer_id < barrier_done_[recv.meta.app_id].size();
+         customer_id++) {
+      barrier_done_[recv.meta.app_id][customer_id] = true;
+    }
     barrier_mu_.unlock();
     barrier_cond_.notify_all();
   }

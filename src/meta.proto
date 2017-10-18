@@ -44,6 +44,8 @@ message PBMeta {
   optional int32 timestamp = 8;
   // data type of message.data[i]
   repeated int32 data_type = 9 [packed=true];
+  // the locally unique id of an customer
+  optional int32 customer_id = 10;
   // whether or not a push message
   optional bool push = 5;
   // whether or not it's for SimpleApp
