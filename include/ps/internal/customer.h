@@ -55,6 +55,38 @@ class Customer {
    */
   int NewRequest(int recver);
 
+  int NewRequestKeyChunk(int chunks)
+  {
+      std::lock_guard<std::mutex> lk(tracker_mu_);
+      int num = chunks;//Postoffice::Get()->GetNodeIDs(recver).size();
+      tracker_.push_back(std::make_pair(num, 0));
+      //LOG(INFO)
+      //DIMELOG::Get()->DimeLogMetric1(tracker_.size()-1);
+      return tracker_.size() - 1;
+  }
+
+  int ExpectedResponse(int ts)
+  {
+      std::lock_guard<std::mutex> lk(tracker_mu_);
+      auto& pair = tracker_[ts];
+      //this is because the count is incremented AFTER it is processed by Worker::Process.
+      return pair.first - 1;
+
+  }
+
+  bool ResponseReady(int ts)
+  {
+      std::lock_guard<std::mutex> lk(tracker_mu_);
+      auto& pair = tracker_[ts];
+      //this is because the count is incremented AFTER it is processed by Worker::Process.
+      return pair.first - 1== pair.second;
+
+  }
+  
+  int CurrentTimestamp()
+  {
+      return tracker_.size() - 1;
+  }
 
   /**
    * \brief wait until the request is finished. threadsafe

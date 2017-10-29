@@ -88,7 +88,7 @@ struct Node {
   int id;
   /** \brief hostname or ip */
   std::string hostname;
-  /** \brief the port this node is binding */
+  /** \brief the port this node is binding. In case InfiniBand?is used, this refers to MPI Rank */
   int port;
   /** \brief whether this node is created by failover */
   bool is_recovery;
@@ -105,7 +105,7 @@ struct Control {
   std::string DebugString() const {
     if (empty()) return "";
     std::vector<std::string> cmds = {
-      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT"};
+      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT","INFINIBANDXCHGLIDS","INFINIBANDXCHGQPS","INFINIBANDKEYSIZEEXCHG"};
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
     if (node.size()) {
@@ -118,7 +118,7 @@ struct Control {
     return ss.str();
   }
   /** \brief all commands */
-  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT };
+  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, INFINIBANDXCHGQPS,INFINIBANDKEYSIZEEXCHG};
   /** \brief the command */
   Command cmd;
   /** \brief node infos */
@@ -137,7 +137,7 @@ struct Meta {
   /** \brief default constructor */
   Meta() : head(kEmpty), customer_id(kEmpty), timestamp(kEmpty),
            sender(kEmpty), recver(kEmpty),
-           request(false), push(false), simple_app(false) {}
+      request(false), push(false), simple_app(false) {}
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {
@@ -148,6 +148,7 @@ struct Meta {
     ss <<  " => " << recver;
     ss << ". Meta: request=" << request;
     if (timestamp != kEmpty) ss << ", timestamp=" << timestamp;
+    else ss << ", INVALID TIMESTAMP";
     if (!control.empty()) {
       ss << ", control={ " << control.DebugString() << " }";
     } else {
@@ -157,11 +158,11 @@ struct Meta {
     }
     if (head != kEmpty) ss << ", head=" << head;
     if (body.size()) ss << ", body=" << body;
-    if (data_type.size()) {
-      ss << ", data_type={";
-      for (auto d : data_type) ss << " " << DataTypeName[static_cast<int>(d)];
-      ss << " }";
-    }
+    //if (data_type.size()) {
+    //  ss << ", data_type={";
+    //  for (auto d : data_type) ss << " " << DataTypeName[static_cast<int>(d)];
+    //  ss << " }";
+    //}
     return ss.str();
   }
   /** \brief an int head */
@@ -206,11 +207,45 @@ struct Message {
   }
   std::string DebugString() const {
     std::stringstream ss;
-    ss << meta.DebugString();
-    if (data.size()) {
-      ss << " Body:";
-      for (const auto& d : data) ss << " data_size=" << d.size();
+    if(meta.control.empty() == false)
+    {
+	ss << "[CONTROL  ] ";
     }
+    else
+    {
+	if(meta.push)
+    {
+	if(meta.request == 1)
+	{
+	    ss << "[PUSH    ] ";
+	}
+	else
+	{
+	    ss << "[PUSH ACK] ";
+	}
+    }
+	else
+	{
+	if(meta.request == 1)
+	{
+	    ss << "[PULL    ] ";
+	}
+	else
+	{
+	    ss << "[PULL ACK] ";
+	}
+	}
+    }
+
+    if (data.size()) {
+	ss << " Key = " <<*((uint64_t*)data[0].data());
+	if(data.size() > 1)
+	{
+	    ss<<" len = "<< data[1].size() << " ";
+	}
+    }
+    ss << "" << meta.DebugString();
+
     return ss.str();
   }
 };
