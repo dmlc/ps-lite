@@ -13,7 +13,36 @@
 #include <vector>
 #include <stdexcept>
 #include "./base.h"
+#include "./DIME.h"
+#include <sys/stat.h>
+#include <string.h>
+#include <fcntl.h>
+#include <signal.h>
 
+/*static int IsDebuggerPresent(void)
+{
+    char buf[1024];
+    int debugger_present = 0;
+
+    int status_fd = open("/proc/self/status", O_RDONLY);
+    if (status_fd == -1)
+        return 0;
+
+    ssize_t num_read = read(status_fd, buf, sizeof(buf)-1);
+
+    if (num_read > 0)
+    {
+        static const char TracerPid[] = "TracerPid:";
+        char *tracer_pid;
+
+        buf[num_read] = 0;
+        tracer_pid    = strstr(buf, TracerPid);
+        if (tracer_pid)
+            debugger_present = !!atoi(tracer_pid + sizeof(TracerPid) - 1);
+    }
+
+    return debugger_present;
+}*/
 namespace dmlc {
 /*!
  * \brief exception class that will be thrown by
@@ -63,11 +92,20 @@ inline void InitLogging(const char* argv0) {
   // DO NOTHING
 }
 
+static std::string trap()
+{
+    while(0)
+    {
+	__asm__("");
+    }
+    return "Turn on infinite loop to allow debugger to be attched.";
+}
+
 // Always-on checking
-#define CHECK(x)                                           \
-  if (!(x))                                                \
+#define CHECK(x)				\
+    if (!(x))							    \
     dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check "  \
-      "failed: " #x << ' '
+	"failed: " #x <<dmlc::trap()
 #define CHECK_LT(x, y) CHECK((x) < (y))
 #define CHECK_GT(x, y) CHECK((x) > (y))
 #define CHECK_LE(x, y) CHECK((x) <= (y))
@@ -185,6 +223,9 @@ class LogMessageFatal : public LogMessage {
  public:
   LogMessageFatal(const char* file, int line) : LogMessage(file, line) {}
   ~LogMessageFatal() {
+      printf("[CRITICAL ERROR] %s\n", file);
+	  raise(SIGTRAP);
+
     log_stream_ << "\n";
     abort();
   }
@@ -197,6 +238,12 @@ class LogMessageFatal : public LogMessage {
 class LogMessageFatal {
  public:
   LogMessageFatal(const char* file, int line) {
+      //   if(IsDebuggerPresent())
+      //{
+      printf("[CRITICAL ERROR] %s\n", file);
+	  raise(SIGTRAP);
+
+	  //}
     log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":"
                 << line << ": ";
   }
@@ -206,7 +253,8 @@ class LogMessageFatal {
     // hopefully we can do it here
     // also log the message before throw
     LOG(ERROR) << log_stream_.str();
-    throw Error(log_stream_.str());
+    //throw Error(log_stream_.str());
+    raise(SIGTRAP);
   }
 
  private:

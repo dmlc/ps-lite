@@ -24,6 +24,8 @@ class Postoffice {
   }
   /** \brief get the van */
   Van* van() { return van_; }
+
+ 
   /**
    * \brief start the system
    *
@@ -139,7 +141,7 @@ class Postoffice {
    * \brief barrier
    * \param node_id the barrier group id
    */
-  void Barrier(int node_id);
+  void Barrier(int node_id, std::string id = std::string());
   /**
    * \brief process a control message, called by van
    * \param the received message
