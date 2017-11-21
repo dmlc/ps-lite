@@ -63,7 +63,8 @@ class ZMQVan : public Van {
     CHECK(receiver_ != NULL)
         << "create receiver socket failed: " << zmq_strerror(errno);
     int local = GetEnv("DMLC_LOCAL", 0);
-    std::string addr = local ? "ipc:///tmp/" : "tcp://*:";
+    std::string hostname = node.hostname.empty() ? "*" : node.hostname;
+    std::string addr = local ? "ipc:///tmp/" : "tcp://" + hostname + ":";
     int port = node.port;
     unsigned seed = static_cast<unsigned>(time(NULL)+port);
     for (int i = 0; i < max_retry+1; ++i) {
