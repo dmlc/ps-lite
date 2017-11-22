@@ -34,7 +34,8 @@ class Resender {
    *
    */
   void AddOutgoing(const Message& msg) {
-    if (msg.meta.control.cmd == Control::ACK) return;
+    if (msg.meta.control.cmd == Control::ACK
+      || msg.meta.control.cmd == Control::ADD_NODE) return;
     CHECK_NE(msg.meta.timestamp, Meta::kEmpty) << msg.DebugString();
     auto key = GetKey(msg);
     std::lock_guard<std::mutex> lk(mu_);
@@ -53,7 +54,8 @@ class Resender {
    */
   bool AddIncomming(const Message& msg) {
     // a message can be received by multiple times
-    if (msg.meta.control.cmd == Control::TERMINATE) {
+    if (msg.meta.control.cmd == Control::TERMINATE
+      || msg.meta.control.cmd == Control::ADD_NODE) {
       return false;
     } else if (msg.meta.control.cmd == Control::ACK) {
       mu_.lock();
@@ -118,8 +120,7 @@ class Resender {
         if (it.second.send + Time(timeout_) * (1+it.second.num_retry) < now) {
           resend.push_back(it.second.msg);
           ++it.second.num_retry;
-          LOG(WARNING) << van_->my_node().ShortDebugString()
-                       << ": Timeout to get the ACK message. Resend (retry="
+          LOG(WARNING) << "Timeout to get the ACK message. Resend (retry="
                        << it.second.num_retry << ") " << it.second.msg.DebugString();
           CHECK_LT(it.second.num_retry, max_num_retry_);
         }

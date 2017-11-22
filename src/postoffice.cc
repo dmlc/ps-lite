@@ -7,6 +7,7 @@
 #include "ps/internal/postoffice.h"
 #include "ps/internal/message.h"
 #include "ps/base.h"
+#include "ps/internal/utils.h"
 
 namespace ps {
 Postoffice::Postoffice() {
@@ -23,6 +24,9 @@ Postoffice::Postoffice() {
   is_server_ = role == "server";
   is_scheduler_ = role == "scheduler";
   verbose_ = GetEnv("PS_VERBOSE", 0);
+  const char* max_id_str = Environment::Get()->find("DMLC_MAX_KEY");
+  if (max_id_str) max_id_ = std::stoll(max_id_str);
+  LOG(INFO) << "PS MAX_KEY=" << max_id_;
 }
 
 void Postoffice::Start(const char* argv0, const bool do_barrier) {
@@ -119,6 +123,7 @@ void Postoffice::Barrier(int node_group) {
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   barrier_done_ = false;
   Message req;
+  req.meta.sender = van_->my_node().id;
   req.meta.recver = kScheduler;
   req.meta.request = true;
   req.meta.control.cmd = Control::BARRIER;
@@ -135,8 +140,8 @@ const std::vector<Range>& Postoffice::GetServerKeyRanges() {
   if (server_key_ranges_.empty()) {
     for (int i = 0; i < num_servers_; ++i) {
       server_key_ranges_.push_back(Range(
-          kMaxKey / num_servers_ * i,
-          kMaxKey / num_servers_ * (i+1)));
+          max_id_ / num_servers_ * i,
+          max_id_ / num_servers_ * (i+1)));
     }
   }
   return server_key_ranges_;

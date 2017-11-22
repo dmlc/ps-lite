@@ -1,6 +1,11 @@
-ifdef config
-include $(config)
+ifndef config
+	ifneq ("$(wildcard ./config.mk)","")
+		config = config.mk
+	else
+		config = make/config.mk
+	endif
 endif
+include $(config)
 
 include make/ps.mk
 

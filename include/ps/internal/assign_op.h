@@ -14,7 +14,7 @@ enum AssignOp {
   PLUS,    // a += b
   MINUS,   // a -= b
   TIMES,   // a *= b
-  DIVIDE,  // a -= b
+  DIVIDE,  // a /= b
   AND,     // a &= b
   OR,      // a |= b
   XOR      // a ^= b
