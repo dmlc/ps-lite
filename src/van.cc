@@ -117,7 +117,10 @@ void Van::Start() {
 
 void Van::Stop() {
   if (!is_scheduler_) heartbeat_thread_->join();
-  if (resender_) delete resender_;
+  if (resender_) {
+    delete resender_;
+    resender_ = nullptr;
+  }
 
   // stop threads
   Message exit;
