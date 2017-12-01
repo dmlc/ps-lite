@@ -36,7 +36,6 @@ void Van::ProcessTerminateCommand() {
 
 void Van::ProcessAddNodeCommandAtScheduler(
         Message* msg, Meta* nodes, Meta* recovery_nodes) {
-  std::cout<< "received AddNode in scheduler\n";
   recovery_nodes -> control.cmd = Control::ADD_NODE;
   time_t t = time(NULL);
   size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
@@ -144,9 +143,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   for (size_t i = 0; i < ctrl.node.size(); ++i) {
     const auto& node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
-      std::cout << "+++++++" << my_node_.customer_id << "," << my_node_.id << "\n";
       my_node_ = node;
-      std::cout << "+++++++++++++" << my_node_.customer_id << "," << my_node_.id << "\n";
       std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
       _putenv_s("DMLC_RANK", rank.c_str());
@@ -199,11 +196,7 @@ void Van::ProcessBarrierCommand(Message* msg) {
         res.meta.recver = recver_id;
         res.meta.timestamp = timestamp_++;
         CHECK_GT(Send(res), 0);
-        std::cout<< "sent barrier response for receiver " << r << "\n";
       }
-    } else {
-      std::cout << "wait for more nodes in group " << group <<  barrier_count_[group] << "," \
-        << static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())<< "\n";
     }
   } else {
     Postoffice::Get()->Manage(*msg);
@@ -233,7 +226,6 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
   if (is_scheduler_) {
     ProcessAddNodeCommandAtScheduler(msg, nodes, recovery_nodes);
   } else {
-    std::cout<<"received AddNode\n";
     for (const auto& node : ctrl.node) {
       Connect(node);
       if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
@@ -256,7 +248,6 @@ void Van::Start(int customer_id) {
 
     // get my node info
     if (is_scheduler_) {
-      std::cout << "started scheduler\n";
       my_node_ = scheduler_;
     } else {
       auto role = is_scheduler_ ? Node::SCHEDULER :
@@ -319,16 +310,12 @@ void Van::Start(int customer_id) {
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;
     // msg.meta.customer_id = my_node_.customer_id;
-    std::cout<< "sending to scheduler in " << ps::Environment::Get()->find("DMLC_ROLE") << "\n";
     Send(msg);
-    std::cout<< "sent to scheduler in " << ps::Environment::Get()->find("DMLC_ROLE") << "\n";
   }
-  std::cout<<"start waiting\n";
   // wait until ready
   while (!ready_) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-  std::cout<<"finished waiting\n";
 
   start_mu_.lock();
   if (init_stage == 1) {
@@ -408,7 +395,6 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::ADD_NODE) {
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
-        std::cout<<"received barrier msg for customer " << msg.meta.customer_id << "\n";
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);

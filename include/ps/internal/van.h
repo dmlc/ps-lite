@@ -15,7 +15,7 @@
 #include "ps/base.h"
 #include "ps/internal/message.h"
 namespace ps {
-    class Resender;
+class Resender;
 
 /**
  * \brief Van sends messages to remote nodes
@@ -24,7 +24,7 @@ namespace ps {
  * message if it no ACK messsage is received within PS_RESEND_TIMEOUT millisecond
  */
 class Van {
-  public:
+ public:
     /**
      * \brief create Van
      * \param type zmq, socket, ...
@@ -79,7 +79,7 @@ class Van {
      */
     bool IsReady() { return ready_; }
 
-  protected:
+ protected:
     /**
      * \brief connect to a node
      */
@@ -119,7 +119,7 @@ class Van {
     Node my_node_;
     bool is_scheduler_;
 
-  private:
+ private:
     /** thread function for receving */
     void Receiving();
 
