@@ -33,7 +33,9 @@ class Customer {
 
   /**
    * \brief constructor
-   * \param app_id the unique id, any received message with
+   * \param app_id the globally unique id indicating the application the postoffice
+   *               serving for
+   * \param customer_id the locally unique id indicating the customer of a postoffice
    * \param recv_handle the functino for processing a received message
    */
   Customer(int app_id, int customer_id, const RecvHandle& recv_handle);
@@ -46,13 +48,13 @@ class Customer {
   /**
    * \brief return the globally unique application id
    */
-  int app_id() { return app_id_; }
+  inline int app_id() { return app_id_; }
 
 
   /**
    * \brief return the locally unique customer id
    */
-  int customer_id() { return customer_id_; }
+  inline int customer_id() { return customer_id_; }
 
   /**
    * \brief get a timestamp for a new request. threadsafe
@@ -83,7 +85,7 @@ class Customer {
    * \brief accept a received message from \ref Van. threadsafe
    * \param recved the received the message
    */
-  void Accept(const Message& recved) {
+  inline void Accept(const Message& recved) {
     recv_queue_.Push(recved);
   }
 

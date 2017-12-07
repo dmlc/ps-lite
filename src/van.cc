@@ -297,7 +297,6 @@ void Van::Start(int customer_id) {
             new std::thread(&Van::Receiving, this));
     init_stage++;
   }
-  std::this_thread::sleep_for(std::chrono::milliseconds(3000));
   start_mu_.unlock();
 
   if (!is_scheduler_) {

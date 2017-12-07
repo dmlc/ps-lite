@@ -58,7 +58,7 @@ class Van {
     /**
      * \brief return my node
      */
-    const Node &my_node() const {
+    inline const Node &my_node() const {
       CHECK(ready_) << "call Start() first";
       return my_node_;
     }
@@ -72,12 +72,12 @@ class Van {
     /**
      * \brief get next available timestamp. thread safe
      */
-    int GetTimestamp() { return timestamp_++; }
+    inline int GetTimestamp() { return timestamp_++; }
 
     /**
      * \brief whether it is ready for sending. thread safe
      */
-    bool IsReady() { return ready_; }
+    inline bool IsReady() { return ready_; }
 
  protected:
     /**
@@ -126,9 +126,11 @@ class Van {
     /** thread function for heartbeat */
     void Heartbeat();
 
-    // when multiple customers share the same node,
+    // node's address string (i.e. ip:port) -> node id
+    // this map is updated when ip:port is received for the first time
     std::unordered_map<std::string, int> connected_nodes;
-    // the node shared by multiple customers, more like the virtual node concept
+    // maps the id of node which is added later to the id of node
+    // which is with the same ip:port and added first
     std::unordered_map<int, int> shared_node_mapping;
 
     /** whether it is ready for sending */
@@ -149,18 +151,41 @@ class Van {
     std::mutex start_mu_;
     int init_stage = 0;
 
+    /**
+     * \brief processing logic of AddNode message for scheduler
+     */
     void ProcessAddNodeCommandAtScheduler(Message* msg, Meta* nodes, Meta* recovery_nodes);
 
+    /**
+     * \brief processing logic of Terminate message
+     */
     void ProcessTerminateCommand();
 
+    /**
+     * \brief processing logic of AddNode message (run on each node)
+     */
     void ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes);
 
+    /**
+     * \brief processing logic of Barrier message (run on each node)
+     */
     void ProcessBarrierCommand(Message* msg);
 
+    /**
+     * \brief processing logic of AddNode message (run on each node)
+     */
     void ProcessHearbeat(Message* msg);
 
+    /**
+     * \brief processing logic of Data message
+     */
     void ProcessDataMsg(Message* msg);
 
+    /**
+     * \brief called by ProcessAddNodeCommand, in scheduler it assigns an id to the
+     *        newly added node; in other nodes, it updates the node id with what is received
+     *        from scheduler
+     */
     void UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set, Meta* nodes,
                        Meta* recovery_nodes);
 

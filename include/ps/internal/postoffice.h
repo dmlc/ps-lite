@@ -172,13 +172,13 @@ class Postoffice {
   std::vector<Range> server_key_ranges_;
   bool is_worker_, is_server_, is_scheduler_;
   int num_servers_, num_workers_;
-  std::unordered_map<int, std::unordered_map<int, bool>> barrier_done_;
+  std::unordered_map<int, std::unordered_map<int, bool> > barrier_done_;
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
   std::mutex heartbeat_mu_;
   std::mutex start_mu_;
-  int init_stage = 0;
+  int init_stage_ = 0;
   std::unordered_map<int, time_t> heartbeats_;
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */

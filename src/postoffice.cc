@@ -27,7 +27,7 @@ Postoffice::Postoffice() {
 
 void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier) {
   start_mu_.lock();
-  if (init_stage == 0) {
+  if (init_stage_ == 0) {
     // init glog
     if (argv0) {
       dmlc::InitLogging(argv0);
@@ -58,7 +58,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
                   kScheduler + kWorkerGroup, kScheduler + kServerGroup}) {
       node_ids_[g].push_back(kScheduler);
     }
-    init_stage++;
+    init_stage_++;
   }
   start_mu_.unlock();
 
@@ -66,13 +66,13 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
   van_->Start(customer_id);
 
   start_mu_.lock();
-  if (init_stage == 1) {
+  if (init_stage_ == 1) {
     // record start time
     start_time_ = time(NULL);
-    // do a barrier here
-    init_stage++;
+    init_stage_++;
   }
   start_mu_.unlock();
+  // do a barrier here
   if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
 }
 
