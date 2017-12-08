@@ -88,18 +88,12 @@ void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
 void Postoffice::AddCustomer(Customer* customer) {
   std::lock_guard<std::mutex> lk(mu_);
   int app_id = CHECK_NOTNULL(customer)->app_id();
-  if (customers_.find(app_id) == customers_.end()) {
-    customers_[app_id] = *(new std::unordered_map<int, Customer*>());
-  }
   // check if the customer id has existed
   int customer_id = CHECK_NOTNULL(customer)->customer_id();
-  CHECK_EQ(customers_[app_id].count(customer_id), (size_t)0) << "customer_id " \
+  CHECK_EQ(customers_[app_id].count(customer_id), (size_t) 0) << "customer_id " \
     << customer_id << " already exists\n";
-  customers_[app_id][customer_id] = customer;
-  if (barrier_done_.find(app_id) == barrier_done_.end()) {
-    barrier_done_[app_id] = *(new std::unordered_map<int, bool>());
-  }
-  barrier_done_[app_id][customer_id] = false;
+  customers_[app_id].insert(std::make_pair(customer_id, customer));
+  barrier_done_[app_id].insert(std::make_pair(customer_id, false));
 }
 
 
