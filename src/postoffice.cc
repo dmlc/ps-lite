@@ -74,10 +74,12 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
   start_mu_.unlock();
   // do a barrier here
   if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  std::cout << "started post office\n";
 }
 
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
   if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  std::cout << "passed barrier in Finalize in node " << van_->my_node().id <<"\n";
   if (customer_id == 0) {
     van_->Stop();
     if (exit_callback_) exit_callback_();
@@ -93,6 +95,7 @@ void Postoffice::AddCustomer(Customer* customer) {
   CHECK_EQ(customers_[app_id].count(customer_id), (size_t) 0) << "customer_id " \
     << customer_id << " already exists\n";
   customers_[app_id].insert(std::make_pair(customer_id, customer));
+  std::unique_lock<std::mutex> ulk(barrier_mu_);
   barrier_done_[app_id].insert(std::make_pair(customer_id, false));
 }
 
@@ -153,6 +156,7 @@ void Postoffice::Barrier(int customer_id, int node_group) {
 }
 
 const std::vector<Range>& Postoffice::GetServerKeyRanges() {
+  server_key_ranges_mu_.lock();
   if (server_key_ranges_.empty()) {
     for (int i = 0; i < num_servers_; ++i) {
       server_key_ranges_.push_back(Range(
@@ -160,6 +164,7 @@ const std::vector<Range>& Postoffice::GetServerKeyRanges() {
           kMaxKey / num_servers_ * (i+1)));
     }
   }
+  server_key_ranges_mu_.unlock();
   return server_key_ranges_;
 }
 

@@ -118,6 +118,7 @@ class Van {
     Node scheduler_;
     Node my_node_;
     bool is_scheduler_;
+    std::mutex start_mu_;
 
  private:
     /** thread function for receving */
@@ -148,7 +149,6 @@ class Van {
     Resender *resender_ = nullptr;
     int drop_rate_ = 0;
     std::atomic<int> timestamp_{0};
-    std::mutex start_mu_;
     int init_stage = 0;
 
     /**

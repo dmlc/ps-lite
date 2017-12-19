@@ -429,7 +429,7 @@ void KVWorker<Val>::DefaultSlicer(
     begin += len;
     pos[i+1] = pos[i] + len;
 
-    // don't send it to severs for empty kv
+    // don't send it to servers for empty kv
     sliced->at(i).first = (len != 0);
   }
   CHECK_EQ(pos[n], send.keys.size());

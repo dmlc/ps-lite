@@ -74,12 +74,13 @@ void Van::ProcessAddNodeCommandAtScheduler(
     back.meta = *nodes;
     for (int r : Postoffice::Get()->GetNodeIDs(kWorkerGroup + kServerGroup)) {
       int recver_id = r;
-      if (shared_node_mapping.find(r) != shared_node_mapping.end()) {
-        recver_id = shared_node_mapping[r];
+      if (shared_node_mapping.find(r) == shared_node_mapping.end()) {
+        // recver_id = shared_node_mapping[r];
+        back.meta.recver = recver_id;
+        back.meta.timestamp = timestamp_++;
+        std::cout << "sent ADDNODE to node " << recver_id << "\n";
+        Send(back);
       }
-      back.meta.recver = recver_id;
-      back.meta.timestamp = timestamp_++;
-      Send(back);
     }
     PS_VLOG(1) << "the scheduler is connected to "
                << num_workers_ << " workers and " << num_servers_ << " servers";
@@ -120,7 +121,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
       nodes -> control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
-      CHECK(ready_);
+      CHECK(ready_.load());
       for (size_t i = 0; i < nodes -> control.node.size() - 1; ++i) {
         const auto& node = nodes -> control.node[i];
         if (deadnodes_set -> find(node.id) != deadnodes_set -> end() &&
@@ -143,13 +144,15 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   for (size_t i = 0; i < ctrl.node.size(); ++i) {
     const auto& node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
-      my_node_ = node;
-      std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
+      if (getenv("DMLC_RANK") == nullptr) {
+        my_node_ = node;
+        std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
-      _putenv_s("DMLC_RANK", rank.c_str());
+        _putenv_s("DMLC_RANK", rank.c_str());
 #else
-      setenv("DMLC_RANK", rank.c_str(), true);
+        setenv("DMLC_RANK", rank.c_str(), true);
 #endif
+      }
     }
   }
 }
@@ -190,12 +193,12 @@ void Van::ProcessBarrierCommand(Message* msg) {
       res.meta.control.cmd = Control::BARRIER;
       for (int r : Postoffice::Get()->GetNodeIDs(group)) {
         int recver_id = r;
-        if (shared_node_mapping.find(r) != shared_node_mapping.end()) {
-          recver_id = shared_node_mapping[r];
+        if (shared_node_mapping.find(r) == shared_node_mapping.end()) {
+          // recver_id = shared_node_mapping[r];
+          res.meta.recver = recver_id;
+          res.meta.timestamp = timestamp_++;
+          CHECK_GT(Send(res), 0);
         }
-        res.meta.recver = recver_id;
-        res.meta.timestamp = timestamp_++;
-        CHECK_GT(Send(res), 0);
       }
     }
   } else {
@@ -227,7 +230,12 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
     ProcessAddNodeCommandAtScheduler(msg, nodes, recovery_nodes);
   } else {
     for (const auto& node : ctrl.node) {
-      Connect(node);
+      std::string addr_str = node.hostname + ":" + std::to_string(node.port);
+      if (connected_nodes.find(addr_str) == connected_nodes.end()) {
+        Connect(node);
+        std::cout << "connect to node " << node.id << " in node " << my_node_.id << "\n";
+        connected_nodes[addr_str] = node.id;
+      }
       if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
       if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
     }
@@ -308,11 +316,10 @@ void Van::Start(int customer_id) {
     msg.meta.control.cmd = Control::ADD_NODE;
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;
-    // msg.meta.customer_id = my_node_.customer_id;
     Send(msg);
   }
   // wait until ready
-  while (!ready_) {
+  while (!ready_.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
@@ -342,8 +349,11 @@ void Van::Stop() {
   Message exit;
   exit.meta.control.cmd = Control::TERMINATE;
   exit.meta.recver = my_node_.id;
-  exit.meta.customer_id = my_node_.customer_id;
-  SendMsg(exit);
+  // only customer 0 would call this method
+  exit.meta.customer_id = 0;
+  int ret = SendMsg(exit);
+  std::cout << "sent TERMINATE to node " << exit.meta.recver << \
+    " with return value " << ret << " in node " << my_node_.id <<"\n";
   receiver_thread_->join();
   if (!is_scheduler_) heartbeat_thread_->join();
   if (resender_) delete resender_;
@@ -369,7 +379,7 @@ void Van::Receiving() {
     Message msg;
     int recv_bytes = RecvMsg(&msg);
     // For debug, drop received message
-    if (ready_ && drop_rate_ > 0) {
+    if (ready_.load() && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;
       if (rand_r(&seed) % 100 < drop_rate_) {
         LOG(WARNING) << "Drop message " << msg.DebugString();
@@ -389,6 +399,7 @@ void Van::Receiving() {
       // control msg
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
+        std::cout << "received a TERMINATE signal in node " << my_node_.id << "\n";
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
@@ -397,6 +408,8 @@ void Van::Receiving() {
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);
+      } else {
+        std::cout << "received UNKNOWN message\n";
       }
     } else {
       ProcessDataMsg(&msg);
@@ -485,7 +498,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
 void Van::Heartbeat() {
   const char* val = Environment::Get()->find("PS_HEARTBEAT_INTERVAL");
   const int interval = val ? atoi(val) : kDefaultHeartbeatInterval;
-  while (interval > 0 && ready_) {
+  while (interval > 0 && ready_.load()) {
     std::this_thread::sleep_for(std::chrono::seconds(interval));
     Message msg;
     msg.meta.recver = kScheduler;
