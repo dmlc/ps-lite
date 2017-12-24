@@ -74,12 +74,10 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
   start_mu_.unlock();
   // do a barrier here
   if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
-  std::cout << "started post office\n";
 }
 
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
   if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
-  std::cout << "passed barrier in Finalize in node " << van_->my_node().id <<"\n";
   if (customer_id == 0) {
     van_->Stop();
     if (exit_callback_) exit_callback_();

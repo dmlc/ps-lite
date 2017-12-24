@@ -78,7 +78,6 @@ void Van::ProcessAddNodeCommandAtScheduler(
         // recver_id = shared_node_mapping[r];
         back.meta.recver = recver_id;
         back.meta.timestamp = timestamp_++;
-        std::cout << "sent ADDNODE to node " << recver_id << "\n";
         Send(back);
       }
     }
@@ -233,7 +232,6 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
       std::string addr_str = node.hostname + ":" + std::to_string(node.port);
       if (connected_nodes.find(addr_str) == connected_nodes.end()) {
         Connect(node);
-        std::cout << "connect to node " << node.id << " in node " << my_node_.id << "\n";
         connected_nodes[addr_str] = node.id;
       }
       if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
@@ -352,8 +350,7 @@ void Van::Stop() {
   // only customer 0 would call this method
   exit.meta.customer_id = 0;
   int ret = SendMsg(exit);
-  std::cout << "sent TERMINATE to node " << exit.meta.recver << \
-    " with return value " << ret << " in node " << my_node_.id <<"\n";
+  CHECK_NE(ret, -1);
   receiver_thread_->join();
   if (!is_scheduler_) heartbeat_thread_->join();
   if (resender_) delete resender_;
@@ -399,7 +396,6 @@ void Van::Receiving() {
       // control msg
       auto& ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
-        std::cout << "received a TERMINATE signal in node " << my_node_.id << "\n";
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
@@ -409,7 +405,7 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);
       } else {
-        std::cout << "received UNKNOWN message\n";
+        LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
       }
     } else {
       ProcessDataMsg(&msg);

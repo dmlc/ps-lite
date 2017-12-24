@@ -24,7 +24,6 @@ void RunWorker(int customer_id) {
     keys[i] = kMaxKey / num * i + customer_id;
     vals[i] = (rand() % 1000);
   }
-  std::cout<< "start pushing\n";
   // push
   int repeat = 50;
   std::vector<int> ts;
@@ -34,9 +33,7 @@ void RunWorker(int customer_id) {
     // to avoid too frequency push, which leads huge memory usage
     if (i > 10) kv.Wait(ts[ts.size()-10]);
   }
-  std::cout<< "finished push\n";
   for (int t : ts) kv.Wait(t);
-  std::cout<< "start pulling\n";
 
   // pull
   std::vector<float> rets;
