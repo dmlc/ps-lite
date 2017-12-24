@@ -129,10 +129,10 @@ class Van {
 
     // node's address string (i.e. ip:port) -> node id
     // this map is updated when ip:port is received for the first time
-    std::unordered_map<std::string, int> connected_nodes;
+    std::unordered_map<std::string, int> connected_nodes_;
     // maps the id of node which is added later to the id of node
     // which is with the same ip:port and added first
-    std::unordered_map<int, int> shared_node_mapping;
+    std::unordered_map<int, int> shared_node_mapping_;
 
     /** whether it is ready for sending */
     std::atomic<bool> ready_{false};
@@ -190,7 +190,7 @@ class Van {
                        Meta* recovery_nodes);
 
     const char *heartbeat_timeout_val = Environment::Get()->find("PS_HEARTBEAT_TIMEOUT");
-    int heartbeat_timeout = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 0;
+    int heartbeat_timeout_ = heartbeat_timeout_val ? atoi(heartbeat_timeout_val) : 0;
 
     DISALLOW_COPY_AND_ASSIGN(Van);
 };

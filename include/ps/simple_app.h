@@ -133,7 +133,7 @@ inline int SimpleApp::Request(int req_head, const std::string& req_body, int rec
   Message msg;
   msg.meta.head = req_head;
   if (req_body.size()) msg.meta.body = req_body;
-  int ts = obj_ -> NewRequest(recv_id);
+  int ts = obj_->NewRequest(recv_id);
   msg.meta.timestamp = ts;
   msg.meta.request = true;
   msg.meta.simple_app = true;
