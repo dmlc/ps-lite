@@ -33,13 +33,17 @@ class ZMQVan : public Van {
   virtual ~ZMQVan() { }
 
  protected:
-  void Start() override {
+  void Start(int customer_id) override {
     // start zmq
-    context_ = zmq_ctx_new();
-    CHECK(context_ != NULL) << "create 0mq context failed";
-    zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, 65536);
+    start_mu_.lock();
+    if (context_ == nullptr) {
+      context_ = zmq_ctx_new();
+      CHECK(context_ != NULL) << "create 0mq context failed";
+      zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, 65536);
+    }
+    start_mu_.unlock();
     // zmq_ctx_set(context_, ZMQ_IO_THREADS, 4);
-    Van::Start();
+    Van::Start(customer_id);
   }
 
   void Stop() override {
@@ -121,6 +125,7 @@ class ZMQVan : public Van {
     auto it = senders_.find(id);
     if (it == senders_.end()) {
       LOG(WARNING) << "there is no socket to node " << id;
+      std::cout << "there is not socket to node " << id << "\n";
       return -1;
     }
     void *socket = it->second;
@@ -136,11 +141,9 @@ class ZMQVan : public Van {
     while (true) {
       if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
       if (errno == EINTR) continue;
-      LOG(WARNING) << "failed to send message to node [" << id
-                   << "] errno: " << errno << " " << zmq_strerror(errno);
       return -1;
     }
-    zmq_msg_close(&meta_msg);
+    // zmq_msg_close(&meta_msg);
     int send_bytes = meta_size;
 
     // send data
@@ -158,7 +161,7 @@ class ZMQVan : public Van {
                      << ". " << i << "/" << n;
         return -1;
       }
-      zmq_msg_close(&data_msg);
+      // zmq_msg_close(&data_msg);
       send_bytes += data_size;
     }
     return send_bytes;
@@ -172,7 +175,10 @@ class ZMQVan : public Van {
       CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
       while (true) {
         if (zmq_msg_recv(zmsg, receiver_, 0) != -1) break;
-        if (errno == EINTR) continue;
+        if (errno == EINTR) {
+          std::cout << "interrupted";
+          continue;
+        }
         LOG(WARNING) << "failed to receive message. errno: "
                      << errno << " " << zmq_strerror(errno);
         return -1;

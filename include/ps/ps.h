@@ -34,8 +34,8 @@ inline int MyRank() { return Postoffice::Get()->my_rank(); }
  * This function will block until every nodes are started.
  * \param argv0 the program name, used for logging
  */
-inline void Start(const char* argv0 = nullptr) {
-  Postoffice::Get()->Start(argv0, true);
+inline void Start(int customer_id, const char* argv0 = nullptr) {
+  Postoffice::Get()->Start(customer_id, argv0, true);
 }
 /**
  * \brief start the system
@@ -43,8 +43,8 @@ inline void Start(const char* argv0 = nullptr) {
  * This function will NOT block.
  * \param argv0 the program name, used for logging
  */
-inline void StartAsync(const char* argv0 = nullptr) {
-  Postoffice::Get()->Start(argv0, false);
+inline void StartAsync(int customer_id, const char* argv0 = nullptr) {
+  Postoffice::Get()->Start(customer_id, argv0, false);
 }
 /**
  * \brief terminate the system
@@ -52,8 +52,8 @@ inline void StartAsync(const char* argv0 = nullptr) {
  * All nodes should call this function before existing. 
  * \param do_barrier whether to block until every node is finalized, default true.
  */
-inline void Finalize(const bool do_barrier = true) {
-  Postoffice::Get()->Finalize(do_barrier);
+inline void Finalize(int customer_id, const bool do_barrier = true) {
+  Postoffice::Get()->Finalize(customer_id, do_barrier);
 }
 /**
  * \brief Register a callback to the system which is called after Finalize()
