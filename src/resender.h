@@ -94,7 +94,7 @@ class Resender {
 
   uint64_t GetKey(const Message& msg) {
     CHECK_NE(msg.meta.timestamp, Meta::kEmpty) << msg.DebugString();
-    uint16_t id = msg.meta.customer_id;
+    uint16_t id = msg.meta.app_id;
     uint8_t sender = msg.meta.sender == Node::kEmpty ?
                      van_->my_node().id : msg.meta.sender;
     uint8_t recver = msg.meta.recver;

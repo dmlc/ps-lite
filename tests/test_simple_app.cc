@@ -12,10 +12,10 @@ void ReqHandle(const SimpleData& req, SimpleApp* app) {
 
 int main(int argc, char *argv[]) {
   int n = 100;
-  SimpleApp app(0);
+  SimpleApp app(0, 0);
   app.set_request_handle(ReqHandle);
 
-  Start();
+  Start(0);
   if (IsScheduler()) {
     std::vector<int> ts;
     for (int i = 0; i < n; ++i) {
@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  Finalize();
+  Finalize(0, true);
 
   CHECK_EQ(num, n);
   return 0;

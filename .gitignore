@@ -11,4 +11,6 @@ tests/test_*
 *.pyc
 *.d
 
+cmake-build-debug/
+CMakeFiles/
 recommonmark/

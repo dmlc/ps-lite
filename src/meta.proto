@@ -15,6 +15,8 @@ message PBNode {
   optional int32 port = 4;
   // whether this node is created by failover
   optional bool is_recovery = 5;
+  // the locally unique id of an customer
+  optional int32 customer_id = 10;
 }
 
 // system control info
@@ -36,12 +38,14 @@ message PBMeta {
   // true: a request task
   // false: the response task to the request task with the same *time*
   optional bool request = 4 [default = false];
-  // the unique id of an customer
-  optional int32 customer_id = 7;
+  // the unique id of an application
+  optional int32 app_id = 7;
   // the timestamp of this message
   optional int32 timestamp = 8;
   // data type of message.data[i]
   repeated int32 data_type = 9 [packed=true];
+  // the locally unique id of an customer
+  optional int32 customer_id = 10;
   // whether or not a push message
   optional bool push = 5;
   // whether or not it's for SimpleApp
