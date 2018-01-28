@@ -427,6 +427,7 @@ void Van::Receiving() {
 
 void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
   pb->set_head(meta.head);
+  if (meta.app_id != Meta::kEmpty) pb->set_app_id(meta.app_id);
   if (meta.customer_id != Meta::kEmpty) pb->set_customer_id(meta.customer_id);
   if (meta.timestamp != Meta::kEmpty) pb->set_timestamp(meta.timestamp);
   if (meta.body.size()) pb->set_body(meta.body);
