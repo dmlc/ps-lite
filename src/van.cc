@@ -419,12 +419,12 @@ void Van::Receiving() {
 void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
   pb->set_head(meta.head);
   if (meta.app_id != Meta::kEmpty) pb->set_app_id(meta.app_id);
-  if (meta.customer_id != Meta::kEmpty) pb->set_customer_id(meta.customer_id);
   if (meta.timestamp != Meta::kEmpty) pb->set_timestamp(meta.timestamp);
   if (meta.body.size()) pb->set_body(meta.body);
   pb->set_push(meta.push);
   pb->set_request(meta.request);
   pb->set_simple_app(meta.simple_app);
+  pb->set_customer_id(meta.customer_id);
   for (auto d : meta.data_type) pb->add_data_type(d);
   if (!meta.control.empty()) {
     auto ctrl = pb->mutable_control();
@@ -441,6 +441,7 @@ void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
       p->set_port(n.port);
       p->set_hostname(n.hostname);
       p->set_is_recovery(n.is_recovery);
+      p->set_customer_id(n.customer_id);
     }
   }
   pb->set_data_size(meta.data_size);
