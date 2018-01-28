@@ -94,10 +94,12 @@ class RDMAVan : public Van {
 
  protected:
   void Start(int customer_id) override {
+    start_mu_.lock();
     event_channel_ = rdma_create_event_channel();
     CHECK(event_channel_) << "create RDMA event channel failed";
     event_poller_should_stop_ = false;
     rdma_cm_event_poller_thread_ = new std::thread(&RDMAVan::OnEvent, this);
+    start_mu_.unlock();
     Van::Start(customer_id);
   }
 
