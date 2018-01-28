@@ -113,10 +113,12 @@ class RDMAVan : public Van {
     cq_poller_thread_->join();
     delete cq_poller_thread_;
 
-    for (auto it : connections_) rdma_disconnect(it.second);
+    for (const auto &i : connections_)
+      for (const auto &j : i.second) rdma_disconnect(j);
 
-    /* FIXME(cjr) how do we know the OnDisconnected is done? */
-    event_poller_should_stop_ = true;
+    while (num_connections_ > 0) {
+    }
+    CHECK_EQ(event_poller_should_stop_, true);
     rdma_cm_event_poller_thread_->join();
     delete rdma_cm_event_poller_thread_;
 
@@ -177,7 +179,7 @@ class RDMAVan : public Van {
     while (!IsConnected(conn)) {
     }
 
-    connections_[node_id] = id;
+    connections_[node_id].push_back(id);
     LOG(INFO) << "Connected to node: " << node_id;
   }
 
@@ -246,7 +248,7 @@ class RDMAVan : public Van {
       return -1;
     }
 
-    struct rdma_cm_id *rdma_id = it->second;
+    struct rdma_cm_id *rdma_id = *it->second.rbegin();
     struct connection *conn = (struct connection *)rdma_id->context;
 
     PBMeta meta;
@@ -467,6 +469,7 @@ class RDMAVan : public Van {
   void OnConnected(struct rdma_cm_id *id) {
     struct connection *conn = (struct connection *)id->context;
     conn->connected = 1;
+    num_connections_++;
   }
 
   void OnDisconnected(struct rdma_cm_id *id) {
@@ -481,6 +484,8 @@ class RDMAVan : public Van {
 
     free(conn);
     rdma_destroy_id(id);
+    CHECK_GE(--num_connections_, 0);
+    if (num_connections_ == 0) event_poller_should_stop_ = true;
   }
 
   void BuildContext(struct ibv_context *verbs) {
@@ -629,7 +634,8 @@ class RDMAVan : public Van {
 
   struct rdma_cm_event *event_ = nullptr;
   struct rdma_cm_id *listener_ = nullptr;
-  std::unordered_map<int, rdma_cm_id *> connections_;
+  std::unordered_map<int, std::vector<rdma_cm_id *>> connections_;
+  volatile int num_connections_ = 0;
 
   struct rdma_event_channel *event_channel_ = nullptr;
 
