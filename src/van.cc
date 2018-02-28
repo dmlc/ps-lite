@@ -253,6 +253,16 @@ void Van::Start(int customer_id) {
     // get my node info
     if (is_scheduler_) {
       my_node_ = scheduler_;
+      std::string ip;
+      const char *itf = Environment::Get()->find("DMLC_INTERFACE");
+      std::string interface;
+      if (itf) interface = std::string(itf);
+      if (interface.size()) {
+          GetIP(interface, &ip);
+      } else {
+          GetAvailableInterfaceAndIP(&interface, &ip);
+      }
+      my_node_.hostname = ip;
     } else {
       auto role = is_scheduler_ ? Node::SCHEDULER :
                   (Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER);
