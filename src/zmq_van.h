@@ -68,7 +68,8 @@ class ZMQVan : public Van {
         << "create receiver socket failed: " << zmq_strerror(errno);
     int local = GetEnv("DMLC_LOCAL", 0);
     std::string hostname = node.hostname.empty() ? "*" : node.hostname;
-    if (max_retry == 0) {
+    int use_kubernetes = GetEnv("DMLC_USE_KUBERNETES", 0);
+    if (use_kubernetes > 0 && node.role == Node::SCHEDULER) {
       hostname = "0.0.0.0";
     }
     std::string addr = local ? "ipc:///tmp/" : "tcp://" + hostname + ":";
