@@ -120,7 +120,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
     CHECK_EQ(ctrl.node.size(), 1);
-    if (nodes->control.node.size() < num_nodes) {
+    if (static_cast<int>(nodes->control.node.size()) < num_nodes) {
       nodes->control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
