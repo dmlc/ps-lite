@@ -141,6 +141,11 @@ class SRMem {
     }
   }
 
+  template <typename Deleter>
+  SRMem(V *data, size_t size, Deleter del) {
+    reset(data, size, del);
+  }
+
   /**
    * \brief copy from a c-array
    *
