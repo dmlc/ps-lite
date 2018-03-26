@@ -27,6 +27,9 @@ namespace ps {
 
 #include <chrono>
 
+//#define RDEBUG
+
+#ifdef RDEBUG
 #define debug(format, ...)                                                \
   do {                                                                    \
     auto now = std::chrono::high_resolution_clock::now();                 \
@@ -35,8 +38,29 @@ namespace ps {
             my_node_.id, ##__VA_ARGS__);                                  \
     fflush(stdout);                                                       \
   } while (0)
-//#undef debug
-//#define debug(...)
+#else
+#define debug(...)
+#endif
+
+#ifdef RDEBUG
+void inspect(void *addr, int length) {
+  char *ptr = (char *)addr;
+  printf("In inspect, addr = %p, length = %d\n", addr, length);
+  fflush(stdout);
+  for (int i = 0; i < length; i++) {
+    printf("%.2hhx ", ptr[i] & 0xff);
+    if ((i & 0xf) == 0xf) {
+      printf("\n");
+      fflush(stdout);
+    }
+  }
+  printf("\n");
+  fflush(stdout);
+}
+#define inspect(...) inspect(__VA_ARGS__)
+#else
+#define inspect(...)
+#endif
 
 const int kRxDepth = 500;
 const int kTxDepth = 2;
@@ -135,6 +159,7 @@ class RDMAVan : public Van {
 
     while (num_connections_ > 0) {
     }
+    /* TODO(cjr) flag here, there's a possibility the check fails. */
     CHECK_EQ(event_poller_should_stop_, true);
     rdma_cm_event_poller_thread_->join();
     delete rdma_cm_event_poller_thread_;
@@ -298,11 +323,15 @@ class RDMAVan : public Van {
     make_sge(&sg_list[0], srmem.data(), srmem.size(), context_->rdma_mr->lkey);
     CHECK_EQ(srmem.size(), meta_size + header_size);
 
+    std::vector<SRMem<char>> srmem_vec;
+
     int sge_idx = 1;
     for (size_t i = 0; i < msg.data.size(); i++) {
       /* TODO(cjr) check allocate and delete srmem, restructure the code, change
        * NICAllocator */
-      SRMem<char> srmem(msg.data[i]);
+      // SRMem<char> srmem(msg.data[i]);
+      srmem_vec.push_back(SRMem<char>(msg.data[i]));
+      auto &srmem = *srmem_vec.rbegin();
       uint32_t lkey = context_->rdma_mr->lkey;
 
       if (NICAllocator::GetNICAllocator()->registered(srmem.data(), 0))
@@ -311,6 +340,7 @@ class RDMAVan : public Van {
       if (msg.data[i].size() > 0) {
         make_sge(&sg_list[sge_idx], srmem.data(), srmem.size(), lkey);
         sge_idx++;
+        inspect(msg.data[i].data(), msg.data[i].size());
       }
 
       CHECK_EQ(srmem.size(), msg.data[i].size()) << "srmem出了点什么问题";
@@ -516,7 +546,7 @@ class RDMAVan : public Van {
       // SArray<char> sarray(srmem);
 
       /* TODO(cjr) sarray(0, 0); */
-      CHECK_NE(header->length[i], 0) << "In RecvMsg's loop, len = 0";
+      // CHECK_NE(header->length[i], 0) << "In RecvMsg's loop, len = 0";
       if (header->length[i] == 0) {
         SArray<char> sarray(static_cast<char *>(addr), 0);
         msg->data.push_back(sarray);
@@ -524,6 +554,7 @@ class RDMAVan : public Van {
         SRMem<char> srmem(static_cast<char *>(addr), header->length[i],
                           deleter);
         SArray<char> sarray(srmem);
+        inspect(sarray.data(), sarray.size());
         msg->data.push_back(sarray);
       }
 
