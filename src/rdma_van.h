@@ -63,7 +63,7 @@ void inspect(void *addr, int length) {
 #endif
 
 const int kRxDepth = 500;
-const int kTxDepth = 2;
+const int kTxDepth = 500;
 const int kSGEntry = 4;
 const int kTimeoutms = 1000;
 
@@ -508,7 +508,7 @@ class RDMAVan : public Van {
 
   template <typename V>
   struct SRMemDeleter {
-    SRMemDeleter(V *head, int count) : ref_count(count) {}
+    SRMemDeleter(V *head, int count) : head(head), ref_count(count) {}
     void operator()(V *data) {
       if (--ref_count == 0) {
         NICAllocator::GetNICAllocator()->Deallocate(head);
@@ -538,7 +538,11 @@ class RDMAVan : public Van {
 
     recv_bytes += header->length[0];
 
-    SRMemDeleter<char> deleter(reinterpret_cast<char *>(header), 0);
+    int ref_count = 0;
+    for (int i = 1; header->length[i] != -1; i++)
+      if (header->length[i] > 0) ref_count++;
+
+    SRMemDeleter<char> deleter(reinterpret_cast<char *>(header), ref_count);
     // Zero-copy receiving
     for (int i = 1; header->length[i] != -1; i++) {
       addr = static_cast<char *>(addr) + header->length[i - 1];
