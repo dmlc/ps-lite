@@ -35,6 +35,8 @@ namespace ps {
             my_node_.id, ##__VA_ARGS__);                                  \
     fflush(stdout);                                                       \
   } while (0)
+//#undef debug
+//#define debug(...)
 
 const int kRxDepth = 500;
 const int kTxDepth = 2;
@@ -203,7 +205,6 @@ class RDMAVan : public Van {
 
   void make_sge(struct ibv_sge *sge, void *addr, uint32_t length,
                 uint32_t lkey) {
-    memset(sge, 0, sizeof(*sge));
     sge->addr = (uintptr_t)addr;
     sge->length = length;
     sge->lkey = lkey;
@@ -243,21 +244,22 @@ class RDMAVan : public Van {
           recver_id, conn);
     CHECK_LE(sizeof(*conn->send_msg),
              static_cast<size_t>(conn->max_inline_data));
-    PostSendRDMAMsg(conn, IBV_SEND_INLINE);
+
+    PostSendRDMAMsg(conn, IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 
     /* 2. Busy polling region response */
     struct ibv_wc wc;
 
-    do {
-      int ret;
+    for (int ret, i = 0; i < 2; i++) {
       while ((ret = ibv_poll_cq(conn->cq, 1, &wc)) == 0) {
       }
       CHECK_GT(ret, 0) << "error happens in ibv_poll_cq";
       CHECK_EQ(wc.status, IBV_WC_SUCCESS)
           << "the worker completion status is not ibv_wc_success, but "
           << wc.status;
-      CHECK_EQ(wc.opcode, IBV_WC_RECV) << "这又不可能了";
-    } while (wc.opcode != IBV_WC_RECV);
+      CHECK(wc.opcode == IBV_WC_RECV || wc.opcode == IBV_WC_SEND)
+          << "这又不可能了";
+    }
 
     if (--conn->rr_slots <= 1) {
       PostRecvRDMAMsg(conn, kRxDepth - conn->rr_slots);
@@ -298,7 +300,8 @@ class RDMAVan : public Van {
 
     int sge_idx = 1;
     for (size_t i = 0; i < msg.data.size(); i++) {
-      /* TODO(cjr) check allocate and delete srmem */
+      /* TODO(cjr) check allocate and delete srmem, restructure the code, change
+       * NICAllocator */
       SRMem<char> srmem(msg.data[i]);
       uint32_t lkey = context_->rdma_mr->lkey;
 
@@ -329,7 +332,6 @@ class RDMAVan : public Van {
         recver_id, msg.data.size(), total_length, ntohl(wr.imm_data),
         conn->sr_slots, conn);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     while (conn->sr_slots >= kTxDepth - 1) {
     }
     conn->sr_slots++;
@@ -395,7 +397,6 @@ class RDMAVan : public Van {
       if (wc.opcode == IBV_WC_SEND) {
         CHECK(0);
         conn->sr_slots--;
-        debug("In IBV_WC_SEND branch sr_slots = %d", conn->sr_slots);
         continue;
       }
 
@@ -514,9 +515,10 @@ class RDMAVan : public Van {
       // SRMem<char> srmem(static_cast<char *>(addr), header->length[i], true);
       // SArray<char> sarray(srmem);
 
+      /* TODO(cjr) sarray(0, 0); */
       CHECK_NE(header->length[i], 0) << "In RecvMsg's loop, len = 0";
       if (header->length[i] == 0) {
-        SArray<char> sarray(256, '\0');
+        SArray<char> sarray(static_cast<char *>(addr), 0);
         msg->data.push_back(sarray);
       } else {
         SRMem<char> srmem(static_cast<char *>(addr), header->length[i],
