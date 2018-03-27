@@ -82,7 +82,23 @@ struct rdma_write_header {
   int sender;
   int recver;
   int length[5];
+  uint16_t checksum;
 };
+
+static inline uint16_t checksum(uint16_t *addr, int count) {
+  long sum = 0;
+  while (count > 1) {
+    sum += *addr++;
+    count -= 2;
+  }
+  if (count > 0) {
+    char left_over[2]{0};
+    left_over[0] = *addr;
+    sum += *(uint16_t *)(void *)left_over;
+  }
+  while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+  return ~sum;
+}
 
 struct rdma_msg {
   rdma_msg_type type;
@@ -270,6 +286,7 @@ class RDMAVan : public Van {
     CHECK_LE(sizeof(*conn->send_msg),
              static_cast<size_t>(conn->max_inline_data));
 
+    /* TODO(cjr) no need to signal every time */
     PostSendRDMAMsg(conn, IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 
     /* 2. Busy polling region response */
@@ -307,6 +324,8 @@ class RDMAVan : public Van {
     header->recver = recver_id;
     header->length[0] = meta_size;
 
+    inspect(srmem.data(), srmem.size());
+
     int total_length = srmem.size();
     struct ibv_sge sg_list[5];
     struct ibv_send_wr wr, *bad_wr = nullptr;
@@ -330,25 +349,31 @@ class RDMAVan : public Van {
       /* TODO(cjr) check allocate and delete srmem, restructure the code, change
        * NICAllocator */
       // SRMem<char> srmem(msg.data[i]);
+
+      header->length[i + 1] = msg.data[i].size();
+      total_length += msg.data[i].size();
+
+      // inspect(msg.data[i].data(), msg.data[i].size());
+      if (msg.data[i].size() == 0) continue;
+
       srmem_vec.push_back(SRMem<char>(msg.data[i]));
       auto &srmem = *srmem_vec.rbegin();
+
+      CHECK_EQ(srmem.size(), msg.data[i].size()) << "srmem出了点什么问题";
+
       uint32_t lkey = context_->rdma_mr->lkey;
 
       if (NICAllocator::GetNICAllocator()->registered(srmem.data(), 0))
         lkey = NICAllocator::GetNICAllocator()->mr(srmem.data())->lkey;
 
-      if (msg.data[i].size() > 0) {
-        make_sge(&sg_list[sge_idx], srmem.data(), srmem.size(), lkey);
-        sge_idx++;
-        inspect(msg.data[i].data(), msg.data[i].size());
-      }
-
-      CHECK_EQ(srmem.size(), msg.data[i].size()) << "srmem出了点什么问题";
-
-      header->length[i + 1] = srmem.size();
-      total_length += srmem.size();
+      make_sge(&sg_list[sge_idx], srmem.data(), srmem.size(), lkey);
+      sge_idx++;
     }
     header->length[msg.data.size() + 1] = -1;
+
+    header->checksum = 0;
+    header->checksum =
+        checksum(reinterpret_cast<uint16_t *>(srmem.data()), srmem.size());
 
     wr.sg_list = sg_list;
     wr.num_sge = sge_idx;
@@ -390,7 +415,6 @@ class RDMAVan : public Van {
       conn->rr_slots = kRxDepth;
     }
 
-    // debug("conn->sr_slots= %d", conn->sr_slots);
     conn->sr_slots--;
 
     // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -511,6 +535,8 @@ class RDMAVan : public Van {
     SRMemDeleter(V *head, int count) : head(head), ref_count(count) {}
     void operator()(V *data) {
       if (--ref_count == 0) {
+        printf("head = %p\n", head);
+        fflush(stdout);
         NICAllocator::GetNICAllocator()->Deallocate(head);
       }
     }
@@ -530,6 +556,16 @@ class RDMAVan : public Van {
     /* handle message meta */
 
     header = reinterpret_cast<struct rdma_write_header *>(addr);
+    inspect(reinterpret_cast<uint8_t *>(header),
+            sizeof(*header) + header->length[0]);
+
+    uint16_t chksum = header->checksum;
+    header->checksum = 0;
+    uint16_t temp = checksum(reinterpret_cast<uint16_t *>(addr),
+                             sizeof(*header) + header->length[0]);
+    CHECK_EQ(chksum, temp) << "chksum = " << chksum << " "
+                           << "temp = " << temp;
+
     msg->meta.sender = header->sender;
     msg->meta.recver = my_node_.id;
 
@@ -558,10 +594,10 @@ class RDMAVan : public Van {
         SRMem<char> srmem(static_cast<char *>(addr), header->length[i],
                           deleter);
         SArray<char> sarray(srmem);
-        inspect(sarray.data(), sarray.size());
         msg->data.push_back(sarray);
       }
 
+      inspect(msg->data[i - 1].data(), msg->data[i - 1].size());
       recv_bytes += header->length[i];
     }
 
@@ -701,7 +737,6 @@ class RDMAVan : public Van {
   }
 
   void PostSendRDMAMsg(struct connection *conn, int send_flags = 0) {
-    // debug("send_flags = %d", send_flags);
     struct ibv_send_wr wr, *bad_wr = nullptr;
     struct ibv_sge sge;
 
@@ -717,7 +752,6 @@ class RDMAVan : public Van {
     sge.length = sizeof(struct rdma_msg);
     sge.lkey = conn->send_msg_mr->lkey;
 
-    // debug("sr_slots = %d", conn->sr_slots);
     while (conn->sr_slots >= kTxDepth - 1) {
     }
     conn->sr_slots++;
