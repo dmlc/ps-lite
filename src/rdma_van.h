@@ -358,6 +358,8 @@ class RDMAVan : public Van {
 
       srmem_vec.push_back(SRMem<char>(msg.data[i]));
       auto &srmem = *srmem_vec.rbegin();
+      // srmem_vec.push_back(std::make_shared<SRMem<char>>(SRMem<char>(msg.data[i])));
+      // auto srmem = srmem_vec.rbegin()->get();
 
       CHECK_EQ(srmem.size(), msg.data[i].size()) << "srmem出了点什么问题";
 
@@ -416,8 +418,6 @@ class RDMAVan : public Van {
     }
 
     conn->sr_slots--;
-
-    // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     return send_bytes;
   }
 
@@ -530,20 +530,6 @@ class RDMAVan : public Van {
     }
   }
 
-  template <typename V>
-  struct SRMemDeleter {
-    SRMemDeleter(V *head, int count) : head(head), ref_count(count) {}
-    void operator()(V *data) {
-      if (--ref_count == 0) {
-        printf("head = %p\n", head);
-        fflush(stdout);
-        NICAllocator::GetNICAllocator()->Deallocate(head);
-      }
-    }
-    void *head;
-    int ref_count = 0;
-  };
-
   int RecvMsg(Message *msg) override {
     size_t recv_bytes = 0;
     struct rdma_write_header *header;
@@ -578,7 +564,8 @@ class RDMAVan : public Van {
     for (int i = 1; header->length[i] != -1; i++)
       if (header->length[i] > 0) ref_count++;
 
-    SRMemDeleter<char> deleter(reinterpret_cast<char *>(header), ref_count);
+    /* TODO(cjr) pool this ref variable */
+    int *ref = new int(ref_count);
     // Zero-copy receiving
     for (int i = 1; header->length[i] != -1; i++) {
       addr = static_cast<char *>(addr) + header->length[i - 1];
@@ -591,8 +578,17 @@ class RDMAVan : public Van {
         SArray<char> sarray(static_cast<char *>(addr), 0);
         msg->data.push_back(sarray);
       } else {
-        SRMem<char> srmem(static_cast<char *>(addr), header->length[i],
-                          deleter);
+        /* TODO the SRMem here is not needful */
+        SRMem<char> srmem(
+            static_cast<char *>(addr), header->length[i],
+            [ref, header](char *data) {
+              printf("ref = %d, header = %p\n", *ref, header);
+              fflush(stdout);
+              if (--(*ref) == 0) {
+                NICAllocator::GetNICAllocator()->Deallocate(header);
+                delete ref;
+              }
+            });
         SArray<char> sarray(srmem);
         msg->data.push_back(sarray);
       }
