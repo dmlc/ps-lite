@@ -536,6 +536,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   } else {
     meta->control.cmd = Control::EMPTY;
   }
+  meta->data_size = pb.data_size();
 }
 
 void Van::Heartbeat() {
