@@ -558,9 +558,10 @@ int KVWorker<Val>::Pull_(
       // do check
       size_t total_key = 0, total_val = 0;
       for (const auto& s : kvs) {
+        printf("s.keys.len = %ld, sizeof = %ld\n", s.keys.size(), (SArray<char>(s.keys)).size());
         Range range = FindRange(keys, s.keys.front(), s.keys.back()+1);
         CHECK_EQ(range.size(), s.keys.size())
-            << "unmatched keys size from one server";
+            << "unmatched keys size from one server" << "range.size = " << range.size() << "s.keys.size() = " << s.keys.size();
         if (lens) CHECK_EQ(s.lens.size(), s.keys.size());
         total_key += s.keys.size();
         total_val += s.vals.size();
