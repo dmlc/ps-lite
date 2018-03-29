@@ -43,9 +43,9 @@ namespace ps {
 #endif
 
 #ifdef RDEBUG
-std::mutex fuck_mutex_;
+std::mutex _inspect_mutex;
 void __inspect(const char *func, void *addr, int length) {
-  std::lock_guard<std::mutex> lock(fuck_mutex_);
+  std::lock_guard<std::mutex> lock(_inspect_mutex);
   char *ptr = (char *)addr;
   printf("[%s] In inspect, addr = %p, length = %d\n", func, addr, length);
   fflush(stdout);
