@@ -9,8 +9,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "ps/internal/bfc_allocator.h"
 #include "ps/internal/allocator.h"
+#include "ps/internal/bfc_allocator.h"
 #include "ps/internal/utils.h"
 #include "ps/range.h"
 namespace ps {
@@ -18,9 +18,7 @@ namespace ps {
 template <typename V>
 class SArray;
 
-inline Allocator *GetAllocator() {
-  return NICAllocator::GetNICAllocator();
-}
+inline Allocator* GetAllocator() { return NICAllocator::GetNICAllocator(); }
 
 /**
  * \breif Shared RDMA Memory region
@@ -70,11 +68,13 @@ class SRMem {
     //if (arr.size() >= 16384 && !GetAllocator()->in_range(arr.data(), arr.size())) {
     //  GetAllocator()->Register(arr.data(), arr.size());
     //}
-    //if (arr.size() >= 16384) {
-    //  reset(arr.data(), arr.size(), [](V* data) {});
-    //} else {
+    /* TODO(cjr) temporary fix, register the memory every time */
+    if (arr.size() >= 16384) {
+      GetAllocator()->Register(arr.data(), arr.size());
+      reset(arr.data(), arr.size(), [](V* data) {});
+    } else {
       CopyFrom(arr.data(), arr.size());
-    //}
+    }
   }
 
   /**
@@ -142,7 +142,7 @@ class SRMem {
   }
 
   template <typename Deleter>
-  SRMem(V *data, size_t size, Deleter del) {
+  SRMem(V* data, size_t size, Deleter del) {
     reset(data, size, del);
   }
 

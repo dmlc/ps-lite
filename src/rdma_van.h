@@ -27,7 +27,7 @@ namespace ps {
 
 #include <chrono>
 
-#define RDEBUG
+//#define RDEBUG
 
 #ifdef RDEBUG
 #define debug(format, ...)                                                \
@@ -85,13 +85,15 @@ enum rdma_msg_type {
  * thus we use 32bit int when it comes to length and offset
  */
 
+/* TODO(cjr) it seems we do not need the sender and recver */
 struct rdma_write_header {
   int sender;
   int recver;
   int length[5];
-  uint16_t checksum;
+  uint16_t checksum;  // Add this for debug
 };
 
+/* Add this for debug TODO(cjr) delete this function */
 static inline uint16_t checksum(uint16_t *addr, int count) {
   long sum = 0;
   while (count > 1) {
@@ -361,6 +363,8 @@ class RDMAVan : public Van {
       header->length[i + 1] = msg.data[i].size();
       total_length += msg.data[i].size();
 
+      if (msg.data[i].size() == 0) continue;
+
       srmem_vec.push_back(SRMem<char>(msg.data[i]));
       auto &srmem = *srmem_vec.rbegin();
       // srmem_vec.push_back(std::make_shared<SRMem<char>>(SRMem<char>(msg.data[i])));
@@ -369,8 +373,6 @@ class RDMAVan : public Van {
       CHECK_EQ(srmem.size(), msg.data[i].size()) << "srmem出了点什么问题";
 
       // inspect(msg.data[i].data(), msg.data[i].size());
-      inspect(srmem.data(), srmem.size());
-      if (msg.data[i].size() == 0) continue;
       uint32_t lkey = context_->rdma_mr->lkey;
 
       if (NICAllocator::GetNICAllocator()->registered(srmem.data(), 0))
@@ -429,10 +431,6 @@ class RDMAVan : public Van {
       PostRecvRDMAMsg(conn, kRxDepth - conn->rr_slots);
       conn->rr_slots = kRxDepth;
     }
-    // if (msg.data.size() == 2) {
-    //  printf("%d\n", wr.num_sge); fflush(stdout);
-    //  inspect((void *)wr.sg_list[1].addr, 1025);
-    //}
 
     conn->sr_slots--;
     return send_bytes;
@@ -484,22 +482,17 @@ class RDMAVan : public Van {
         CHECK_NE(wc.wc_flags & IBV_WC_WITH_IMM, 0)
             << "In PollCQ WITH_IMM, some error happen";
 
-        // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
         uint32_t imm_data = ntohl(wc.imm_data);
         debug("stage: server RECV_WIRTE_WITH_IMM, imm_data = %u, addr = %p",
               imm_data, recv_addr_[imm_data]);
         write_done_queue_.Push(recv_addr_[imm_data]);
 
-        // struct rdma_write_header *header = (struct rdma_write_header *)(void
-        // *)recv_addr_[imm_data]; if (header->length[1] >= 400000)
-        //  inspect(recv_addr_[imm_data] + sizeof(struct rdma_write_header) +
-        //  header->length[0], 1025);
-
         if (--conn->rr_slots <= 1) {
           PostRecvRDMAMsg(conn, kRxDepth - conn->rr_slots);
           conn->rr_slots = kRxDepth;
         }
+
+        /* TODO(cjr) it seems server do not need to ack back */
 
         // WriteToPeer();
         wr.wr_id = (uintptr_t)conn;
@@ -536,10 +529,6 @@ class RDMAVan : public Van {
         conn->send_msg->data.imm_data =
             static_cast<uint32_t>(recv_addr_.size());
         recv_addr_.push_back(conn->send_msg->data.mr.addr);
-
-        // if (total_length >= 400000)
-        // inspect(conn->send_msg->data.mr.addr + sizeof(struct
-        // rdma_write_header) + data.length[0], 1024);
 
         debug(
             "stage: server SEND MSG_RES_REGION, total_length = %d, imm_data = "
@@ -607,16 +596,18 @@ class RDMAVan : public Van {
         msg->data.push_back(sarray);
       } else {
         /* TODO the SRMem here is not needful */
-        // SRMem<char> srmem(static_cast<char *>(addr), header->length[i], [ref,
-        // header](char *data) {
-        //  if (--(*ref) == 0) {
-        //    printf("ref = %d, header = %p\n", *ref, header); fflush(stdout);
-        //    NICAllocator::GetNICAllocator()->Deallocate(header);
-        //    delete ref;
-        //  }
-        //});
-        // SArray<char> sarray(srmem);
-        SArray<char> sarray(static_cast<char *>(addr), header->length[i]);
+        SRMem<char> srmem(
+            static_cast<char *>(addr), header->length[i],
+            [ref, header](char *data) {
+              if (--(*ref) == 0) {
+                printf("ref = %d, header = %p\n", *ref, header);
+                fflush(stdout);
+                NICAllocator::GetNICAllocator()->Deallocate(header);
+                delete ref;
+              }
+            });
+        SArray<char> sarray(srmem);
+        // SArray<char> sarray(static_cast<char *>(addr), header->length[i]);
         msg->data.push_back(sarray);
       }
 
@@ -849,12 +840,6 @@ class RDMAVan : public Van {
         << "create RDMA queue pair failed";
     conn->qp = id->qp;
     conn->max_inline_data = qp_attr.cap.max_inline_data;
-
-    // debug("%d\n", qp_attr.cap.max_send_wr);
-    // debug("%d\n", qp_attr.cap.max_recv_wr);
-    // debug("%d\n", qp_attr.cap.max_send_sge);
-    // debug("%d\n", qp_attr.cap.max_recv_sge);
-    // debug("%d\n", qp_attr.cap.max_inline_data);
 
     RegisterMemory(conn);
 
