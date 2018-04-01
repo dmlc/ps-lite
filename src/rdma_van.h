@@ -26,7 +26,7 @@ namespace ps {
 
 #include <chrono>
 
-//#define RDEBUG
+#define RDEBUG
 
 #ifdef RDEBUG
 #define debug(format, ...)                                                \
@@ -327,7 +327,7 @@ class RDMAVan : public Van {
     wr.wr.rdma.remote_addr = (uintptr_t)conn->recv_msg->data.mr.addr;
     wr.wr.rdma.rkey = conn->recv_msg->data.mr.rkey;
     wr.imm_data = htonl(conn->recv_msg->data.imm_data);
-    // wr.send_flags = IBV_SEND_SIGNALED;
+    wr.send_flags = IBV_SEND_SIGNALED;
 
     make_sge(&sg_list[0], srmem.data(), srmem.size(), context_->rdma_mr->lkey);
     CHECK_EQ(srmem.size(), meta_size + header_size);
@@ -341,6 +341,8 @@ class RDMAVan : public Van {
 
       header->length[i + 1] = msg.data[i].size();
       total_length += msg.data[i].size();
+
+      inspect(msg.data[i].data(), msg.data[i].size());
 
       if (msg.data[i].size() == 0) continue;
 
@@ -377,21 +379,21 @@ class RDMAVan : public Van {
     CHECK(ibv_post_send(conn->qp, &wr, &bad_wr) == 0)
         << "RDMA post send failed with errno: " << errno;
 
-    do {
+    for (int i = 0; i < 2; i++) {
       int ret;
       while ((ret = ibv_poll_cq(conn->cq, 1, &wc)) == 0) {
       }
       CHECK_GT(ret, 0);
       CHECK_EQ(wc.status, IBV_WC_SUCCESS) << "poll cq failed: " << wc.status;
-      CHECK_EQ(wc.opcode, IBV_WC_RECV_RDMA_WITH_IMM)
+      CHECK(wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM ||
+            wc.opcode == IBV_WC_RDMA_WRITE)
           << "不可能啊 opcode = " << wc.opcode;
-      CHECK(wc.wc_flags & IBV_WC_WITH_IMM);
-      if (wc.wc_flags & IBV_WC_WITH_IMM)
-        debug(
-            "recver_id = %d, stage: client receive WRITE_DONE message, "
-            "imm_data = %d",
-            recver_id, ntohl(wc.imm_data));
-    } while (wc.opcode != IBV_WC_RECV_RDMA_WITH_IMM);
+      // CHECK(wc.wc_flags & IBV_WC_WITH_IMM);
+      // if (wc.wc_flags & IBV_WC_WITH_IMM)
+      //  debug("recver_id = %d, stage: client receive WRITE_DONE message,
+      //  imm_data = %d", recver_id,
+      //        ntohl(wc.imm_data));
+    }
 
     if (--conn->rr_slots <= 1) {
       PostRecvRDMAMsg(conn, kRxDepth - conn->rr_slots);

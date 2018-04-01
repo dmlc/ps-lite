@@ -53,4 +53,5 @@ message PBMeta {
   optional bool simple_app = 6 [default = false];
   // message.data_size 
   optional int32 data_size = 11;
+  optional uint64 checksum = 12;
 }

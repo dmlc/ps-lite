@@ -193,6 +193,7 @@ struct Meta {
   Control control;
   /** \brief the byte size */
   int data_size = 0;
+  uint64_t checksum = 0;
 };
 /**
  * \brief messages that communicated amaong nodes.
@@ -221,6 +222,22 @@ struct Message {
       for (const auto& d : data) ss << " data_size=" << d.size();
     }
     return ss.str();
+  }
+  uint64_t checksum() const {
+    const uint64_t key = 131;
+    uint64_t ret = 0;
+#define Add(x) ret = ret * key + (uint64_t)(x)
+    Add(meta.head); Add(meta.app_id); Add(meta.customer_id);
+    Add(meta.timestamp); Add(meta.request); Add(meta.push);
+    Add(meta.simple_app);// Add(meta.data_size);
+    for (auto c : meta.body) Add(c);
+    for (auto d : meta.data_type) Add(d);
+    for (auto arr : data) {
+      for (auto e : arr)
+        Add(e);
+    }
+#undef Add
+    return ret;
   }
 };
 }  // namespace ps
