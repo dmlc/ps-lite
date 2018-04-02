@@ -353,7 +353,6 @@ void Van::Stop() {
   exit.meta.recver = my_node_.id;
   // only customer 0 would call this method
   exit.meta.customer_id = 0;
-  const_cast<Message *>(&exit)->meta.checksum = exit.checksum();
   int ret = SendMsg(exit);
   CHECK_NE(ret, -1);
   receiver_thread_->join();
@@ -370,7 +369,6 @@ void Van::Stop() {
 }
 
 int Van::Send(const Message& msg) {
-  const_cast<Message *>(&msg)->meta.checksum = msg.checksum();
   int send_bytes = SendMsg(msg);
   CHECK_NE(send_bytes, -1);
   send_bytes_ += send_bytes;
@@ -389,8 +387,6 @@ void Van::Receiving() {
   while (true) {
     Message msg;
     int recv_bytes = RecvMsg(&msg);
-    CHECK_EQ(msg.checksum(), msg.meta.checksum) << "error, msg.checksum() != msg.meta.checksum, but "
-                                   << msg.checksum() << " " << msg.meta.checksum;
     // For debug, drop received message
     if (ready_.load() && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;
@@ -458,7 +454,6 @@ void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
     }
   }
   pb->set_data_size(meta.data_size);
-  pb->set_checksum(meta.checksum);
 }
 
 void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
@@ -492,7 +487,6 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
     }
   }
   pb.set_data_size(meta.data_size);
-  pb.set_checksum(meta.checksum);
 
   // to string
   *buf_size = pb.ByteSize();
@@ -543,7 +537,6 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
     meta->control.cmd = Control::EMPTY;
   }
   meta->data_size = pb.data_size();
-  meta->checksum = pb.checksum();
 }
 
 void Van::Heartbeat() {

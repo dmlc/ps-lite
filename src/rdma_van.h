@@ -26,7 +26,7 @@ namespace ps {
 
 #include <chrono>
 
-#define RDEBUG
+//#define RDEBUG
 
 #ifdef RDEBUG
 #define debug(format, ...)                                                \
@@ -327,7 +327,7 @@ class RDMAVan : public Van {
     wr.wr.rdma.remote_addr = (uintptr_t)conn->recv_msg->data.mr.addr;
     wr.wr.rdma.rkey = conn->recv_msg->data.mr.rkey;
     wr.imm_data = htonl(conn->recv_msg->data.imm_data);
-    wr.send_flags = IBV_SEND_SIGNALED;
+    // wr.send_flags = IBV_SEND_SIGNALED;
 
     make_sge(&sg_list[0], srmem.data(), srmem.size(), context_->rdma_mr->lkey);
     CHECK_EQ(srmem.size(), meta_size + header_size);
@@ -379,21 +379,14 @@ class RDMAVan : public Van {
     CHECK(ibv_post_send(conn->qp, &wr, &bad_wr) == 0)
         << "RDMA post send failed with errno: " << errno;
 
-    for (int i = 0; i < 2; i++) {
-      int ret;
-      while ((ret = ibv_poll_cq(conn->cq, 1, &wc)) == 0) {
-      }
-      CHECK_GT(ret, 0);
-      CHECK_EQ(wc.status, IBV_WC_SUCCESS) << "poll cq failed: " << wc.status;
-      CHECK(wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM ||
-            wc.opcode == IBV_WC_RDMA_WRITE)
-          << "不可能啊 opcode = " << wc.opcode;
-      // CHECK(wc.wc_flags & IBV_WC_WITH_IMM);
-      // if (wc.wc_flags & IBV_WC_WITH_IMM)
-      //  debug("recver_id = %d, stage: client receive WRITE_DONE message,
-      //  imm_data = %d", recver_id,
-      //        ntohl(wc.imm_data));
+    int ret;
+    while ((ret = ibv_poll_cq(conn->cq, 1, &wc)) == 0) {
     }
+    CHECK_GT(ret, 0);
+    CHECK_EQ(wc.status, IBV_WC_SUCCESS) << "poll cq failed: " << wc.status;
+    CHECK_EQ(wc.opcode, IBV_WC_RECV_RDMA_WITH_IMM)
+        << "不可能啊 opcode = " << wc.opcode;
+    CHECK(wc.wc_flags & IBV_WC_WITH_IMM);
 
     if (--conn->rr_slots <= 1) {
       PostRecvRDMAMsg(conn, kRxDepth - conn->rr_slots);
@@ -521,8 +514,7 @@ class RDMAVan : public Van {
     /* handle message meta */
 
     header = reinterpret_cast<struct rdma_write_header *>(addr);
-    inspect(reinterpret_cast<uint8_t *>(header),
-            sizeof(*header) + header->length[0]);
+    inspect(header, sizeof(*header) + header->length[0]);
 
     msg->meta.sender = header->sender;
     msg->meta.recver = my_node_.id;
@@ -553,13 +545,13 @@ class RDMAVan : public Van {
             static_cast<char *>(addr), header->length[i],
             [ref, header](char *data) {
               if (--(*ref) == 0) {
-                printf("ref = %d, header = %p\n", *ref, header);
-                fflush(stdout);
                 NICAllocator::GetNICAllocator()->Deallocate(header);
                 delete ref;
               }
             });
-        SArray<char> sarray(srmem);
+        // SArray<char> sarray(srmem);
+        SArray<char> sarray;
+        sarray.CopyFrom(srmem.data(), srmem.size());
         msg->data.push_back(sarray);
       }
 
