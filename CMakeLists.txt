@@ -57,7 +57,7 @@ target_link_libraries(pslite ${pslite_LINKER_LIBS})
 # FindProtobuf behavior changed from cmake 3.6 onwards
 IF (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.6)
   set(PROTO_LIB ${Protobuf_LIBRARY})
-  set(PROTO_LIB_DEBUG ${Protobuf.LIBRARY_DEBUG})
+  set(PROTO_LIB_DEBUG ${Protobuf_LIBRARY_DEBUG})
 ELSE (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.6)
   set(PROTO_LIB ${PROTOBUF_LIBRARY})
   set(PROTO_LIB_DEBUG ${PROTOBUF_LIBRARY_DEBUG})
