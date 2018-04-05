@@ -164,6 +164,8 @@ class Postoffice {
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
+
+  void InitEnvironment();
   Van* van_;
   mutable std::mutex mu_;
   // app_id -> (customer_id -> customer pointer)

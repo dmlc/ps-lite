@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 if [ $# -lt 2 ]; then
     echo "usage: $0 num_repeats bin [args...]"
     exit -1;
