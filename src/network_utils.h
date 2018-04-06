@@ -224,7 +224,7 @@ void GetAvailableInterfaceAndIP(
  * \return 0 on failure
  */
 int GetAvailablePort() {
-  struct sockaddr_in addr;
+  struct sockaddr_in addr = {0};
   addr.sin_port = htons(0);  // have system pick up a random port available for me
   addr.sin_family = AF_INET;  // IPV4
   addr.sin_addr.s_addr = htonl(INADDR_ANY);  // set our addr to any interface
@@ -232,6 +232,11 @@ int GetAvailablePort() {
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   if (0 != bind(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
     perror("bind():");
+#ifdef  _MSC_VER
+    closesocket(sock);
+#else
+    close(sock);
+#endif
     return 0;
   }
 #ifdef _MSC_VER
@@ -242,6 +247,11 @@ int GetAvailablePort() {
 
   if (0 != getsockname(sock, (struct sockaddr*)&addr, &addr_len)) {
     perror("getsockname():");
+#ifdef  _MSC_VER
+    closesocket(sock);
+#else
+    close(sock);
+#endif
     return 0;
   }
 
