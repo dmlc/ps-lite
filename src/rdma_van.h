@@ -549,9 +549,9 @@ class RDMAVan : public Van {
                 delete ref;
               }
             });
-        // SArray<char> sarray(srmem);
-        SArray<char> sarray;
-        sarray.CopyFrom(srmem.data(), srmem.size());
+        SArray<char> sarray(srmem);
+        // SArray<char> sarray;
+        // sarray.CopyFrom(srmem.data(), srmem.size());
         msg->data.push_back(sarray);
       }
 
