@@ -254,8 +254,7 @@ void Van::Start(int customer_id) {
     if (is_scheduler_) {
       my_node_ = scheduler_;
     } else {
-      auto role = is_scheduler_ ? Node::SCHEDULER :
-                  (Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER);
+      auto role = Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER;
       const char *nhost = Environment::Get()->find("DMLC_NODE_HOST");
       std::string ip;
       if (nhost) ip = std::string(nhost);
