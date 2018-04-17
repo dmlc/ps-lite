@@ -24,13 +24,16 @@ all: ps test
 
 include make/deps.mk
 
+.PHONY: clean
 clean:
 	rm -rf build $(TEST) tests/*.d
 	find src -name "*.pb.[ch]*" -delete
 
+.PHONY: clean
 lint:
 	python tests/lint.py ps all include/ps src
 
+.PHONY: ps
 ps: build/libps.a
 
 OBJS = $(addprefix build/, customer.o postoffice.o van.o meta.pb.o)
@@ -49,4 +52,6 @@ src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 -include build/*/*.d
 
 include tests/test.mk
+
+.PHONY: test
 test: $(TEST)
