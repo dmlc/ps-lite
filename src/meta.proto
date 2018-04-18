@@ -1,6 +1,7 @@
 /**
  *  Copyright (c) 2015 by Contributors
  */
+syntax = "proto2";
 package ps;
 option optimize_for = LITE_RUNTIME;
 
