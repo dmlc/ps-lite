@@ -12,6 +12,9 @@ namespace ps {
 Postoffice::Postoffice() {
   van_ = Van::Create("zmq");
   env_ref_ = Environment::_GetSharedRef();
+}
+
+void Postoffice::InitEnvironment() {
   const char* val = NULL;
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
@@ -28,6 +31,7 @@ Postoffice::Postoffice() {
 void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier) {
   start_mu_.lock();
   if (init_stage_ == 0) {
+    InitEnvironment();
     // init glog
     if (argv0) {
       dmlc::InitLogging(argv0);
@@ -79,7 +83,15 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
   if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
   if (customer_id == 0) {
+    num_workers_ = 0;
+    num_servers_ = 0;
     van_->Stop();
+    init_stage_ = 0;
+    customers_.clear();
+    node_ids_.clear();
+    barrier_done_.clear();
+    server_key_ranges_.clear();
+    heartbeats_.clear();
     if (exit_callback_) exit_callback_();
   }
 }

@@ -9,10 +9,11 @@ void StartServer() {
 }
 
 void RunWorker(int customer_id) {
-  if (!IsWorker()) return;
   Start(customer_id);
+  if (!IsWorker()) {
+    return;
+  }
   KVWorker<float> kv(0, customer_id);
-
   // init
   int num = 10000;
   std::vector<Key> keys(num);
@@ -50,12 +51,14 @@ void RunWorker(int customer_id) {
 }
 
 int main(int argc, char *argv[]) {
-  // setup server nodes
-  StartServer();
   // start system
-  if (!IsWorker()) {
+  bool isWorker = (strcmp(argv[1], "worker") == 0);
+  if (!isWorker) {
     Start(0);
+    // setup server nodes
+    StartServer();
     Finalize(0, true);
+    return 0;
   }
   // run worker nodes
   std::thread t0(RunWorker, 0);
