@@ -30,13 +30,13 @@ namespace ps {
 //#define RDEBUG
 
 #ifdef RDEBUG
-#define debug(format, ...)                                                \
-  do {                                                                    \
-    auto now = std::chrono::high_resolution_clock::now();                 \
-    fprintf(stdout, "\33[1;34m[%ld,%s,%d,%s,%d] " format "\33[0m\n",      \
-            now.time_since_epoch().count(), __FILE__, __LINE__, __func__, \
-            my_node_.id, ##__VA_ARGS__);                                  \
-    fflush(stdout);                                                       \
+#define debug(format, ...)                                                             \
+  do {                                                                                 \
+    auto now = std::chrono::high_resolution_clock::now();                              \
+    fprintf(stdout, "\33[1;34m[%ld,%s,%d,%s,%d] " format "\33[0m\n",                   \
+            now.time_since_epoch().count(), __FILE__, __LINE__, __func__, my_node_.id, \
+            ##__VA_ARGS__);                                                            \
+    fflush(stdout);                                                                    \
   } while (0)
 #else
 #define debug(...)
@@ -74,6 +74,7 @@ const int kTxDepth = 500;
 const int kSGEntry = 4;
 const int kTimeoutms = 1000;
 const int kInlineData = 4000;
+const int kRdmaListenBacklog = 128;
 
 enum rdma_msg_type {
   MSG_REQ_REGION = 1,
@@ -94,7 +95,7 @@ struct rdma_write_header {
   int recver;
   int length[5];
   int self_size;
-} __attribute__ ((packed));
+} __attribute__((packed));
 
 struct rdma_msg {
   /* rdma_msg_type */
@@ -151,7 +152,7 @@ class RDMAVan : public Van {
     start_mu_.lock();
     if (event_channel_ == nullptr) {
       event_channel_ = rdma_create_event_channel();
-      CHECK(event_channel_) << "create RDMA event channel failed";
+      CHECK(event_channel_) << "Create RDMA event channel failed";
       event_poller_should_stop_ = false;
       rdma_cm_event_poller_thread_ = new std::thread(&RDMAVan::OnEvent, this);
     }
@@ -169,8 +170,11 @@ class RDMAVan : public Van {
     cq_poller_thread_->join();
     delete cq_poller_thread_;
 
-    for (const auto &i : connections_)
-      for (const auto &j : i.second) rdma_disconnect(j);
+    for (const auto &i : connections_) {
+      for (const auto &j : i.second) {
+        rdma_disconnect(j);
+      }
+    }
 
     while (num_connections_ > 0) {
     }
@@ -188,7 +192,7 @@ class RDMAVan : public Van {
 
   int Bind(const Node &node, int max_retry) override {
     CHECK(rdma_create_id(event_channel_, &listener_, nullptr, RDMA_PS_TCP) == 0)
-        << "create RDMA connection identifier failed";
+        << "Create RDMA connection identifier failed";
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -197,15 +201,18 @@ class RDMAVan : public Van {
 
     for (int i = 0; i < max_retry + 1; ++i) {
       addr.sin_port = htons(port);
-      if (rdma_bind_addr(listener_, (struct sockaddr *)&addr) == 0) break;
+      if (rdma_bind_addr(listener_, (struct sockaddr *)&addr) == 0) {
+        break;
+      }
 
-      if (i == max_retry)
+      if (i == max_retry) {
         port = -1;
-      else
+      } else {
         port += 1;
+      }
     }
-    // TODO(cjr) change the backlog
-    CHECK(rdma_listen(listener_, 10) == 0) << "listen RDMA connection failed";
+
+    CHECK(rdma_listen(listener_, kRdmaListenBacklog) == 0) << "Listen RDMA connection failed";
 
     return port;
   }
@@ -218,20 +225,23 @@ class RDMAVan : public Van {
     CHECK(node.hostname.size());
     int node_id = node.id;
 
-    if ((node.role == my_node_.role) && (node.id != my_node_.id)) return;
+    // worker doesn't need to connect to the other workers. same for server
+    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
+      return;
+    }
 
     struct rdma_cm_id *id;
     CHECK(rdma_create_id(event_channel_, &id, nullptr, RDMA_PS_TCP) == 0)
-        << "create RDMA connection identifier failed";
+        << "Create RDMA connection identifier failed";
     InitConnection(id, true);
 
     struct addrinfo *addr;
-    CHECK(getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(),
-                      nullptr, &addr) == 0)
-        << "set address and port for connection failed";
+    CHECK(getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(), nullptr, &addr) ==
+          0)
+        << "Set address and port for connection failed";
 
     CHECK(rdma_resolve_addr(id, nullptr, addr->ai_addr, kTimeoutms) == 0)
-        << "resolve RDMA address failed with errno: " << errno;
+        << "Resolve RDMA address failed with errno: " << errno;
 
     freeaddrinfo(addr);
 
@@ -243,8 +253,7 @@ class RDMAVan : public Van {
     LOG(INFO) << "Connected to node: " << node_id;
   }
 
-  void make_sge(struct ibv_sge *sge, void *addr, uint32_t length,
-                uint32_t lkey) {
+  void make_sge(struct ibv_sge *sge, void *addr, uint32_t length, uint32_t lkey) {
     sge->addr = (uintptr_t)addr;
     sge->length = length;
     sge->lkey = lkey;
@@ -260,7 +269,7 @@ class RDMAVan : public Van {
 
     auto it = connections_.find(recver_id);
     if (it == connections_.end()) {
-      LOG(WARNING) << "there is no socket to node: " << recver_id;
+      LOG(WARNING) << "SendMsg failed: No socket found for Node " << recver_id;
       return -1;
     }
 
@@ -277,8 +286,9 @@ class RDMAVan : public Van {
     conn->send_msg->size = offsetof(struct rdma_msg, inline_data);
     conn->send_msg->data.length[0] = meta_size;
 
-    for (size_t i = 0; i < msg.data.size(); i++)
+    for (size_t i = 0; i < msg.data.size(); i++) {
       conn->send_msg->data.length[i + 1] = msg.data[i].size();
+    }
     conn->send_msg->data.length[msg.data.size() + 1] = -1;
 
     size_t header_size = (sizeof(struct rdma_write_header) + meta_size + 7) / 8 * 8 - meta_size;
@@ -288,14 +298,14 @@ class RDMAVan : public Van {
       conn->send_msg->size += header_size + send_bytes;
 
       /* fill struct rdma_write_header */
-      struct rdma_write_header *header =
-          (struct rdma_write_header *)conn->send_msg->inline_data;
+      struct rdma_write_header *header = (struct rdma_write_header *)conn->send_msg->inline_data;
       header->sender = my_node_.id;
       header->recver = recver_id;
       header->length[0] = meta_size;
       header->self_size = header_size;
-      for (size_t i = 0; i < msg.data.size(); i++)
+      for (size_t i = 0; i < msg.data.size(); i++) {
         header->length[i + 1] = msg.data[i].size();
+      }
       header->length[msg.data.size() + 1] = -1;
       /* fill meta */
       char *addr = (char *)header + header_size;
@@ -306,17 +316,16 @@ class RDMAVan : public Van {
         memcpy(addr, msg.data[i].data(), header->length[i + 1]);
         addr += header->length[i + 1];
       }
-      CHECK_LE(addr, (char *)conn->send_msg + conn->send_msg->size)
-          << "send_msg region overflow";
+      CHECK_LE(addr, (char *)conn->send_msg + conn->send_msg->size) << "send_msg region overflow";
     }
 
-    debug("recver_id = %d, stage: client SEND MSG_REQ_REGION, conn = %p",
-          recver_id, conn);
+    debug("recver_id = %d, stage: client SEND MSG_REQ_REGION, conn = %p", recver_id, conn);
 
     /* TODO(cjr) no need to signal every time */
     int send_flags = IBV_SEND_SIGNALED;
-    if (conn->send_msg->size <= conn->max_inline_data)
+    if (conn->send_msg->size <= conn->max_inline_data) {
       send_flags |= IBV_SEND_INLINE;
+    }
     PostSendRDMAMsg(conn, send_flags);
 
     /* 2. Busy polling region response */
@@ -327,10 +336,8 @@ class RDMAVan : public Van {
       }
       CHECK_GT(ret, 0) << "error happens in ibv_poll_cq";
       CHECK_EQ(wc.status, IBV_WC_SUCCESS)
-          << "the worker completion status is not ibv_wc_success, but "
-          << wc.status;
-      CHECK(wc.opcode == IBV_WC_RECV || wc.opcode == IBV_WC_SEND)
-          << "这又不可能了";
+          << "the worker completion status is not ibv_wc_success, but " << wc.status;
+      CHECK(wc.opcode == IBV_WC_RECV || wc.opcode == IBV_WC_SEND) << "这又不可能了";
     }
 
     if (--conn->rr_slots <= 1) {
@@ -342,7 +349,9 @@ class RDMAVan : public Van {
     conn->sr_slots--;
 
     /* the data is directly sent with RDMA_SEND */
-    if (conn->send_msg->type & MSG_INLINE_DATA) return send_bytes;
+    if (conn->send_msg->type & MSG_INLINE_DATA) {
+      return send_bytes;
+    }
 
     /* 3. Send the data using RDMA_WRITE_WITH_IMM */
 
@@ -396,8 +405,9 @@ class RDMAVan : public Van {
 
       uint32_t lkey = context_->rdma_mr->lkey;
 
-      if (NICAllocator::GetNICAllocator()->registered(srmem.data(), 0))
+      if (NICAllocator::GetNICAllocator()->registered(srmem.data(), 0)) {
         lkey = NICAllocator::GetNICAllocator()->mr(srmem.data())->lkey;
+      }
 
       make_sge(&sg_list[sge_idx], srmem.data(), srmem.size(), lkey);
       sge_idx++;
@@ -413,8 +423,7 @@ class RDMAVan : public Van {
         "recver_id = %d, stage: client WRITE_WITH_IMM, msg_num = %ld, "
         "total_length = %d, imm_data "
         "= %u, sr_slots = %d, conn = %p",
-        recver_id, msg.data.size(), total_length, ntohl(wr.imm_data),
-        conn->sr_slots, conn);
+        recver_id, msg.data.size(), total_length, ntohl(wr.imm_data), conn->sr_slots, conn);
 
     while (conn->sr_slots >= kTxDepth - 1) {
     }
@@ -427,8 +436,7 @@ class RDMAVan : public Van {
     }
     CHECK_GT(ret, 0);
     CHECK_EQ(wc.status, IBV_WC_SUCCESS) << "poll cq failed: " << wc.status;
-    CHECK_EQ(wc.opcode, IBV_WC_RECV_RDMA_WITH_IMM)
-        << "不可能啊 opcode = " << wc.opcode;
+    CHECK_EQ(wc.opcode, IBV_WC_RECV_RDMA_WITH_IMM) << "不可能啊 opcode = " << wc.opcode;
     CHECK(wc.wc_flags & IBV_WC_WITH_IMM);
 
     if (--conn->rr_slots <= 1) {
@@ -457,20 +465,21 @@ class RDMAVan : public Van {
 
     while (!cq_poller_should_stop_) {
       int ret = ibv_poll_cq(context_->cq, 1, &wc);
-      if (ret == 0) continue;
+      if (ret == 0) {
+        continue;
+      }
 
       CHECK_GT(ret, 0) << "error happens in ibv_poll_cq";
       CHECK_EQ(wc.status, IBV_WC_SUCCESS)
-          << "the worker completion status is not ibv_wc_success, but "
-          << wc.status;
+          << "the worker completion status is not ibv_wc_success, but " << wc.status;
 
       conn = (struct connection *)wc.wr_id;
       CHECK(!conn->active_side);
 
       if (wc.opcode == IBV_WC_RDMA_WRITE) {
         conn->sr_slots--;
-        debug("stage: server WRITE_WITH_IMM done, conn = %p, sr_slots = %d\n",
-              conn, conn->sr_slots);
+        debug("stage: server WRITE_WITH_IMM done, conn = %p, sr_slots = %d\n", conn,
+              conn->sr_slots);
         continue;
       }
 
@@ -483,13 +492,12 @@ class RDMAVan : public Van {
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
         // it indicates that a Send Region operation has done
         conn->sr_slots--;
-        CHECK_NE(wc.wc_flags & IBV_WC_WITH_IMM, 0)
-            << "In PollCQ WITH_IMM, some error happen";
+        CHECK_NE(wc.wc_flags & IBV_WC_WITH_IMM, 0) << "In PollCQ WITH_IMM, some error happen";
 
         uint32_t imm_data = ntohl(wc.imm_data);
         write_done_queue_.Push(recv_addr_[imm_data]);
-        debug("stage: server RECV_WIRTE_WITH_IMM, imm_data = %u, addr = %p",
-              imm_data, recv_addr_[imm_data]);
+        debug("stage: server RECV_WIRTE_WITH_IMM, imm_data = %u, addr = %p", imm_data,
+              recv_addr_[imm_data]);
 
         if (--conn->rr_slots <= 1) {
           PostRecvRDMAMsg(conn, kRxDepth - conn->rr_slots);
@@ -527,8 +535,7 @@ class RDMAVan : public Van {
           total_length += length;
         }
 
-        void *new_addr =
-            NICAllocator::GetNICAllocator()->Allocate(total_length);
+        void *new_addr = NICAllocator::GetNICAllocator()->Allocate(total_length);
         auto &mr = conn->send_msg->data.mr;
         mr.addr = new_addr;
         mr.rkey = context_->rdma_mr->rkey;
@@ -550,8 +557,7 @@ class RDMAVan : public Van {
 
         conn->send_msg->size = offsetof(struct rdma_msg, inline_data);
 
-        CHECK_LE(conn->send_msg->size, conn->max_inline_data)
-            << "send_msg->size cannot be inlined";
+        CHECK_LE(conn->send_msg->size, conn->max_inline_data) << "send_msg->size cannot be inlined";
         PostSendRDMAMsg(conn, send_flags);
 
       } else {
@@ -600,14 +606,12 @@ class RDMAVan : public Van {
         msg->data.push_back(sarray);
       } else {
         /* TODO the SRMem here is not needful */
-        SRMem<char> srmem(
-            static_cast<char *>(addr), header->length[i],
-            [ref, header](char *data) {
-              if (--(*ref) == 0) {
-                NICAllocator::GetNICAllocator()->Deallocate(header);
-                delete ref;
-              }
-            });
+        SRMem<char> srmem(static_cast<char *>(addr), header->length[i], [ref, header](char *data) {
+          if (--(*ref) == 0) {
+            NICAllocator::GetNICAllocator()->Deallocate(header);
+            delete ref;
+          }
+        });
         SArray<char> sarray(srmem);
         // SArray<char> sarray;
         // sarray.CopyFrom(srmem.data(), srmem.size());
@@ -625,8 +629,7 @@ class RDMAVan : public Van {
   bool IsConnected(struct connection *conn) { return conn->connected == 1; }
 
   void InitConnection(struct rdma_cm_id *id, bool active_side) {
-    struct connection *conn =
-        (struct connection *)malloc(sizeof(struct connection));
+    struct connection *conn = (struct connection *)malloc(sizeof(struct connection));
     // debug("struct conn constructed, conn = %p, active_side = %d", conn,
     // int(active_side));
     id->context = conn;
@@ -639,24 +642,31 @@ class RDMAVan : public Van {
   void OnEvent() {
     struct rdma_cm_event *event;
 
-    while (!event_poller_should_stop_ &&
-           rdma_get_cm_event(event_channel_, &event) == 0) {
+    while (!event_poller_should_stop_ && rdma_get_cm_event(event_channel_, &event) == 0) {
       struct rdma_cm_event event_copy;
       memcpy(&event_copy, event, sizeof(*event));
       rdma_ack_cm_event(event);
 
-      if (event_copy.event == RDMA_CM_EVENT_CONNECT_REQUEST)
-        OnConnectRequest(event_copy.id);
-      else if (event_copy.event == RDMA_CM_EVENT_ADDR_RESOLVED)
-        OnAddrResolved(event_copy.id);
-      else if (event_copy.event == RDMA_CM_EVENT_ROUTE_RESOLVED)
-        OnRouteResolved(event_copy.id);
-      else if (event_copy.event == RDMA_CM_EVENT_ESTABLISHED)
-        OnConnected(event_copy.id);
-      else if (event_copy.event == RDMA_CM_EVENT_DISCONNECTED)
-        OnDisconnected(event_copy.id);
-      else
-        CHECK(0) << "OnEvent: unknown event " << event_copy.event;
+      // TODO(clan): Reorder the list according to the event frequency
+      switch (event_copy.event) {
+        case RDMA_CM_EVENT_CONNECT_REQUEST:
+          OnConnectRequest(event_copy.id);
+          break;
+        case RDMA_CM_EVENT_ADDR_RESOLVED:
+          OnAddrResolved(event_copy.id);
+          break;
+        case RDMA_CM_EVENT_ROUTE_RESOLVED:
+          OnRouteResolved(event_copy.id);
+          break;
+        case RDMA_CM_EVENT_ESTABLISHED:
+          OnConnected(event_copy.id);
+          break;
+        case RDMA_CM_EVENT_DISCONNECTED:
+          OnDisconnected(event_copy.id);
+          break;
+        default:
+          CHECK(0) << "OnEvent: unknown event " << event_copy.event;
+      }
     }
   }
 
@@ -671,8 +681,7 @@ class RDMAVan : public Van {
 
   void OnAddrResolved(struct rdma_cm_id *id) {
     BuildConnection(id, true);
-    CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0)
-        << "resolve RDMA route failed";
+    CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0) << "resolve RDMA route failed";
   }
 
   void OnRouteResolved(struct rdma_cm_id *id) {
@@ -700,17 +709,16 @@ class RDMAVan : public Van {
     free(conn);
     rdma_destroy_id(id);
     CHECK_GE(--num_connections_, 0);
-    if (num_connections_ == 0) event_poller_should_stop_ = true;
+    if (num_connections_ == 0) {
+      event_poller_should_stop_ = true;
+    }
   }
 
   void BuildContext(struct ibv_context *verbs) {
     if (context_) {
-      CHECK_EQ(context_->ctx, verbs)
-          << "cannot handle events in more than one context";
+      CHECK_EQ(context_->ctx, verbs) << "cannot handle events in more than one context";
       context_->cnt++;
-      CHECK_EQ(
-          ibv_resize_cq(context_->cq, context_->cnt * (kRxDepth + kTxDepth)),
-          0);
+      CHECK_EQ(ibv_resize_cq(context_->cq, context_->cnt * (kRxDepth + kTxDepth)), 0);
       return;
     }
 
@@ -722,14 +730,12 @@ class RDMAVan : public Van {
     NICAllocator::GetNICAllocator()->set_pd(context_->pd);
 
     context_->cnt = 1;
-    context_->cq =
-        ibv_create_cq(context_->ctx, kRxDepth + kTxDepth, nullptr, nullptr, 0);
+    context_->cq = ibv_create_cq(context_->ctx, kRxDepth + kTxDepth, nullptr, nullptr, 0);
     CHECK(context_->cq) << "create completion queue failed";
 
     /* register data memory region */
-    context_->rdma_mr = ibv_reg_mr(
-        context_->pd, NICAllocator::GetNICAllocator()->ptr(), kDefaultSize,
-        IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    context_->rdma_mr = ibv_reg_mr(context_->pd, NICAllocator::GetNICAllocator()->ptr(),
+                                   kDefaultSize, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     CHECK(context_->rdma_mr) << "register region failed";
 
     cq_poller_should_stop_ = false;
@@ -743,14 +749,14 @@ class RDMAVan : public Van {
     int rdma_msg_size = sizeof(struct rdma_msg);
 
     conn->send_msg = (struct rdma_msg *)malloc(rdma_msg_size);
-    conn->send_msg_mr = ibv_reg_mr(context_->pd, conn->send_msg, rdma_msg_size,
-                                   IBV_ACCESS_LOCAL_WRITE);
-    CHECK(conn->send_msg_mr) << "register send_msg region failed";
+    conn->send_msg_mr =
+        ibv_reg_mr(context_->pd, conn->send_msg, rdma_msg_size, IBV_ACCESS_LOCAL_WRITE);
+    CHECK(conn->send_msg_mr) << "Register send_msg region failed";
 
     conn->recv_msg = (struct rdma_msg *)malloc(rdma_msg_size);
-    conn->recv_msg_mr = ibv_reg_mr(context_->pd, conn->recv_msg, rdma_msg_size,
-                                   IBV_ACCESS_LOCAL_WRITE);
-    CHECK(conn->recv_msg_mr) << "register recv_msg region failed";
+    conn->recv_msg_mr =
+        ibv_reg_mr(context_->pd, conn->recv_msg, rdma_msg_size, IBV_ACCESS_LOCAL_WRITE);
+    CHECK(conn->recv_msg_mr) << "Register recv_msg region failed";
   }
 
   void PostSendRDMAMsg(struct connection *conn, int send_flags = 0) {
@@ -773,7 +779,7 @@ class RDMAVan : public Van {
     }
     conn->sr_slots++;
     CHECK(ibv_post_send(conn->qp, &wr, &bad_wr) == 0)
-        << "send RDMA message failed with errno: " << errno;
+        << "Send RDMA message failed with errno: " << errno;
   }
 
   /* wr and sge can be cached and speed up */
@@ -793,7 +799,7 @@ class RDMAVan : public Van {
 
     for (int i = 0; i < n; i++)
       CHECK(ibv_post_recv(conn->qp, &wr, &bad_wr) == 0)
-          << "post receive MSG failed with errno: " << errno;
+          << "Post receive MSG failed with errno: " << errno;
   }
 
   void PollRDMAMsg(struct ibv_cq *cq, struct ibv_wc *wc) {
@@ -801,10 +807,9 @@ class RDMAVan : public Van {
       int ret = 0;
       while ((ret = ibv_poll_cq(cq, 1, wc)) == 0) {
       }
-      CHECK_GT(ret, 0) << "error happens in ibv_poll_cq";
+      CHECK_GT(ret, 0) << "Error happens in ibv_poll_cq";
       CHECK_EQ(wc->status, IBV_WC_SUCCESS)
-          << "the worker completion status is not ibv_wc_success, but "
-          << wc->status;
+          << "Worker completion status is not ibv_wc_success, but " << wc->status;
       struct connection *conn = (struct connection *)wc->wr_id;
       if (wc->opcode == IBV_WC_RECV) {
         if (--conn->rr_slots <= 1) {
@@ -823,12 +828,11 @@ class RDMAVan : public Van {
     BuildContext(id->verbs);
 
     conn->cq = !active ? context_->cq
-                       : ibv_create_cq(context_->ctx, kRxDepth + kTxDepth,
-                                       nullptr, nullptr, 0);
+                       : ibv_create_cq(context_->ctx, kRxDepth + kTxDepth, nullptr, nullptr, 0);
 
-    CHECK(conn->cq) << "create completion queue failed";
+    CHECK(conn->cq) << "Create completion queue failed";
     CHECK_EQ(ibv_req_notify_cq(conn->cq, 0), 0)
-        << "request notification from completion queue failed";
+        << "Request notification from completion queue failed";
 
     struct ibv_qp_init_attr qp_attr;
     memset(&qp_attr, 0, sizeof(struct ibv_qp_init_attr));
@@ -841,8 +845,7 @@ class RDMAVan : public Van {
     qp_attr.cap.max_recv_sge = kSGEntry;
     qp_attr.sq_sig_all = 0;
 
-    CHECK_EQ(rdma_create_qp(id, context_->pd, &qp_attr), 0)
-        << "create RDMA queue pair failed";
+    CHECK_EQ(rdma_create_qp(id, context_->pd, &qp_attr), 0) << "Create RDMA queue pair failed";
     conn->qp = id->qp;
     conn->max_inline_data = qp_attr.cap.max_inline_data;
 
