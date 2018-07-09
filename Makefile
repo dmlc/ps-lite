@@ -32,7 +32,7 @@ all: ps test
 include make/deps.mk
 
 clean:
-	rm -rf build $(TEST) tests/*.d
+	rm -rf build $(TEST) tests/*.d tests/*.dSYM
 	find src -name "*.pb.[ch]*" -delete
 
 lint:
