@@ -171,9 +171,7 @@ class RDMAVan : public Van {
     delete cq_poller_thread_;
 
     for (const auto &i : connections_) {
-      for (const auto &j : i.second) {
-        rdma_disconnect(j);
-      }
+      rdma_disconnect(i.second);
     }
 
     while (num_connections_ > 0) {
@@ -230,27 +228,35 @@ class RDMAVan : public Van {
       return;
     }
 
-    struct rdma_cm_id *id;
-    CHECK(rdma_create_id(event_channel_, &id, nullptr, RDMA_PS_TCP) == 0)
-        << "Create RDMA connection identifier failed";
-    InitConnection(id, true);
+    auto it = connections_.find(node_id);
+    if (it != connections_.end()) {
+      LOG(INFO) << "Socket to node: " << node_id << "exists. Reusing the socket.";
+    } else {
+      struct rdma_cm_id *id;
+      CHECK(rdma_create_id(event_channel_, &id, nullptr, RDMA_PS_TCP) == 0)
+          << "Create RDMA connection identifier failed";
+      InitConnection(id, true);
 
-    struct addrinfo *addr;
-    CHECK(getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(), nullptr, &addr) ==
-          0)
-        << "Set address and port for connection failed";
+      struct addrinfo *addr;
+      CHECK(getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(), nullptr, &addr) ==
+            0)
+          << "Set address and port for connection failed";
 
-    CHECK(rdma_resolve_addr(id, nullptr, addr->ai_addr, kTimeoutms) == 0)
-        << "Resolve RDMA address failed with errno: " << errno;
+      CHECK(rdma_resolve_addr(id, nullptr, addr->ai_addr, kTimeoutms) == 0)
+          << "Resolve RDMA address failed with errno: " << errno;
 
-    freeaddrinfo(addr);
+      freeaddrinfo(addr);
 
-    struct connection *conn = (struct connection *)id->context;
-    while (!IsConnected(conn)) {
+      struct connection *conn = (struct connection *)id->context;
+
+      // Block until notification is received
+      // TODO(clan): Wait on a conditional var
+      while (!IsConnected(conn)) {
+      }
+
+      connections_[node_id] = id;
+      LOG(INFO) << "Connected to node: " << node_id;
     }
-
-    connections_[node_id].push_back(id);
-    LOG(INFO) << "Connected to node: " << node_id;
   }
 
   void make_sge(struct ibv_sge *sge, void *addr, uint32_t length, uint32_t lkey) {
@@ -273,7 +279,7 @@ class RDMAVan : public Van {
       return -1;
     }
 
-    struct rdma_cm_id *rdma_id = *it->second.rbegin();
+    struct rdma_cm_id *rdma_id = it->second;
     struct connection *conn = (struct connection *)rdma_id->context;
 
     PBMeta meta;
@@ -864,7 +870,7 @@ class RDMAVan : public Van {
 
   struct rdma_cm_event *event_ = nullptr;
   struct rdma_cm_id *listener_ = nullptr;
-  std::unordered_map<int, std::vector<rdma_cm_id *>> connections_;
+  std::unordered_map<int, rdma_cm_id *> connections_;
   volatile int num_connections_ = 0;
 
   struct rdma_event_channel *event_channel_ = nullptr;
