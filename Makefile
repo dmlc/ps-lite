@@ -17,13 +17,18 @@ ifndef PROTOC
 PROTOC = ${DEPS_PATH}/bin/protoc
 endif
 
+
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
-CFLAGS = -std=c++11 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
+CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread
 
 ifeq ($(USE_RDMA), 1)
 LIBS += -lrdmacm -libverbs
-CFLAGS += -DMXNET_USE_RDMA
+CFLAGS += -DDMLC_USE_RDMA
+endif
+
+ifdef ASAN
+CFLAGS += -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls
 endif
 
 
@@ -40,7 +45,7 @@ lint:
 
 ps: build/libps.a
 
-OBJS = $(addprefix build/, bfc_allocator.o customer.o postoffice.o van.o meta.pb.o)
+OBJS = $(addprefix build/, customer.o postoffice.o van.o meta.pb.o)
 build/libps.a: $(OBJS)
 	ar crv $@ $(filter %.o, $?)
 

@@ -1,18 +1,22 @@
 /**
  *  Copyright (c) 2015 by Contributors
  */
-#include "ps/internal/van.h"
-#include <thread>
+
 #include <chrono>
+#include <thread>
+
 #include "ps/base.h"
-#include "ps/sarray.h"
-#include "ps/internal/postoffice.h"
 #include "ps/internal/customer.h"
-#include "./network_utils.h"
+#include "ps/internal/postoffice.h"
+#include "ps/internal/van.h"
+#include "ps/sarray.h"
+
 #include "./meta.pb.h"
-#include "./zmq_van.h"
+#include "./network_utils.h"
 #include "./rdma_van.h"
 #include "./resender.h"
+#include "./zmq_van.h"
+
 namespace ps {
 
 // interval in second between to heartbeast signals. 0 means no heartbeat.
@@ -21,10 +25,10 @@ namespace ps {
 // problem.
 static const int kDefaultHeartbeatInterval = 0;
 
-Van* Van::Create(const std::string& type) {
+Van *Van::Create(const std::string &type) {
   if (type == "zmq") {
     return new ZMQVan();
-#ifdef MXNET_USE_RDMA
+#ifdef DMLC_USE_RDMA
   } else if (type == "rdma") {
     return new RDMAVan();
 #endif
@@ -39,34 +43,31 @@ void Van::ProcessTerminateCommand() {
   ready_ = false;
 }
 
-void Van::ProcessAddNodeCommandAtScheduler(
-        Message* msg, Meta* nodes, Meta* recovery_nodes) {
+void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *recovery_nodes) {
   recovery_nodes->control.cmd = Control::ADD_NODE;
   time_t t = time(NULL);
   size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
   if (nodes->control.node.size() == num_nodes) {
     // sort the nodes according their ip and port,
     std::sort(nodes->control.node.begin(), nodes->control.node.end(),
-              [](const Node& a, const Node& b) {
-                  return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
+              [](const Node &a, const Node &b) {
+                return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
               });
     // assign node rank
-    for (auto& node : nodes->control.node) {
+    for (auto &node : nodes->control.node) {
       std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
       if (connected_nodes_.find(node_host_ip) == connected_nodes_.end()) {
         CHECK_EQ(node.id, Node::kEmpty);
-        int id = node.role == Node::SERVER ?
-                 Postoffice::ServerRankToID(num_servers_) :
-                 Postoffice::WorkerRankToID(num_workers_);
+        int id = node.role == Node::SERVER ? Postoffice::ServerRankToID(num_servers_)
+                                           : Postoffice::WorkerRankToID(num_workers_);
         PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
         node.id = id;
         Connect(node);
         Postoffice::Get()->UpdateHeartbeat(node.id, t);
         connected_nodes_[node_host_ip] = id;
       } else {
-        int id = node.role == Node::SERVER ?
-                 Postoffice::ServerRankToID(num_servers_) :
-                 Postoffice::WorkerRankToID(num_workers_);
+        int id = node.role == Node::SERVER ? Postoffice::ServerRankToID(num_servers_)
+                                           : Postoffice::WorkerRankToID(num_workers_);
         shared_node_mapping_[id] = connected_nodes_[node_host_ip];
         node.id = connected_nodes_[node_host_ip];
       }
@@ -85,8 +86,8 @@ void Van::ProcessAddNodeCommandAtScheduler(
         Send(back);
       }
     }
-    PS_VLOG(1) << "the scheduler is connected to "
-               << num_workers_ << " workers and " << num_servers_ << " servers";
+    PS_VLOG(1) << "the scheduler is connected to " << num_workers_ << " workers and "
+               << num_servers_ << " servers";
     ready_ = true;
   } else if (!recovery_nodes->control.node.empty()) {
     auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout_);
@@ -97,8 +98,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
     Postoffice::Get()->UpdateHeartbeat(recovery_nodes->control.node[0].id, t);
     Message back;
     for (int r : Postoffice::Get()->GetNodeIDs(kWorkerGroup + kServerGroup)) {
-      if (r != recovery_nodes->control.node[0].id
-          && dead_set.find(r) != dead_set.end()) {
+      if (r != recovery_nodes->control.node[0].id && dead_set.find(r) != dead_set.end()) {
         // do not try to send anything to dead node
         continue;
       }
@@ -126,15 +126,15 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
       // some node dies and restarts
       CHECK(ready_.load());
       for (size_t i = 0; i < nodes->control.node.size() - 1; ++i) {
-        const auto& node = nodes->control.node[i];
+        const auto &node = nodes->control.node[i];
         if (deadnodes_set->find(node.id) != deadnodes_set->end() &&
             node.role == ctrl.node[0].role) {
-          auto& recovery_node = ctrl.node[0];
+          auto &recovery_node = ctrl.node[0];
           // assign previous node id
           recovery_node.id = node.id;
           recovery_node.is_recovery = true;
-          PS_VLOG(1) << "replace dead node " << node.DebugString()
-                     << " by node " << recovery_node.DebugString();
+          PS_VLOG(1) << "replace dead node " << node.DebugString() << " by node "
+                     << recovery_node.DebugString();
           nodes->control.node[i] = recovery_node;
           recovery_nodes->control.node.push_back(recovery_node);
           break;
@@ -145,9 +145,9 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
 
   // update my id
   for (size_t i = 0; i < ctrl.node.size(); ++i) {
-    const auto& node = ctrl.node[i];
+    const auto &node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
-    if (getenv("DMLC_RANK") == nullptr || my_node_.id == Meta::kEmpty) {
+      if (getenv("DMLC_RANK") == nullptr || my_node_.id == Meta::kEmpty) {
         my_node_ = node;
         std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
@@ -160,8 +160,8 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   }
 }
 
-void Van::ProcessHearbeat(Message* msg) {
-  auto& ctrl = msg->meta.control;
+void Van::ProcessHearbeat(Message *msg) {
+  auto &ctrl = msg->meta.control;
   time_t t = time(NULL);
   for (auto &node : ctrl.node) {
     Postoffice::Get()->UpdateHeartbeat(node.id, t);
@@ -177,8 +177,8 @@ void Van::ProcessHearbeat(Message* msg) {
   }
 }
 
-void Van::ProcessBarrierCommand(Message* msg) {
-  auto& ctrl = msg->meta.control;
+void Van::ProcessBarrierCommand(Message *msg) {
+  auto &ctrl = msg->meta.control;
   if (msg->meta.request) {
     if (barrier_count_.empty()) {
       barrier_count_.resize(8, 0);
@@ -186,8 +186,7 @@ void Van::ProcessBarrierCommand(Message* msg) {
     int group = ctrl.barrier_group;
     ++barrier_count_[group];
     PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
-    if (barrier_count_[group] ==
-        static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
+    if (barrier_count_[group] == static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
       barrier_count_[group] = 0;
       Message res;
       res.meta.request = false;
@@ -208,30 +207,30 @@ void Van::ProcessBarrierCommand(Message* msg) {
   }
 }
 
-void Van::ProcessDataMsg(Message* msg) {
+void Van::ProcessDataMsg(Message *msg) {
   // data msg
   CHECK_NE(msg->meta.sender, Meta::kEmpty);
   CHECK_NE(msg->meta.recver, Meta::kEmpty);
   CHECK_NE(msg->meta.app_id, Meta::kEmpty);
   int app_id = msg->meta.app_id;
   int customer_id = Postoffice::Get()->is_worker() ? msg->meta.customer_id : app_id;
-  auto* obj = Postoffice::Get()->GetCustomer(app_id, customer_id, 5);
-  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer " << customer_id \
-    << " ready at " << my_node_.role;
+  auto *obj = Postoffice::Get()->GetCustomer(app_id, customer_id, 5);
+  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer " << customer_id
+             << " ready at " << my_node_.role;
   obj->Accept(*msg);
 }
 
-void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes) {
+void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes) {
   auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout_);
   std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
-  auto& ctrl = msg->meta.control;
+  auto &ctrl = msg->meta.control;
 
   UpdateLocalID(msg, &dead_set, nodes, recovery_nodes);
 
   if (is_scheduler_) {
     ProcessAddNodeCommandAtScheduler(msg, nodes, recovery_nodes);
   } else {
-    for (const auto& node : ctrl.node) {
+    for (const auto &node : ctrl.node) {
       std::string addr_str = node.hostname + ":" + std::to_string(node.port);
       if (connected_nodes_.find(addr_str) == connected_nodes_.end()) {
         Connect(node);
@@ -302,8 +301,7 @@ void Van::Start(int customer_id) {
       drop_rate_ = atoi(Environment::Get()->find("PS_DROP_MSG"));
     }
     // start receiver
-    receiver_thread_ = std::unique_ptr<std::thread>(
-            new std::thread(&Van::Receiving, this));
+    receiver_thread_ = std::unique_ptr<std::thread>(new std::thread(&Van::Receiving, this));
     init_stage++;
   }
   start_mu_.unlock();
@@ -338,8 +336,7 @@ void Van::Start(int customer_id) {
 
     if (!is_scheduler_) {
       // start heartbeat thread
-      heartbeat_thread_ = std::unique_ptr<std::thread>(
-              new std::thread(&Van::Heartbeat, this));
+      heartbeat_thread_ = std::unique_ptr<std::thread>(new std::thread(&Van::Heartbeat, this));
     }
     init_stage++;
   }
@@ -368,7 +365,7 @@ void Van::Stop() {
   barrier_count_.clear();
 }
 
-int Van::Send(const Message& msg) {
+int Van::Send(const Message &msg) {
   int send_bytes = SendMsg(msg);
   CHECK_NE(send_bytes, -1);
   send_bytes_ += send_bytes;
@@ -406,7 +403,7 @@ void Van::Receiving() {
 
     if (!msg.meta.control.empty()) {
       // control msg
-      auto& ctrl = msg.meta.control;
+      auto &ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
         ProcessTerminateCommand();
         break;
@@ -425,7 +422,7 @@ void Van::Receiving() {
   }
 }
 
-void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
+void Van::PackMetaPB(const Meta &meta, PBMeta *pb) {
   pb->set_head(meta.head);
   if (meta.app_id != Meta::kEmpty) pb->set_app_id(meta.app_id);
   if (meta.timestamp != Meta::kEmpty) pb->set_timestamp(meta.timestamp);
@@ -443,7 +440,7 @@ void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
     } else if (meta.control.cmd == Control::ACK) {
       ctrl->set_msg_sig(meta.control.msg_sig);
     }
-    for (const auto& n : meta.control.node) {
+    for (const auto &n : meta.control.node) {
       auto p = ctrl->add_node();
       p->set_id(n.id);
       p->set_role(n.role);
@@ -456,7 +453,7 @@ void Van::PackMetaPB(const Meta& meta, PBMeta *pb) {
   pb->set_data_size(meta.data_size);
 }
 
-void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
+void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   // convert into protobuf
   PBMeta pb;
   pb.set_head(meta.head);
@@ -476,7 +473,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
     } else if (meta.control.cmd == Control::ACK) {
       ctrl->set_msg_sig(meta.control.msg_sig);
     }
-    for (const auto& n : meta.control.node) {
+    for (const auto &n : meta.control.node) {
       auto p = ctrl->add_node();
       p->set_id(n.id);
       p->set_role(n.role);
@@ -492,17 +489,15 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   *buf_size = pb.ByteSize();
   // allocate buffer only when needed
   if (*meta_buf == nullptr) {
-    *meta_buf = new char[*buf_size+1];
+    *meta_buf = new char[*buf_size + 1];
   }
-  CHECK(pb.SerializeToArray(*meta_buf, *buf_size))
-    << "failed to serialize protbuf";
+  CHECK(pb.SerializeToArray(*meta_buf, *buf_size)) << "failed to serialize protbuf";
 }
 
-void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
+void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   // to protobuf
   PBMeta pb;
-  CHECK(pb.ParseFromArray(meta_buf, buf_size))
-    << "failed to parse string into protobuf";
+  CHECK(pb.ParseFromArray(meta_buf, buf_size)) << "failed to parse string into protobuf";
 
   // to meta
   meta->head = pb.head();
@@ -518,12 +513,12 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
     meta->data_type[i] = static_cast<DataType>(pb.data_type(i));
   }
   if (pb.has_control()) {
-    const auto& ctrl = pb.control();
+    const auto &ctrl = pb.control();
     meta->control.cmd = static_cast<Control::Command>(ctrl.cmd());
     meta->control.barrier_group = ctrl.barrier_group();
     meta->control.msg_sig = ctrl.msg_sig();
     for (int i = 0; i < ctrl.node_size(); ++i) {
-      const auto& p = ctrl.node(i);
+      const auto &p = ctrl.node(i);
       Node n;
       n.role = static_cast<Node::Role>(p.role());
       n.port = p.port();
@@ -540,7 +535,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
 }
 
 void Van::Heartbeat() {
-  const char* val = Environment::Get()->find("PS_HEARTBEAT_INTERVAL");
+  const char *val = Environment::Get()->find("PS_HEARTBEAT_INTERVAL");
   const int interval = val ? atoi(val) : kDefaultHeartbeatInterval;
   while (interval > 0 && ready_.load()) {
     std::this_thread::sleep_for(std::chrono::seconds(interval));

@@ -59,10 +59,10 @@ void RunWorker() {
 }
 
 int main(int argc, char *argv[]) {
-  // setup server nodes
-  StartServer();
   // start system
   Start(0);
+  // setup server nodes
+  StartServer();
   // run worker nodes
   RunWorker();
   // stop system
