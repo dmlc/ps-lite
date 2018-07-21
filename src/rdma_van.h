@@ -34,8 +34,6 @@ const int kTxDepth = 128;
 const int kSGEntry = 4;
 const int kTimeoutms = 1000;
 const int kRdmaListenBacklog = 128;
-const size_t kBufSize = 0x80000000;
-const int kRingSlots = 256;
 const int kMaxConcurrentWrites = kRxDepth + kTxDepth;
 const int kMaxHostnameLength = 16;
 const int kMaxDataFields = 4;
@@ -51,18 +49,18 @@ static inline T align_ceil(T v, T align) {
 }
 
 enum MessageTypes : uint32_t {
-  kRequest,
-  kResponse,
+  kRendezvousStart,
+  kRendezvousReply,
 };
 
-struct alignas(64) Request {
+struct alignas(64) RendezvousStart {
   uint64_t meta_len;
   uint64_t data_num;
   uint64_t data_len[kMaxDataFields];
   uint64_t origin_addr;
 };
 
-struct alignas(64) Response {
+struct alignas(64) RendezvousReply {
   uint64_t addr;
   uint64_t origin_addr;
   uint32_t rkey;
@@ -101,8 +99,8 @@ struct RequestContext {
   char hostname[kMaxHostnameLength];
 };
 
-static_assert(std::is_pod<Request>::value, "Request must be a POD type.");
-static_assert(std::is_pod<Response>::value, "Response must be a POD type.");
+static_assert(std::is_pod<RendezvousStart>::value, "RendezvousStart must be a POD type.");
+static_assert(std::is_pod<RendezvousReply>::value, "RendezvousReply must be a POD type.");
 static_assert(std::is_pod<RequestContext>::value, "RequestContext must be a POD type.");
 
 template <typename T>
@@ -203,9 +201,9 @@ struct RDMAEndpoint {
     CHECK_EQ(rdma_create_qp(cm_id, pd, &attr), 0) << "Create RDMA queue pair failed";
 
     for (size_t i = 0; i < kRxDepth; ++i) {
-      void *buf = malloc(sizeof(Request));
+      void *buf = malloc(sizeof(RendezvousStart));
       CHECK(buf);
-      rx_mr[i] = ibv_reg_mr(pd, buf, sizeof(Request), IBV_ACCESS_LOCAL_WRITE);
+      rx_mr[i] = ibv_reg_mr(pd, buf, sizeof(RendezvousStart), IBV_ACCESS_LOCAL_WRITE);
       CHECK(rx_mr[i]);
       PostRecv(rx_mr[i]);
     }
@@ -217,12 +215,12 @@ struct RDMAEndpoint {
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(mr->addr);
-    sge.length = sizeof(Request);
+    sge.length = sizeof(RendezvousStart);
     sge.lkey = mr->lkey;
 
     WRContext *context = reinterpret_cast<WRContext *>(malloc(sizeof(WRContext)));
     context->buffer = mr;
-    context->len = sizeof(Request);
+    context->len = sizeof(RendezvousStart);
     context->private_data = this;
 
     wr.wr_id = reinterpret_cast<uint64_t>(context);
@@ -397,7 +395,7 @@ class RDMAVan : public Van {
     msg_buf->data = msg.data;
     meta.SerializeToArray(msg_buf->meta_buf, msg_buf->meta_len);
 
-    Request *req = reinterpret_cast<Request *>(malloc(sizeof(Request)));
+    RendezvousStart *req = reinterpret_cast<RendezvousStart *>(malloc(sizeof(RendezvousStart)));
     req->meta_len = meta.ByteSize();
     for (size_t i = 0; i < msg.data.size(); ++i) {
       req->data_len[i] = msg.data[i].size();
@@ -405,17 +403,17 @@ class RDMAVan : public Van {
     req->data_num = msg.data.size();
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
 
-    struct ibv_mr *mr = ibv_reg_mr(pd_, req, sizeof(Request), 0);
+    struct ibv_mr *mr = ibv_reg_mr(pd_, req, sizeof(RendezvousStart), 0);
     CHECK(mr);
 
     WRContext *context = reinterpret_cast<WRContext *>(malloc(sizeof(WRContext)));
     context->buffer = req;
-    context->len = sizeof(Request);
+    context->len = sizeof(RendezvousStart);
     context->private_data = mr;
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(req);
-    sge.length = sizeof(Request);
+    sge.length = sizeof(RendezvousStart);
     sge.lkey = mr->lkey;
 
     struct ibv_send_wr wr, *bad_wr = nullptr;
@@ -425,7 +423,7 @@ class RDMAVan : public Van {
     wr.opcode = IBV_WR_SEND_WITH_IMM;
     wr.next = nullptr;
 
-    wr.imm_data = kRequest;
+    wr.imm_data = kRendezvousStart;
 
     wr.send_flags = IBV_SEND_SIGNALED;
     wr.sg_list = &sge;
@@ -548,9 +546,9 @@ class RDMAVan : public Van {
             RDMAEndpoint *endpoint = reinterpret_cast<RDMAEndpoint *>(context->private_data);
             struct ibv_mr *mr = reinterpret_cast<struct ibv_mr *>(context->buffer);
 
-            if (imm == kRequest) {
-              // LOG(INFO) << "opcode: IBV_WC_RECV kRequest";
-              Request *req = reinterpret_cast<Request *>(mr->addr);
+            if (imm == kRendezvousStart) {
+              // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousStart";
+              RendezvousStart *req = reinterpret_cast<RendezvousStart *>(mr->addr);
 
               BufferContext *buf_ctx =
                   reinterpret_cast<BufferContext *>(malloc(sizeof(BufferContext)));
@@ -571,23 +569,25 @@ class RDMAVan : public Van {
               buf_ctx->mr = rx_mr;
               uint64_t origin_addr = req->origin_addr;
 
-              Response *resp = reinterpret_cast<Response *>(malloc(sizeof(Response)));
+              RendezvousReply *resp =
+                  reinterpret_cast<RendezvousReply *>(malloc(sizeof(RendezvousReply)));
+
               resp->addr = reinterpret_cast<uint64_t>(buffer);
               resp->rkey = rx_mr->rkey;
               resp->origin_addr = origin_addr;
               resp->idx = addr_pool_.StoreAddress(buf_ctx);
 
-              struct ibv_mr *mr = ibv_reg_mr(pd_, resp, sizeof(Response), 0);
+              struct ibv_mr *mr = ibv_reg_mr(pd_, resp, sizeof(RendezvousReply), 0);
               CHECK(mr);
 
               WRContext *context_tx = reinterpret_cast<WRContext *>(malloc(sizeof(WRContext)));
               context_tx->buffer = resp;
-              context_tx->len = sizeof(Response);
+              context_tx->len = sizeof(RendezvousReply);
               context_tx->private_data = mr;
 
               struct ibv_sge sge;
               sge.addr = reinterpret_cast<uint64_t>(resp);
-              sge.length = sizeof(Response);
+              sge.length = sizeof(RendezvousReply);
               sge.lkey = mr->lkey;
 
               struct ibv_send_wr wr, *bad_wr = nullptr;
@@ -597,7 +597,7 @@ class RDMAVan : public Van {
               wr.opcode = IBV_WR_SEND_WITH_IMM;
               wr.next = nullptr;
 
-              wr.imm_data = kResponse;
+              wr.imm_data = kRendezvousReply;
 
               wr.send_flags = IBV_SEND_SIGNALED;
               wr.sg_list = &sge;
@@ -606,9 +606,9 @@ class RDMAVan : public Van {
               CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0)
                   << "ibv_post_send failed.";
 
-            } else if (imm == kResponse) {
-              // LOG(INFO) << "opcode: IBV_WC_RECV kResponse";
-              Response *resp = reinterpret_cast<Response *>(mr->addr);
+            } else if (imm == kRendezvousReply) {
+              // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousReply";
+              RendezvousReply *resp = reinterpret_cast<RendezvousReply *>(mr->addr);
               uint64_t remote_addr = resp->addr;
               uint64_t origin_addr = resp->origin_addr;
               uint32_t rkey = resp->rkey;
