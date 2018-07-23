@@ -32,14 +32,15 @@
 
 namespace ps {
 
-const int kRxDepth = 128;
-const int kTxDepth = 128;
-const int kSGEntry = 4;
-const int kTimeoutms = 1000;
-const int kRdmaListenBacklog = 128;
-const int kMaxConcurrentWorkRequest = kRxDepth + kTxDepth;
-const int kMaxHostnameLength = 16;
-const int kMaxDataFields = 4;
+static const int kRxDepth = 128;
+static const int kTxDepth = 128;
+static const int kSGEntry = 4;
+static const int kTimeoutms = 1000;
+static const int kRdmaListenBacklog = 128;
+static const int kMaxConcurrentWorkRequest = kRxDepth + kTxDepth;
+static const int kMaxHostnameLength = 16;
+static const int kMaxDataFields = 4;
+static const size_t kAlignment = 8;
 
 template <typename T>
 static inline T align_floor(T v, T align) {
@@ -54,7 +55,7 @@ static inline T align_ceil(T v, T align) {
 class SimpleMempool {
  public:
   explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x80000000) {
-    char *p = reinterpret_cast<char *>(malloc(size));
+    char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
     CHECK(p);
     CHECK(mr = ibv_reg_mr(pd, p, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
     free_list.emplace(size, p);
@@ -72,20 +73,22 @@ class SimpleMempool {
       return nullptr;
     }
 
-    auto it = free_list.lower_bound(size);
+    size_t proper_size = align_ceil(size, kAlignment);
+
+    auto it = free_list.lower_bound(proper_size);
     CHECK_NE(free_list.end(), it);
 
     char *ret = it->second;
 
-    CHECK_GE(it->first, size);
+    CHECK_GE(it->first, proper_size);
 
-    size_t space_left = it->first - size;
+    size_t space_left = it->first - proper_size;
 
-    used_list.emplace(ret, size);
+    used_list.emplace(ret, proper_size);
     free_list.erase(it);
 
     if (space_left) {
-      free_list.emplace(space_left, ret + size);
+      free_list.emplace(space_left, ret + proper_size);
     }
 
     return ret;
@@ -121,40 +124,39 @@ enum MessageTypes : uint32_t {
   kRendezvousReply,
 };
 
-struct alignas(64) RendezvousStart {
+struct RendezvousStart {
   uint64_t meta_len;
   uint64_t data_num;
   uint64_t data_len[kMaxDataFields];
   uint64_t origin_addr;
 };
 
-struct alignas(64) RendezvousReply {
+struct RendezvousReply {
   uint64_t addr;
   uint64_t origin_addr;
   uint32_t rkey;
   uint32_t idx;
 };
 
-struct alignas(64) WRContext {
+struct WRContext {
   struct ibv_mr *buffer;
-  size_t len;
   void *private_data;
 };
 
-struct alignas(64) BufferContext {
+struct BufferContext {
   char *buffer;
   size_t meta_len;
   size_t data_num;
   size_t data_len[kMaxDataFields];
 };
 
-struct alignas(64) LocalBufferContext {
+struct LocalBufferContext {
   size_t meta_len;
   char *meta_buf;
   std::vector<SArray<char>> data;
 };
 
-struct alignas(64) MessageBuffer {
+struct MessageBuffer {
   size_t meta_len;
   size_t data_len;
   char *meta_buf;
@@ -271,12 +273,11 @@ struct RDMAEndpoint {
     CHECK_EQ(rdma_create_qp(cm_id, pd, &attr), 0) << "Create RDMA queue pair failed";
 
     for (size_t i = 0; i < kRxDepth; ++i) {
-      void *buf = malloc(kMempoolChunkSize);
+      void *buf = aligned_alloc(kAlignment, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
       CHECK(mr);
       rx_wr_ctx[i].buffer = mr;
-      rx_wr_ctx[i].len = kMempoolChunkSize;
       rx_wr_ctx[i].private_data = this;
 
       PostRecv(&rx_wr_ctx[i]);
