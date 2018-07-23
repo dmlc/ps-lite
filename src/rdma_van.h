@@ -506,7 +506,7 @@ class RDMAVan : public Van {
     wr.sg_list = &sge;
     wr.num_sge = 1;
 
-    CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0) << "ibv_post_send failed.";
+    CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0) << strerror(errno);
 
     return meta.ByteSize() + msg.meta.data_size;
   }
@@ -570,7 +570,7 @@ class RDMAVan : public Van {
     mempool_.reset(new SimpleMempool(pd_));
 
     comp_event_channel_ = ibv_create_comp_channel(context_);
-    cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest * 2, NULL, comp_event_channel_, 0);
+    cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest, NULL, comp_event_channel_, 0);
 
     CHECK(cq_) << "Failed to create completion queue";
     CHECK(!ibv_req_notify_cq(cq_, 0)) << "Failed to request CQ notification";
@@ -580,9 +580,9 @@ class RDMAVan : public Van {
 
   void PollCQ() {
     // Pre-allocated work completions array used for polling
-    struct ibv_wc wc[kMaxConcurrentWorkRequest * 2];
+    struct ibv_wc wc[kMaxConcurrentWorkRequest];
     while (!should_stop_.load()) {
-      int ne = ibv_poll_cq(cq_, kMaxConcurrentWorkRequest * 2, wc);
+      int ne = ibv_poll_cq(cq_, kMaxConcurrentWorkRequest, wc);
       CHECK_GE(ne, 0);
       for (int i = 0; i < ne; ++i) {
         CHECK(wc[i].status == IBV_WC_SUCCESS)
@@ -824,6 +824,7 @@ class RDMAVan : public Van {
     }
 
     endpoint->Init(cq_, pd_);
+    CHECK_EQ(ibv_resize_cq(cq_, kMaxConcurrentWorkRequest * endpoints_.size()), 0);
 
     RequestContext ctx;
     ctx.node = static_cast<uint32_t>(my_node_.id);
@@ -857,7 +858,10 @@ class RDMAVan : public Van {
     if (context_ == nullptr) {
       InitContext(id->verbs);
     }
+
     endpoint->Init(cq_, pd_);
+    CHECK_EQ(ibv_resize_cq(cq_, kMaxConcurrentWorkRequest * endpoints_.size()), 0)
+        << strerror(errno);
 
     RequestContext ctx;
     ctx.node = static_cast<uint32_t>(my_node_.id);
