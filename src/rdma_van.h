@@ -119,6 +119,17 @@ class SimpleMempool {
   struct ibv_mr *mr;
 };
 
+class Block {
+ public:
+  explicit Block(SimpleMempool *pool, char *addr) : pool(pool), addr(addr) {}
+
+  ~Block() { pool->Free(addr); }
+
+ private:
+  SimpleMempool *pool;
+  char *addr;
+};
+
 enum MessageTypes : uint32_t {
   kRendezvousStart,
   kRendezvousReply,
@@ -553,22 +564,26 @@ class RDMAVan : public Van {
     msg->meta.recver = my_node_.id;
     msg->meta.sender = endpoint->node_id;
 
-    const char *cur = reinterpret_cast<char *>(buffer_ctx->buffer);
+    char *cur = buffer_ctx->buffer;
+
     UnpackMeta(cur, buffer_ctx->meta_len, &msg->meta);
     total_len += buffer_ctx->meta_len;
     uint64_t data_num = buffer_ctx->data_num;
     cur += buffer_ctx->meta_len;
 
+    std::shared_ptr<Block> mem_block = std::make_shared<Block>(mempool_.get(), buffer_ctx->buffer);
+
     for (size_t i = 0; i < data_num; i++) {
       uint32_t len = buffer_ctx->data_len[i];
+      std::shared_ptr<Block> *block_ref = new std::shared_ptr<Block>(mem_block);
       SArray<char> data;
-      data.CopyFrom(cur, len);
+      data.reset(cur, len,
+                 [block_ref](void *) { delete block_ref; });  // Defer the deletion of block_ref
       msg->data.push_back(data);
       cur += len;
       total_len += len;
     }
 
-    mempool_->Free(buffer_ctx->buffer);
     mempool_->Free(reinterpret_cast<char *>(buffer_ctx));
 
     return total_len;
