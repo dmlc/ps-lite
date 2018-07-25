@@ -41,6 +41,7 @@ static const int kMaxConcurrentWorkRequest = kRxDepth + kTxDepth;
 static const int kMaxHostnameLength = 16;
 static const int kMaxDataFields = 4;
 static const size_t kAlignment = 8;
+static const size_t kInlineThreshold = 1024 * 1024;  // 1 MB
 
 template <typename T>
 static inline T align_floor(T v, T align) {
@@ -167,11 +168,13 @@ struct LocalBufferContext {
   std::vector<SArray<char>> data;
 };
 
+typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>> MRPtr;
+
 struct MessageBuffer {
-  size_t meta_len;
-  size_t data_len;
-  char *meta_buf;
-  char *data_buf;
+  size_t inline_len;
+  char *inline_buf;
+  std::vector<SArray<char>> data;
+  std::vector<std::pair<MRPtr, size_t>> mrs;
 };
 
 struct RequestContext {
@@ -484,29 +487,44 @@ class RDMAVan : public Van {
 
     CHECK_NE(endpoints_.find(remote_id), endpoints_.end());
     RDMAEndpoint *endpoint = endpoints_[remote_id].get();
+    MessageBuffer *msg_buf = new MessageBuffer();
 
-    MessageBuffer *msg_buf =
-        reinterpret_cast<MessageBuffer *>(mempool_->Alloc(sizeof(MessageBuffer)));
+    size_t meta_len = meta.ByteSize();
+    size_t data_len = msg.meta.data_size;
+    size_t total_len = meta_len + data_len;
 
-    CHECK(meta.ByteSize());
-    msg_buf->meta_len = meta.ByteSize();
-    msg_buf->data_len = msg.meta.data_size;
-    msg_buf->meta_buf = mempool_->Alloc(msg_buf->meta_len);
-    msg_buf->data_buf = mempool_->Alloc(msg_buf->data_len);
-    meta.SerializeToArray(msg_buf->meta_buf, msg_buf->meta_len);
+    CHECK(meta_len);
 
-    char *cur = reinterpret_cast<char *>(msg_buf->data_buf);
-    for (size_t i = 0; i < msg.data.size(); ++i) {
-      size_t size = msg.data[i].size();
-      memcpy(cur, msg.data[i].data(), size);
-      cur += size;
+    if (total_len <= kInlineThreshold) {
+      msg_buf->inline_len = total_len;
+      msg_buf->inline_buf = mempool_->Alloc(total_len);
+      meta.SerializeToArray(msg_buf->inline_buf, meta_len);
+      char *cur = msg_buf->inline_buf + meta_len;
+      for (auto &sa : msg.data) {
+        size_t seg_len = sa.size();
+        memcpy(cur, sa.data(), seg_len);
+        cur += seg_len;
+      }
+    } else {
+      msg_buf->inline_len = meta_len;
+      msg_buf->inline_buf = mempool_->Alloc(meta_len);
+      msg_buf->data = msg.data;
+      meta.SerializeToArray(msg_buf->inline_buf, meta_len);
+      for (auto &sa : msg_buf->data) {
+        if (sa.size()) {
+          MRPtr ptr(ibv_reg_mr(pd_, sa.data(), sa.size(), 0),
+                    [](struct ibv_mr *mr) { ibv_dereg_mr(mr); });
+          CHECK(ptr.get()) << strerror(errno);
+          msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
+        }
+      }
     }
 
     WRContext *context = nullptr;
     endpoint->free_tx_wr.WaitAndPop(&context);
 
     RendezvousStart *req = reinterpret_cast<RendezvousStart *>(context->buffer->addr);
-    req->meta_len = meta.ByteSize();
+    req->meta_len = meta_len;
 
     for (size_t i = 0; i < msg.data.size(); ++i) {
       req->data_len[i] = msg.data[i].size();
@@ -534,7 +552,7 @@ class RDMAVan : public Van {
 
     CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0) << strerror(errno);
 
-    return meta.ByteSize() + msg.meta.data_size;
+    return total_len;
   }
 
   int RecvMsg(Message *msg) override {
@@ -634,9 +652,8 @@ class RDMAVan : public Van {
             // LOG(INFO) << "opcode: IBV_WC_RDMA_WRITE";
             // Note: This is not a struct ibv_mr*
             MessageBuffer *msg_buf = *reinterpret_cast<MessageBuffer **>(context->buffer->addr);
-            mempool_->Free(msg_buf->meta_buf);
-            mempool_->Free(msg_buf->data_buf);
-            mempool_->Free(reinterpret_cast<char *>(msg_buf));
+            mempool_->Free(msg_buf->inline_buf);
+            delete msg_buf;
             endpoint->free_tx_wr.Push(context);
           } break;
           case IBV_WC_RECV_RDMA_WITH_IMM: {
@@ -715,15 +732,21 @@ class RDMAVan : public Van {
 
               MessageBuffer *msg_buf = reinterpret_cast<MessageBuffer *>(origin_addr);
 
-              struct ibv_sge sge[2];
+              struct ibv_sge sge[1 + msg_buf->mrs.size()];
 
-              sge[0].addr = reinterpret_cast<uint64_t>(msg_buf->meta_buf);
-              sge[0].length = msg_buf->meta_len;
+              sge[0].addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
+              sge[0].length = msg_buf->inline_len;
               sge[0].lkey = mempool_->LocalKey();
 
-              sge[1].addr = reinterpret_cast<uint64_t>(msg_buf->data_buf);
-              sge[1].length = msg_buf->data_len;
-              sge[1].lkey = mempool_->LocalKey();
+              size_t num_sge = 1;
+              for (auto &pair : msg_buf->mrs) {
+                size_t length = pair.second;
+                CHECK(length);
+                sge[num_sge].addr = reinterpret_cast<uint64_t>(pair.first->addr);
+                sge[num_sge].length = length;
+                sge[num_sge].lkey = pair.first->lkey;
+                ++num_sge;
+              }
 
               WRContext *context = nullptr;
               endpoint->free_tx_wr.WaitAndPop(&context);
@@ -741,7 +764,7 @@ class RDMAVan : public Van {
 
               wr.send_flags = IBV_SEND_SIGNALED;
               wr.sg_list = sge;
-              wr.num_sge = 1 + (msg_buf->data_len > 0 ? 1 : 0);
+              wr.num_sge = num_sge;
 
               wr.wr.rdma.remote_addr = remote_addr;
               wr.wr.rdma.rkey = rkey;
