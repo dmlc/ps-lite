@@ -41,7 +41,7 @@ static const int kMaxConcurrentWorkRequest = kRxDepth + kTxDepth;
 static const int kMaxHostnameLength = 16;
 static const int kMaxDataFields = 4;
 static const size_t kAlignment = 8;
-static const size_t kInlineThreshold = 1024 * 1024;  // 1 MB
+static const size_t kInlineThreshold = 1024 * 32;  // 32 KB
 
 template <typename T>
 static inline T align_floor(T v, T align) {
