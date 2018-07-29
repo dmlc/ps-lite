@@ -32,7 +32,7 @@
 
 namespace ps {
 
-static const int kStartDepth = 16;
+static const int kStartDepth = 128;
 static const int kWriteDepth = kStartDepth;
 
 static const int kRxDepth = kStartDepth * 2;
@@ -756,7 +756,6 @@ class RDMAVan : public Van {
             CHECK(wc[i].wc_flags & IBV_WC_WITH_IMM);
             uint32_t imm = wc[i].imm_data;
             struct ibv_mr *mr = context->buffer;
-            ReleaseWorkRequestContext(context, endpoint);
 
             if (imm == kRendezvousStart) {
               // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousStart";
@@ -862,6 +861,7 @@ class RDMAVan : public Van {
             } else {
               CHECK(0);
             }
+            ReleaseWorkRequestContext(context, endpoint);
           } break;
           default:
             CHECK(0) << "Unexpected opcode: " << wc[i].opcode;
