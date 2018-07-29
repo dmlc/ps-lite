@@ -67,47 +67,48 @@ class SimpleMempool {
   }
 
   ~SimpleMempool() {
+    std::lock_guard<std::mutex> lk(mu_);
     free(mr->addr);
     CHECK_EQ(ibv_dereg_mr(mr), 0);
   }
 
   char *Alloc(size_t size) {
-    std::lock_guard<std::mutex> lk(mu_);
-
     if (size == 0) {
       return nullptr;
     }
 
+    std::lock_guard<std::mutex> lk(mu_);
+
     size_t proper_size = align_ceil(size, kAlignment);
 
     auto it = free_list.lower_bound(proper_size);
-    CHECK_NE(free_list.end(), it);
+    CHECK_NE(free_list.end(), it) << "Not enough memory";
     CHECK_GE(it->first, proper_size);
 
-    char *ret = it->second;
+    char *addr = it->second;
     size_t space_left = it->first - proper_size;
 
     free_list.erase(it);
-    CHECK_EQ(used_list.find(ret), used_list.end()) << "Address is already allocated";
+    CHECK_EQ(used_list.find(addr), used_list.end()) << "Address is already allocated";
 
-    used_list.emplace(ret, proper_size);
+    used_list.emplace(addr, proper_size);
 
     if (space_left) {
-      free_list.emplace(space_left, ret + proper_size);
+      free_list.emplace(space_left, addr + proper_size);
     }
 
-    return ret;
+    return addr;
   }
 
   void Free(char *addr) {
-    std::lock_guard<std::mutex> lk(mu_);
-
     if (!addr) {
       return;
     }
 
+    std::lock_guard<std::mutex> lk(mu_);
+
     auto it = used_list.find(addr);
-    CHECK_NE(used_list.end(), it) << "addr: " << (uintptr_t) addr;
+    CHECK_NE(used_list.end(), it) << "Cannot find info about address: " << (uintptr_t)addr;
 
     size_t size = it->second;
     used_list.erase(it);
@@ -126,13 +127,23 @@ class SimpleMempool {
 
 class Block {
  public:
-  explicit Block(SimpleMempool *pool, char *addr) : pool(pool), addr(addr) {}
+  explicit Block(SimpleMempool *pool, char *addr, int count)
+      : pool(pool), addr(addr), counter(count) {}
 
   ~Block() { pool->Free(addr); }
+
+  void Release() {
+    --counter;
+    // LOG(INFO) << "Decrementing addr " << (uintptr_t)addr << ", counter: " << counter;
+    if (counter == 0) {
+      delete this;
+    }
+  }
 
  private:
   SimpleMempool *pool;
   char *addr;
+  std::atomic<int> counter;
 };
 
 enum MessageTypes : uint32_t {
@@ -640,21 +651,19 @@ class RDMAVan : public Van {
     uint64_t data_num = buffer_ctx->data_num;
     cur += buffer_ctx->meta_len;
 
-    std::shared_ptr<Block> mem_block = std::make_shared<Block>(mempool_.get(), buffer_ctx->buffer);
+    Block *mem_block = new Block(mempool_.get(), buffer_ctx->buffer, data_num);
 
     for (size_t i = 0; i < data_num; i++) {
       uint32_t len = buffer_ctx->data_len[i];
-      std::shared_ptr<Block> *block_ref = new std::shared_ptr<Block>(mem_block);
       SArray<char> data;
       data.reset(cur, len,
-                 [block_ref](void *) { delete block_ref; });  // Defer the deletion of block_ref
+                 [mem_block](void *) { mem_block->Release(); });  // Defer the deletion of block_ref
       msg->data.push_back(data);
       cur += len;
       total_len += len;
     }
 
-    mempool_->Free(reinterpret_cast<char *>(buffer_ctx));
-
+    delete buffer_ctx;
     return total_len;
   }
 
@@ -745,8 +754,7 @@ class RDMAVan : public Van {
               // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousStart";
               RendezvousStart *req = reinterpret_cast<RendezvousStart *>(mr->addr);
 
-              BufferContext *buf_ctx =
-                  reinterpret_cast<BufferContext *>(mempool_->Alloc(sizeof(BufferContext)));
+              BufferContext *buf_ctx = new BufferContext();
 
               uint64_t len = req->meta_len;
               buf_ctx->meta_len = len;
