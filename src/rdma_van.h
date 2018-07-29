@@ -32,7 +32,7 @@
 
 namespace ps {
 
-static const int kStartDepth = 128;
+static const int kStartDepth = 16;
 static const int kWriteDepth = kStartDepth;
 
 static const int kRxDepth = kStartDepth * 2;
@@ -130,12 +130,15 @@ class Block {
   explicit Block(SimpleMempool *pool, char *addr, int count)
       : pool(pool), addr(addr), counter(count) {}
 
-  ~Block() { pool->Free(addr); }
+  ~Block() {
+    CHECK_EQ(counter, 0);
+    pool->Free(addr);
+  }
 
   void Release() {
-    --counter;
+    int v = counter.fetch_sub(1);
     // LOG(INFO) << "Decrementing addr " << (uintptr_t)addr << ", counter: " << counter;
-    if (counter == 0) {
+    if (v == 1) {
       delete this;
     }
   }
@@ -651,16 +654,21 @@ class RDMAVan : public Van {
     uint64_t data_num = buffer_ctx->data_num;
     cur += buffer_ctx->meta_len;
 
-    Block *mem_block = new Block(mempool_.get(), buffer_ctx->buffer, data_num);
+    if (data_num > 0) {
+      Block *mem_block = new Block(mempool_.get(), buffer_ctx->buffer, data_num);
 
-    for (size_t i = 0; i < data_num; i++) {
-      uint32_t len = buffer_ctx->data_len[i];
-      SArray<char> data;
-      data.reset(cur, len,
-                 [mem_block](void *) { mem_block->Release(); });  // Defer the deletion of block_ref
-      msg->data.push_back(data);
-      cur += len;
-      total_len += len;
+      for (size_t i = 0; i < data_num; i++) {
+        uint32_t len = buffer_ctx->data_len[i];
+        SArray<char> data;
+        data.reset(cur, len, [mem_block](void *) {
+          mem_block->Release();
+        });  // Defer the deletion of block_ref
+        msg->data.push_back(data);
+        cur += len;
+        total_len += len;
+      }
+    } else {
+      mempool_->Free(buffer_ctx->buffer);
     }
 
     delete buffer_ctx;
