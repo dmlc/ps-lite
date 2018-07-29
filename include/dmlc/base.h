@@ -21,6 +21,20 @@
 #define DMLC_LOG_FATAL_THROW 1
 #endif
 
+/*!
+ * \brief Whether to print stack trace for fatal error,
+ * enabled on linux when using gcc.
+ */
+#if (defined(__GNUC__) && !defined(__MINGW32__) && !defined(__sun) && !defined(__SVR4) && \
+     !(defined __MINGW64__) && !(defined __ANDROID__))
+#if (!defined(DMLC_LOG_STACK_TRACE))
+#define DMLC_LOG_STACK_TRACE 1
+#endif
+#if (!defined(DMLC_LOG_STACK_TRACE_SIZE))
+#define DMLC_LOG_STACK_TRACE_SIZE 10
+#endif
+#endif
+
 /*! \brief whether compile with hdfs support */
 #ifndef DMLC_USE_HDFS
 #define DMLC_USE_HDFS 0
@@ -38,16 +52,17 @@
 
 /*! \brief whether or not use c++11 support */
 #ifndef DMLC_USE_CXX11
-#define DMLC_USE_CXX11 (defined(__GXX_EXPERIMENTAL_CXX0X__) ||\
-                        __cplusplus >= 201103L || defined(_MSC_VER))
+#define DMLC_USE_CXX11 \
+  (defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L || defined(_MSC_VER))
 #endif
 
 /// check if g++ is before 4.6
 #if DMLC_USE_CXX11 && defined(__GNUC__) && !defined(__clang_version__)
 #if __GNUC__ == 4 && __GNUC_MINOR__ < 6
-#pragma message("Will need g++-4.6 or higher to compile all"           \
-                "the features in dmlc-core, "                           \
-                "compile without c++0x, some features may be disabled")
+#pragma message(                                 \
+    "Will need g++-4.6 or higher to compile all" \
+    "the features in dmlc-core, "                \
+    "compile without c++0x, some features may be disabled")
 #undef DMLC_USE_CXX11
 #define DMLC_USE_CXX11 0
 #endif
@@ -62,17 +77,17 @@
  * section if C++11 is not available.
  */
 #ifndef DISALLOW_COPY_AND_ASSIGN
-#  if DMLC_USE_CXX11
-#    define DISALLOW_COPY_AND_ASSIGN(T) \
-       T(T const&) = delete; \
-       T(T&&) = delete; \
-       T& operator=(T const&) = delete; \
-       T& operator=(T&&) = delete
-#  else
-#    define DISALLOW_COPY_AND_ASSIGN(T) \
-       T(T const&); \
-       T& operator=(T const&)
-#  endif
+#if DMLC_USE_CXX11
+#define DISALLOW_COPY_AND_ASSIGN(T) \
+  T(T const &) = delete;            \
+  T(T &&) = delete;                 \
+  T &operator=(T const &) = delete; \
+  T &operator=(T &&) = delete
+#else
+#define DISALLOW_COPY_AND_ASSIGN(T) \
+  T(T const &);                     \
+  T &operator=(T const &)
+#endif
 #endif
 
 ///
@@ -129,7 +144,7 @@ namespace dmlc {
  * \param vec input vector
  * \return beginning address of a vector
  */
-template<typename T>
+template <typename T>
 inline T *BeginPtr(std::vector<T> &vec) {  // NOLINT(*)
   if (vec.size() == 0) {
     return NULL;
@@ -142,7 +157,7 @@ inline T *BeginPtr(std::vector<T> &vec) {  // NOLINT(*)
  * \param vec input vector
  * \return beginning address of a vector
  */
-template<typename T>
+template <typename T>
 inline const T *BeginPtr(const std::vector<T> &vec) {
   if (vec.size() == 0) {
     return NULL;
@@ -155,7 +170,7 @@ inline const T *BeginPtr(const std::vector<T> &vec) {
  * \param str input string
  * \return beginning address of a string
  */
-inline char* BeginPtr(std::string &str) {  // NOLINT(*)
+inline char *BeginPtr(std::string &str) {  // NOLINT(*)
   if (str.length() == 0) return NULL;
   return &str[0];
 }
@@ -164,7 +179,7 @@ inline char* BeginPtr(std::string &str) {  // NOLINT(*)
  * \param str input string
  * \return beginning address of a string
  */
-inline const char* BeginPtr(const std::string &str) {
+inline const char *BeginPtr(const std::string &str) {
   if (str.length() == 0) return NULL;
   return &str[0];
 }
