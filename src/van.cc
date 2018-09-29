@@ -110,7 +110,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
 void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
                         Meta* nodes, Meta* recovery_nodes) {
   auto& ctrl = msg->meta.control;
-  int num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
+  size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
   // assign an id
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);

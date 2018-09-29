@@ -183,8 +183,8 @@ void Postoffice::Manage(const Message& recv) {
   const auto& ctrl = recv.meta.control;
   if (ctrl.cmd == Control::BARRIER && !recv.meta.request) {
     barrier_mu_.lock();
-    for (int customer_id = 0; customer_id < barrier_done_[recv.meta.app_id].size();
-         customer_id++) {
+    auto size = barrier_done_[recv.meta.app_id].size();
+    for (size_t customer_id = 0; customer_id < size; customer_id++) {
       barrier_done_[recv.meta.app_id][customer_id] = true;
     }
     barrier_mu_.unlock();
