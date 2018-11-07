@@ -32,8 +32,11 @@ class Environment {
    * \return the initialized singleton instance
    */
   static inline Environment* Init(const std::unordered_map<std::string, std::string>& envs) {
-    return _GetSharedRef(&envs).get();
+    Environment* env = _GetSharedRef(&envs).get();
+    env->kvs = envs;
+    return env;
   }
+
   /**
    * \brief find the env value.
    *  User-defined env vars first. If not found, check system's environment

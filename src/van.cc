@@ -110,7 +110,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
 void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
                         Meta* nodes, Meta* recovery_nodes) {
   auto& ctrl = msg->meta.control;
-  int num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
+  size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
   // assign an id
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
@@ -142,7 +142,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   for (size_t i = 0; i < ctrl.node.size(); ++i) {
     const auto& node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
-      if (getenv("DMLC_RANK") == nullptr) {
+    if (getenv("DMLC_RANK") == nullptr || my_node_.id == Meta::kEmpty) {
         my_node_ = node;
         std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
@@ -212,7 +212,7 @@ void Van::ProcessDataMsg(Message* msg) {
   int customer_id = Postoffice::Get()->is_worker() ? msg->meta.customer_id : app_id;
   auto* obj = Postoffice::Get()->GetCustomer(app_id, customer_id, 5);
   CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer " << customer_id \
-    << " ready ";
+    << " ready at " << my_node_.role;
   obj->Accept(*msg);
 }
 
@@ -243,6 +243,7 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
 void Van::Start(int customer_id) {
   // get scheduler info
   start_mu_.lock();
+
   if (init_stage == 0) {
     scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
     scheduler_.port = atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
@@ -313,6 +314,7 @@ void Van::Start(int customer_id) {
     msg.meta.timestamp = timestamp_++;
     Send(msg);
   }
+
   // wait until ready
   while (!ready_.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -349,8 +351,16 @@ void Van::Stop() {
   int ret = SendMsg(exit);
   CHECK_NE(ret, -1);
   receiver_thread_->join();
+  init_stage = 0;
   if (!is_scheduler_) heartbeat_thread_->join();
   if (resender_) delete resender_;
+  ready_ = false;
+  connected_nodes_.clear();
+  shared_node_mapping_.clear();
+  send_bytes_ = 0;
+  timestamp_ = 0;
+  my_node_.id = Meta::kEmpty;
+  barrier_count_.clear();
 }
 
 int Van::Send(const Message& msg) {

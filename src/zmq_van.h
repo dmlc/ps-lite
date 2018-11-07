@@ -59,7 +59,9 @@ class ZMQVan : public Van {
       CHECK(rc == 0 || errno == ETERM);
       CHECK_EQ(zmq_close(it.second), 0);
     }
+    senders_.clear();
     zmq_ctx_destroy(context_);
+    context_ = nullptr;
   }
 
   int Bind(const Node& node, int max_retry) override {
@@ -97,8 +99,7 @@ class ZMQVan : public Van {
       zmq_close(it->second);
     }
     // worker doesn't need to connect to the other workers. same for server
-    if ((node.role == my_node_.role) &&
-        (node.id != my_node_.id)) {
+    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
       return;
     }
     void *sender = zmq_socket(context_, ZMQ_DEALER);
@@ -129,7 +130,6 @@ class ZMQVan : public Van {
     auto it = senders_.find(id);
     if (it == senders_.end()) {
       LOG(WARNING) << "there is no socket to node " << id;
-      std::cout << "there is not socket to node " << id << "\n";
       return -1;
     }
     void *socket = it->second;
@@ -149,7 +149,6 @@ class ZMQVan : public Van {
     }
     // zmq_msg_close(&meta_msg);
     int send_bytes = meta_size;
-
     // send data
     for (int i = 0; i < n; ++i) {
       zmq_msg_t data_msg;
