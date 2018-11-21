@@ -47,12 +47,6 @@ static const int kMaxDataFields = 4;
 static const size_t kAlignment = 8;
 static const size_t kInlineThreshold = 1024 * 1024;  // 32 KB
 
-//template<class K, class T>
-//std::map<K, T> dict(K, T)
-//{
-//   return std::map<K,T>(); //K is your key and T is your data type
-//}
-
 template <typename T>
 static inline T align_floor(T v, T align) {
   return v - (v % align);
@@ -440,13 +434,11 @@ class RDMAVan : public Van {
 
     mempool_.reset();
 
-    std::map<char *, struct ibv_mr *>::iterator map_iter;
-    map_iter = memory_mr_map.begin();
-    while(map_iter != memory_mr_map.end()){
-        ibv_dereg_mr(map_iter->second);
-        map_iter++;
+    auto map_iter = memory_mr_map.begin();
+    while (map_iter != memory_mr_map.end()) {
+      ibv_dereg_mr(map_iter->second);
+      map_iter++;
     }
-
 
     cm_event_polling_thread_->join();
     cm_event_polling_thread_.reset();
@@ -547,7 +539,7 @@ class RDMAVan : public Van {
   int SendMsg(const Message &msg) override {
     int remote_id = msg.meta.recver;
     CHECK_NE(remote_id, Meta::kEmpty);
-    
+
     PBMeta meta;
     PackMetaPB(msg.meta, &meta);
 
@@ -561,7 +553,7 @@ class RDMAVan : public Van {
           std::make_tuple(kLocalTransfer, reinterpret_cast<BufferContext *>(buf_ctx)));
       return buf_ctx->meta_len + msg.meta.data_size;
     }
-	
+
     CHECK_NE(endpoints_.find(remote_id), endpoints_.end());
     Endpoint *endpoint = endpoints_[remote_id].get();
     MessageBuffer *msg_buf = new MessageBuffer();
@@ -572,56 +564,25 @@ class RDMAVan : public Van {
 
     CHECK(meta_len);
 
-//    if (total_len <= kInlineThreshold) {
-//      msg_buf->inline_len = total_len;
-//      msg_buf->inline_buf = mempool_->Alloc(total_len);
-//      meta.SerializeToArray(msg_buf->inline_buf, meta_len);
-//      char *cur = msg_buf->inline_buf + meta_len;
-//      for (auto &sa : msg.data) {
-//        size_t seg_len = sa.size();
-//        memcpy(cur, sa.data(), seg_len);
-//        cur += seg_len;
-//      }
-//    }
-//    else {
-//      msg_buf->inline_len = meta_len;
-//      msg_buf->inline_buf = mempool_->Alloc(meta_len);
-//      msg_buf->data = msg.data;
-//      meta.SerializeToArray(msg_buf->inline_buf, meta_len);
-//      for (auto &sa : msg_buf->data) {
-//        if (sa.size()) {
-//          MRPtr ptr(ibv_reg_mr(pd_, sa.data(), sa.size(), 0),
-//                    [](struct ibv_mr *mr) { ibv_dereg_mr(mr); });
-//          CHECK(ptr.get()) << strerror(errno);
-//          msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-//        }
-//      }
-//    }
-
-
-
     msg_buf->inline_len = meta_len;
     msg_buf->inline_buf = mempool_->Alloc(meta_len);
     msg_buf->data = msg.data;
     meta.SerializeToArray(msg_buf->inline_buf, meta_len);
     for (auto &sa : msg_buf->data) {
-        if (sa.size()) {
-          auto search_map_iterator = memory_mr_map.find(sa.data());
-          if(search_map_iterator != memory_mr_map.end()){ //if used before
-            MRPtr ptr(search_map_iterator->second,
-                    [](struct ibv_mr *mr) {  });
-            CHECK(ptr.get()) << strerror(errno);
-            msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-
-          }else{
-            struct ibv_mr *temp_mr = ibv_reg_mr(pd_, sa.data(), sa.size(), 0);
-            memory_mr_map[sa.data()] = temp_mr;
-            MRPtr ptr(temp_mr,
-                    [](struct ibv_mr *mr) { });
-            CHECK(ptr.get()) << strerror(errno);
-            msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-          }
+      if (sa.size()) {
+        auto search_map_iterator = memory_mr_map.find(sa.data());
+        if (search_map_iterator != memory_mr_map.end()) {  // if used before
+          MRPtr ptr(search_map_iterator->second, [](struct ibv_mr *mr) {});
+          CHECK(ptr.get()) << strerror(errno);
+          msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
+        } else {
+          struct ibv_mr *temp_mr = ibv_reg_mr(pd_, sa.data(), sa.size(), 0);
+          memory_mr_map[sa.data()] = temp_mr;
+          MRPtr ptr(temp_mr, [](struct ibv_mr *mr) {});
+          CHECK(ptr.get()) << strerror(errno);
+          msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
         }
+      }
     }
 
     WRContext *context = nullptr, *reserved = nullptr;
@@ -1122,8 +1083,7 @@ class RDMAVan : public Van {
   struct rdma_event_channel *event_channel_ = nullptr;
   struct ibv_context *context_ = nullptr;
 
-  std::map<char *, struct ibv_mr *> memory_mr_map;
-
+  std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
 
   // ibverbs protection domain
   struct ibv_pd *pd_ = nullptr;
