@@ -84,6 +84,7 @@ class SimpleMempool {
  public:
   // Allocated an initial ``size'' of registered memory regions
   explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x1000000) {
+    std::lock_guard<std::mutex> lk(mu_);
     pd_ = pd;
     struct ibv_mr *mr;
     char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
@@ -204,6 +205,7 @@ class SimpleMempool {
 
   // Convert the memory address to its associated RDMA memory region
   inline struct ibv_mr *Addr2MR(char *addr) {
+    std::lock_guard<std::mutex> lk(mu_);
     auto it = mr_list.lower_bound(addr);
     CHECK_NE(it, mr_list.end()) << "cannot find the associated memory region";
     return it->second;
@@ -270,12 +272,6 @@ struct BufferContext {
   size_t meta_len;
   size_t data_num;
   size_t data_len[kMaxDataFields];
-};
-
-struct LocalBufferContext {
-  size_t meta_len;
-  char *meta_buf;
-  std::vector<SArray<char>> data;
 };
 
 struct MessageBuffer {
@@ -485,6 +481,17 @@ class RDMAVan : public Van {
     start_mu_.lock();
     should_stop_ = false;
 
+    auto val = Environment::Get()->find("DMLC_ROLE");
+    std::string role(val);
+    is_server = role=="server";
+    if (is_server) LOG(INFO) << "This is server";
+    else LOG(INFO) << "This is " << ((role=="worker") ? "worker" : "scheduler");
+
+    val = Environment::Get()->find("ENABLE_RDMA_LOG");
+    enable_rdma_log_ = val? atoi(val) : false;
+    if (enable_rdma_log_) LOG(INFO) << "Enable RDMA logging";
+    else LOG(INFO) << "RDMA logging is disabled, you can enable it with ENABLE_RDMA_LOG=1";
+
     if (event_channel_ == nullptr) {
       event_channel_ = rdma_create_event_channel();
       CHECK(event_channel_) << "Create RDMA event channel failed";
@@ -626,9 +633,92 @@ class RDMAVan : public Van {
     }
   }
 
-  int SendMsg(const Message &msg) override {
+  bool IsValidPushpull(const Message &msg) {
+    if (!msg.meta.control.empty()) return false;
+    if (msg.meta.simple_app) return false;
+    return true;
+  }
+
+  uint64_t DecodeKey(SArray<char> keys) { // just a translation, the decoded key might not be readable when we have multiple servers
+    ps::Key key = 0;
+    uint64_t coef = 1;
+    for (unsigned int i = 0; i < keys.size(); ++i) {
+      key += coef * (uint8_t) keys.data()[i];
+      coef *= 256; // 256=2^8 (uint8_t)
+    }
+    return key;
+  }
+
+  int SendMsg(Message &msg) override {
     int remote_id = msg.meta.recver;
     CHECK_NE(remote_id, Meta::kEmpty);
+
+    for (auto &sa : msg.data) {
+      if (sa.size()) {
+        std::lock_guard<std::mutex> lock(map_mu_);
+        auto search_map_iterator = allocated_mr_.find(sa.data());
+        if (search_map_iterator == allocated_mr_.end()) {
+          struct ibv_mr *temp_mr;
+          CHECK(sa.data()) << "address empty";
+          CHECK (temp_mr = ibv_reg_mr(pd_, sa.data(), sa.size(),
+                 IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE))
+                  << "Failed to register the memory region: "
+                  << strerror(errno)
+                  << ", sa.size()=" << sa.size();
+          allocated_mr_[sa.data()] = temp_mr;
+        }
+      }
+    }
+
+    if (IsValidPushpull(msg)) {
+      if (!is_server) { // worker
+        std::lock_guard<std::mutex> lock(map_mu_);
+        uint64_t key = DecodeKey(msg.data[0]);
+        msg.meta.key = key;
+        //LOG(INFO) << "key=" << key << ", " << std::string(msg.meta.push?"push":"pull");
+
+        if (msg.meta.push && msg.meta.request) { // push request
+          CHECK_EQ(msg.data.size(), 3) << msg.data.size();
+          CHECK_NE(allocated_mr_.find(msg.data[1].data()), allocated_mr_.end());
+
+          auto& vals = msg.data[1];
+          msg.meta.addr = reinterpret_cast<uint64_t>(vals.data()); // vals address
+          msg.meta.val_len = vals.size();
+          msg.meta.option = allocated_mr_[vals.data()]->rkey;
+
+          if (enable_rdma_log_) {
+            LOG(INFO) << "send push key=" << key
+                    << ", val_len=" << msg.meta.val_len
+                    << ", val_addr=" << msg.meta.addr
+                    << ", rkey=" << msg.meta.option;
+          }
+        }
+      }
+      if (!msg.meta.push && !msg.meta.request) { // server, pull response
+        CHECK(is_server);
+        CHECK_EQ(msg.data.size(), 3) << msg.data.size();
+
+        std::lock_guard<std::mutex> lock(map_mu_);
+        uint64_t key = msg.meta.key;
+        auto recver = msg.meta.recver;
+
+        CHECK_NE(key_meta_map_.find(key), key_meta_map_.end())
+            << "key=" << key << " not inited in key_meta_map";
+        CHECK_NE(key_meta_map_[key].find(recver), key_meta_map_[key].end())
+            << "key=" << key << ", recver=" << recver << " not inited in key_meta_map[key]";
+
+        msg.meta.val_len = std::get<0>(key_meta_map_[key][recver]);
+        msg.meta.addr = std::get<1>(key_meta_map_[key][recver]);
+        msg.meta.option = std::get<2>(key_meta_map_[key][recver]);
+
+        if (enable_rdma_log_) {
+          LOG(INFO) << "send pull response key=" << key
+                  << ", val_len=" << msg.meta.val_len
+                  << ", val_addr=" << msg.meta.addr
+                  << ", rkey=" << msg.meta.option;
+        }
+      }
+    }
 
     PBMeta meta;
     PackMetaPB(msg.meta, &meta);
@@ -647,7 +737,8 @@ class RDMAVan : public Van {
     // into the START message.
     // Otherwise, register the data buffer as RDMA memory
     // region.
-    if (!msg.meta.control.empty()) {  // control message
+    if (msg.meta.simple_app ||
+        !msg.meta.control.empty()) {  // simple_app or control message
       msg_buf->inline_len = total_len;
       msg_buf->inline_buf = mempool_->Alloc(total_len);
       meta.SerializeToArray(msg_buf->inline_buf, meta_len);
@@ -662,25 +753,71 @@ class RDMAVan : public Van {
       msg_buf->inline_buf = mempool_->Alloc(meta_len);
       msg_buf->data = msg.data;
       meta.SerializeToArray(msg_buf->inline_buf, meta_len);
-
-      for (auto &sa : msg_buf->data) {
-        if (sa.size() == 0) {
-          continue;
+      if (!is_server) { // worker remains the same
+        for (auto &sa : msg_buf->data) {
+          if (sa.size() == 0) {
+            continue;
+          }
+          // Optimization: If the memory region has been registered,
+          // (assuming the previously registered address is not freed)
+          // re-use the same memory region.
+          char *p = sa.data();
+          auto it = allocated_mr_.find(p);
+          if (it == allocated_mr_.end()) {
+            allocated_mr_[p] = ibv_reg_mr(pd_, p, sa.size(), 0);
+          }
+          CHECK(allocated_mr_[p]) << "Invalid memory region";
+          msg_buf->mrs.push_back({allocated_mr_[p], sa.size()});
         }
-        // Optimization: If the memory region has been registered,
-        // (assuming the previously registered address is not freed)
-        // re-use the same memory region.
-        char *p = sa.data();
-        auto it = allocated_mr_.find(p);
-        if (it == allocated_mr_.end()) {
-          allocated_mr_[p] = ibv_reg_mr(pd_, p, sa.size(), 0);
-        }
-        CHECK(allocated_mr_[p]) << "Invalid memory region";
-        msg_buf->mrs.push_back({allocated_mr_[p], sa.size()});
       }
     }
 
-    // Take the second context buffer first to avoid deadlock
+    if (is_server && IsValidPushpull(msg) &&
+          !msg.meta.push && !msg.meta.request) { // server send pull response (vals) with RDMA-write
+      std::lock_guard<std::mutex> lock(map_mu_);
+      auto key = msg.meta.key;
+      auto recver = msg.meta.recver;
+
+      CHECK_EQ(msg_buf->data.size(), 3) << "Actual msg_buf size is " << msg_buf->data.size();
+      CHECK_NE(key_meta_map_.find(key), key_meta_map_.end())
+            << "key=" << key << " not initiated";
+      CHECK_NE(key_meta_map_[key].find(recver), key_meta_map_[key].end())
+            << "key=" << key
+            << ", recver=" << recver
+            << " not initiated";
+
+      auto len = std::get<0>(key_meta_map_[key][recver]);
+      auto raddr = std::get<1>(key_meta_map_[key][recver]);
+      auto rkey = std::get<2>(key_meta_map_[key][recver]);
+
+      CHECK_EQ(msg_buf->data[1].size(), (unsigned int)len)
+          << msg_buf->data[1].size() << ", " << len;
+
+      auto temp_mr = allocated_mr_.find(msg_buf->data[1].data());
+      CHECK_NE(temp_mr, allocated_mr_.end());
+
+      struct ibv_sge sge;
+      sge.addr = reinterpret_cast<uint64_t>(msg_buf->data[1].data());
+      sge.length = msg_buf->data[1].size();
+      sge.lkey = temp_mr->second->lkey;
+
+      struct ibv_send_wr wr, *bad_wr = nullptr;
+      memset(&wr, 0, sizeof(wr));
+
+      wr.wr_id = reinterpret_cast<uint64_t>(raddr);
+      wr.opcode = IBV_WR_RDMA_WRITE;
+      wr.next = nullptr;
+      // wr.send_flags = IBV_SEND_SIGNALED;
+      wr.sg_list = &sge;
+      wr.num_sge = 1;
+
+      wr.wr.rdma.remote_addr = raddr;
+      wr.wr.rdma.rkey = rkey;
+
+      CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0)
+          << "ibv_post_send failed.";
+    }
+
     WRContext *context = nullptr, *reserved = nullptr;
     endpoint->free_write_ctx.WaitAndPop(&reserved);
     endpoint->free_start_ctx.WaitAndPop(&context);
@@ -740,7 +877,34 @@ class RDMAVan : public Van {
     uint64_t data_num = buffer_ctx->data_num;
     cur += buffer_ctx->meta_len;
 
-    if (data_num > 0) {
+    if (IsValidPushpull(*msg) && !msg->meta.push && !msg->meta.request) { // worker
+      std::lock_guard<std::mutex> lock(map_mu_);
+      auto key = msg->meta.key;
+      CHECK(!is_server);
+      if (key_len_map_.find(key) == key_len_map_.end()) {
+        key_addr_map_[key] = (ps::Key) key;
+        key_len_map_[key] = (int) msg->meta.val_len;
+      }
+      CHECK_NE(key_len_map_.find(key), key_len_map_.end()) << key;
+      CHECK_NE(key_addr_map_.find(key), key_addr_map_.end()) << key;
+
+      auto addr = msg->meta.addr;
+
+      CHECK_NE(key_len_map_[key], 0) << msg->DebugString();
+
+      SArray<char> keys;
+      SArray<char> vals;
+      SArray<char> lens;
+
+      keys.reset(reinterpret_cast<char*>(&key_addr_map_[key]), sizeof(ps::Key), [](void *){});
+      vals.reset(reinterpret_cast<char*>(addr), key_len_map_[key], [](void *){});
+      lens.reset(reinterpret_cast<char*>(&key_len_map_[key]), sizeof(int), [](void *){});
+
+      msg->data.push_back(keys);
+      msg->data.push_back(vals);
+      msg->data.push_back(lens);
+      total_len += keys.size() + vals.size() + lens.size();
+    } else if (data_num > 0) {
       Block *mem_block =
           new Block(mempool_.get(), buffer_ctx->buffer, data_num);
 
@@ -756,6 +920,39 @@ class RDMAVan : public Van {
       }
     } else {
       mempool_->Free(buffer_ctx->buffer);
+    }
+
+    if (msg->meta.push && msg->meta.request) { // server
+      CHECK(is_server);
+      auto key = msg->meta.key;
+      auto len = msg->meta.val_len;
+      auto addr = msg->meta.addr;
+      auto rkey = msg->meta.option;
+      auto sender = msg->meta.sender;
+
+      std::lock_guard<std::mutex> lock(map_mu_);
+      if (key_meta_map_.find(key) == key_meta_map_.end()
+            || key_meta_map_[key].find(sender) == key_meta_map_[key].end()) {
+        if (enable_rdma_log_) {
+          LOG(INFO) << "(init) recv key=" << key
+                  << ", len=" << len
+                  << ", sender=" << msg->meta.sender
+                  << ", val_addr=" << addr
+                  << ", rkey=" << rkey;
+        }
+        key_meta_map_[key][sender] = std::make_tuple(len, addr, rkey);
+      } else {
+        CHECK_EQ(len, std::get<0>(key_meta_map_[key][sender]));
+        CHECK_EQ(addr, std::get<1>(key_meta_map_[key][sender]));
+        CHECK_EQ(rkey, std::get<2>(key_meta_map_[key][sender]));
+
+        if (enable_rdma_log_) {
+          LOG(INFO) << "recv push key=" << key
+                  << ", len=" << len
+                  << ", val_addr=" << addr
+                  << ", rkey=" << rkey;
+        }
+      }
     }
 
     delete buffer_ctx;
@@ -852,14 +1049,14 @@ class RDMAVan : public Van {
               BufferContext *buf_ctx = new BufferContext();
 
               uint64_t len = req->meta_len;
-              buf_ctx->meta_len = len;
+              buf_ctx->meta_len = req->meta_len;
               buf_ctx->data_num = req->data_num;
               for (size_t i = 0; i < req->data_num; ++i) {
                 buf_ctx->data_len[i] = req->data_len[i];
                 len += req->data_len[i];
               }
 
-              char *buffer = mempool_->Alloc(len);
+              char *buffer = mempool_->Alloc(is_server ? len : req->meta_len);
               CHECK(buffer) << "Alloc for " << len
                             << " bytes, data_num: " << req->data_num;
 
@@ -926,6 +1123,7 @@ class RDMAVan : public Van {
                 sge[num_sge].lkey = pair.first->lkey;
                 ++num_sge;
               }
+              if (is_server) CHECK_EQ(num_sge, 1) << num_sge;
 
               WRContext *write_ctx = msg_buf->reserved_context;
 
@@ -1159,6 +1357,26 @@ class RDMAVan : public Van {
   std::unique_ptr<std::thread> cm_event_polling_thread_;
   // Recv buffer queue
   ThreadsafeQueue<std::tuple<Endpoint *, BufferContext *>> recv_buffers_;
+
+  // JYM: the following are for push/pull buffer reuse
+
+  // whether my role is server or not
+  bool is_server;
+  // RDMA logging info
+  bool enable_rdma_log_;
+
+  // macros for key_meta_map
+  using MetaInfo = std::tuple<int, uint64_t, int>; // len, addr, rkey
+  using SenderMeta = std::unordered_map<int, MetaInfo>; // sender as the key
+  // (key, sender) --> MetaInfo
+  std::unordered_map<ps::Key, SenderMeta> key_meta_map_;
+  // a static address for the key
+  std::unordered_map<ps::Key, ps::Key> key_addr_map_;
+  // a static address for the length
+  std::unordered_map<ps::Key, int> key_len_map_;
+
+  std::mutex map_mu_;
+
 };  // namespace ps
 };  // namespace ps
 

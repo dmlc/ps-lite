@@ -154,7 +154,6 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   } else if (role == Node::SERVER) {
     CHECK(node_group & kServerGroup);
   }
-
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   barrier_done_[0][customer_id] = false;
   Message req;

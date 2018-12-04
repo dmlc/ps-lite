@@ -124,7 +124,7 @@ class ZMQVan : public Van {
     senders_[id] = sender;
   }
 
-  int SendMsg(const Message& msg) override {
+  int SendMsg(Message& msg) override {
     std::lock_guard<std::mutex> lk(mu_);
     // find the socket
     int id = msg.meta.recver;

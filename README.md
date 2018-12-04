@@ -47,9 +47,26 @@ git clone https://github.com/dmlc/ps-lite
 cd ps-lite && make -j4
 ```
 
+### Build with RDMA support
+
+You can add `USE_RDMA=1` to enable RDMA support.
+
+```bash
+make -j $(nproc) USE_RDMA=1
+```
+
+### Enable new features for higher performance
+
+To avoid head-of-line blocking, use `USE_MULTI_THREAD_FOR_RECEIVING=1` to enable multi-threading
+in the receiving functions of `customer.cc`
+(this flag must be set explicitly to enable multi-threading).
+ You can also set `NUM_RECEIVE_THREAD` to change the number of threads of the thread pool
+(default is 2).
+
+
 ### How to use
 
-`ps-lite` provides asynchronous communication for other projects: 
+`ps-lite` provides asynchronous communication for other projects:
   - Distributed deep neural networks:
     [MXNet](https://github.com/dmlc/mxnet),
     [CXXNET](https://github.com/dmlc/cxxnet) and

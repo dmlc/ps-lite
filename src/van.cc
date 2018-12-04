@@ -4,6 +4,9 @@
 
 #include <chrono>
 #include <thread>
+#include <fstream>
+#include <string.h>
+#include <sstream>
 
 #include "ps/base.h"
 #include "ps/internal/customer.h"
@@ -16,6 +19,7 @@
 #include "./rdma_van.h"
 #include "./resender.h"
 #include "./zmq_van.h"
+#define USE_PROFILING
 
 namespace ps {
 
@@ -24,8 +28,48 @@ namespace ps {
 // heartbeart signal from a node before connected to that node, then it could be
 // problem.
 static const int kDefaultHeartbeatInterval = 0;
+#ifdef USE_PROFILING
+std::fstream fout_;
+#endif
 
+bool is_van_profiling_;
 Van *Van::Create(const std::string &type) {
+#ifdef USE_PROFILING
+  const char *val;
+  val = Environment::Get()->find("ENABLE_PROFILING");
+  is_van_profiling_ = val? atoi(val) : false;
+  if (is_van_profiling_) {
+    LOG(INFO) << "Van: Enable profiling.";
+    std::string sysvar = "";
+    if (getenv("PROFILE_PATH")!=nullptr)
+      sysvar = std::string(getenv("PROFILE_PATH"));
+    std::string CONST_WORKER_STR ("worker");
+    std::string CONST_SERVER_STR ("server");
+
+    std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
+    std::stringstream temp_stream;
+    std::string ts_string;
+    temp_stream << ms.count();
+    temp_stream >> ts_string;
+    if (CONST_WORKER_STR == getenv("DMLC_ROLE")){
+      if(sysvar.length()==0){
+        fout_.open("pslite_profile_van_worker_"+ts_string, std::fstream::out);
+      }
+      else{
+        fout_.open(sysvar + "_van_worker", std::fstream::out);
+      }
+    }
+    else if (CONST_SERVER_STR == getenv("DMLC_ROLE")){
+      if(sysvar.length()==0){
+        fout_.open("pslite_profile_van_server_"+ts_string, std::fstream::out);
+      }
+      else{
+        fout_.open(sysvar + "_van_server", std::fstream::out);
+      }
+    }
+  }
+#endif
+
   if (type == "zmq") {
     return new ZMQVan();
 #ifdef DMLC_USE_RDMA
@@ -37,6 +81,7 @@ Van *Van::Create(const std::string &type) {
     return nullptr;
   }
 }
+
 
 void Van::ProcessTerminateCommand() {
   PS_VLOG(1) << my_node().ShortDebugString() << " is stopped";
@@ -218,6 +263,25 @@ void Van::ProcessDataMsg(Message *msg) {
   CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer " << customer_id
              << " ready at " << my_node_.role;
   obj->Accept(*msg);
+
+#ifdef USE_PROFILING
+  if (is_van_profiling_ && msg->data.size()){
+    std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
+    //LOG(INFO) << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tvan_recv\t" << ms.count();
+    if (Postoffice::Get()->is_worker()){ // is worker
+      if (msg->meta.push)
+        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tworker_van_recv_push\t" << ms.count() << "\n";
+      else
+        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tworker_van_recv_pull\t" << ms.count() << "\n";
+    }
+    else{ // is server
+      if (msg->meta.push)
+        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tserver_van_recv_push\t" << ms.count() << "\n";
+      else
+        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tserver_van_recv_pull\t" << ms.count() << "\n";
+    }
+  }
+#endif
 }
 
 void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes) {
@@ -363,9 +427,17 @@ void Van::Stop() {
   timestamp_ = 0;
   my_node_.id = Meta::kEmpty;
   barrier_count_.clear();
+
+#ifdef USE_PROFILING
+  if (is_van_profiling_) {
+    fout_.clear();
+    fout_.flush();
+    fout_.close();
+  }
+#endif
 }
 
-int Van::Send(const Message &msg) {
+int Van::Send(Message &msg) {
   int send_bytes = SendMsg(msg);
   CHECK_NE(send_bytes, -1);
   send_bytes_ += send_bytes;
@@ -451,6 +523,10 @@ void Van::PackMetaPB(const Meta &meta, PBMeta *pb) {
     }
   }
   pb->set_data_size(meta.data_size);
+  pb->set_key(meta.key);
+  pb->set_addr(meta.addr);
+  pb->set_val_len(meta.val_len);
+  pb->set_option(meta.option);
 }
 
 void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
@@ -532,6 +608,10 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
     meta->control.cmd = Control::EMPTY;
   }
   meta->data_size = pb.data_size();
+  meta->key = pb.key();
+  meta->addr = pb.addr();
+  meta->val_len = pb.val_len();
+  meta->option = pb.option();
 }
 
 void Van::Heartbeat() {

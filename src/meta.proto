@@ -53,4 +53,12 @@ message PBMeta {
   optional bool simple_app = 6 [default = false];
   // message.data_size 
   optional int32 data_size = 11;
+  // message.key
+  optional uint64 key = 12;
+  // message.addr
+  optional uint64 addr = 13 [default = 0];
+  // the length of the message's value
+  optional int32 val_len = 14;
+  // the option field
+  optional int32 option = 15;
 }

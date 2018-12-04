@@ -159,12 +159,14 @@ struct Meta {
          << ", push=" << push;
     }
     if (head != kEmpty) ss << ", head=" << head;
+    if (control.empty() && !simple_app) ss << ", key=" << key; // valid data msg
     if (body.size()) ss << ", body=" << body;
     if (data_type.size()) {
       ss << ", data_type={";
       for (auto d : data_type) ss << " " << DataTypeName[static_cast<int>(d)];
       ss << " }";
     }
+    if (!control.empty() || simple_app) ss << ". THIS IS NOT DATA MSG!";
     return ss.str();
   }
   /** \brief an int head */
@@ -193,6 +195,14 @@ struct Meta {
   Control control;
   /** \brief the byte size */
   int data_size = 0;
+  /** \brief the key */
+  uint64_t key;
+  /** \brief the address */
+  uint64_t addr = 0;
+  /** \brief the value length */
+  int val_len;
+  /** \brief the optional 4-bytes field */
+  int option;
 };
 /**
  * \brief messages that communicated amaong nodes.

@@ -89,6 +89,12 @@ class Customer {
     recv_queue_.Push(recved);
   }
 
+  void ProcessPullRequest(int worker_id);
+  void ProcessPushRequest(int thread_id);
+  bool IsValidPushpull(const Message& msg);
+  uint64_t GetKeyFromMsg(const Message& msg);
+  void ProcessResponse(int thread_id);
+
  private:
   /**
    * \brief the thread function
