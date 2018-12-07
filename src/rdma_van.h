@@ -1,6 +1,5 @@
 /**
- *  Copyright (c) 2018 by Chang Lan
- *  Copyright (c) 2017 by Junxue Zhang, Jingrong Chen
+ *  Copyright (c) 2018 by Chang Lan, Yimin Jiang, Jingrong Chen
  */
 #ifndef PS_RDMA_VAN_H_
 #define PS_RDMA_VAN_H_
@@ -257,7 +256,6 @@ class AddressPool {
 
 struct Endpoint {
   std::atomic<bool> connected;
-  bool active;
   int node_id;
   std::condition_variable cv;
   std::mutex connect_mu;
@@ -273,7 +271,7 @@ struct Endpoint {
   ThreadsafeQueue<WRContext *> free_write_ctx;
 
   explicit Endpoint(struct rdma_cm_id *id)
-      : connected(false), active(false), node_id(Node::kEmpty), cm_id(id), rx_ctx() {}
+      : connected(false), node_id(Node::kEmpty), cm_id(id), rx_ctx() {}
 
   ~Endpoint() {
     for (int i = 0; i < kRxDepth; ++i) {
@@ -315,7 +313,6 @@ struct Endpoint {
   void Connect(const Node &remote) {
     std::unique_lock<std::mutex> lk(connect_mu);
 
-    active = true;
     struct addrinfo *addr;
     CHECK(getaddrinfo(remote.hostname.c_str(), std::to_string(remote.port).c_str(), nullptr,
                       &addr) == 0)
@@ -458,22 +455,13 @@ class RDMAVan : public Van {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    int port = node.port;
-
-    for (int i = 0; i < max_retry + 1; ++i) {
+    int port = node.port - 1;
+    int ret = -1;
+    for (int i = 0; i < max_retry && ret != 0; ++i, ++port) {
       addr.sin_port = htons(port);
-      if (rdma_bind_addr(listener_, reinterpret_cast<struct sockaddr *>(&addr)) == 0) {
-        break;
-      }
-
-      if (i == max_retry) {
-        port = -1;
-      } else {
-        port += 1;
-      }
+      ret = rdma_bind_addr(listener_, reinterpret_cast<struct sockaddr *>(&addr));
     }
-
-    CHECK(rdma_listen(listener_, kRdmaListenBacklog) == 0)
+    CHECK(ret == 0 && rdma_listen(listener_, kRdmaListenBacklog) == 0)
         << "Listen RDMA connection failed: " << strerror(errno);
     return port;
   }
@@ -488,51 +476,29 @@ class RDMAVan : public Van {
       return;
     }
 
-    // Optimization
-    if ((node.role == my_node_.role) && (node.id == my_node_.id)) {
-      LOG(INFO) << "Node: " << node.id << " is myself. No need to connect.";
-      return;
-    }
-
-    if (node.role != Node::SCHEDULER && my_node_.role != Node::SCHEDULER &&
-        node.id != Node::kEmpty && my_node_.id != Node::kEmpty) {
-      if (my_node_.id < node.id) {
-        LOG(INFO) << my_node_.id << " < " << node.id << ", Skipping";
-        while (true) {
-          auto it = endpoints_.find(node.id);
-          if (it != endpoints_.end() && it->second && it->second->connected) {
-            break;
-          }
-        }
-        return;
-      }
-    }
-
     std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
 
     if (node.id != Node::kEmpty) {
-      // First check if there is any unresolved node ID.
-      if (temp_endpoints_.find(node_host_ip) != temp_endpoints_.end()) {
-        auto it = temp_endpoints_.find(node_host_ip);
-        it->second->SetNodeID(node.id);
-        endpoints_[node.id] = std::move(it->second);
-        temp_endpoints_.erase(it);
+      auto it = endpoints_.find(node.id);
 
-      } else if (endpoints_.find(node.id) == endpoints_.end()) {
-        struct rdma_cm_id *id = nullptr;
-        CHECK(rdma_create_id(event_channel_, &id, nullptr, RDMA_PS_TCP) == 0)
-            << "Create RDMA connection identifier failed";
-
-        Endpoint *endpoint;
-
-        endpoints_[node.id] = std::make_unique<Endpoint>(id);
-        endpoint = endpoints_[node.id].get();
-
-        id->context = endpoint;
-
-        endpoint->SetNodeID(node.id);
-        endpoint->Connect(node);
+      // if there is an endpoint with pending connection
+      if (it != endpoints_.end()) {
+        endpoints_.erase(it);
       }
+
+      struct rdma_cm_id *id = nullptr;
+      CHECK(rdma_create_id(event_channel_, &id, nullptr, RDMA_PS_TCP) == 0)
+          << "Create RDMA connection identifier failed";
+
+      Endpoint *endpoint;
+
+      endpoints_[node.id] = std::make_unique<Endpoint>(id);
+      endpoint = endpoints_[node.id].get();
+
+      id->context = endpoint;
+
+      endpoint->SetNodeID(node.id);
+      endpoint->Connect(node);
     }
   }
 
@@ -940,39 +906,13 @@ class RDMAVan : public Van {
   void OnConnectRequest(struct rdma_cm_event *event) {
     struct rdma_cm_id *id = event->id;
 
-    const RequestContext *remote_ctx =
-        reinterpret_cast<const RequestContext *>(event->param.conn.private_data);
-
-    auto it = endpoints_.find(remote_ctx->node);
-    CHECK(it == endpoints_.end())
-        << "Unable to resolve conflict. Maybe two nodes connect each other simultaneously.";
-
-    Endpoint *endpoint = nullptr;
-    if (remote_ctx->node == Node::kEmpty) {
-      std::string node_host_ip =
-          std::string(remote_ctx->hostname) + ":" + std::to_string(remote_ctx->port);
-      LOG(INFO) << "Unassigned Node ID. Host: " << node_host_ip;
-      temp_endpoints_[node_host_ip] = std::make_unique<Endpoint>(id);
-      endpoint = temp_endpoints_[node_host_ip].get();
-    } else {
-      endpoints_[remote_ctx->node] = std::make_unique<Endpoint>(id);
-      endpoint = endpoints_[remote_ctx->node].get();
-      endpoint->SetNodeID(remote_ctx->node);
-    }
-
-    CHECK(!endpoint->active) << "Should only happen on the passive side!";
-
     CHECK_LE(sizeof(RequestContext), event->param.conn.private_data_len)
         << "RequestContext size mismatch. Actual: " << (size_t)event->param.conn.private_data_len
         << ", Expected: " << sizeof(RequestContext);
 
-    id->context = endpoint;
-
     if (context_ == nullptr) {
       InitContext(id->verbs);
     }
-
-    endpoint->Init(cq_, pd_);
 
     RequestContext ctx;
     ctx.node = static_cast<uint32_t>(my_node_.id);
@@ -992,8 +932,6 @@ class RDMAVan : public Van {
   // Resolve a route after address is resolved
   void OnAddrResolved(struct rdma_cm_event *event) {
     struct rdma_cm_id *id = event->id;
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-    CHECK(endpoint->active) << "Should only happen on the active side!";
     CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0) << "Resolve RDMA route failed";
   }
 
@@ -1001,7 +939,6 @@ class RDMAVan : public Van {
   void OnRouteResolved(struct rdma_cm_event *event) {
     struct rdma_cm_id *id = event->id;
     Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-    CHECK(endpoint->active) << "Should only happen on the active side!";
 
     if (context_ == nullptr) {
       InitContext(id->verbs);
@@ -1032,11 +969,6 @@ class RDMAVan : public Van {
 
     CHECK(endpoint) << "Endpoint not found.";
     CHECK_EQ(endpoint->cm_id, id);
-
-    if (!endpoint->active) {
-      endpoint->connected = true;
-      return;
-    }
 
     const RequestContext *remote_ctx =
         reinterpret_cast<const RequestContext *>(event->param.conn.private_data);
