@@ -3,16 +3,29 @@
 #include "ps/ps.h"
 
 using namespace ps;
+std::unordered_map<int, KVPairs<float> > mem_map;
 
 template <typename Val>
 void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer<Val> *server) {
-  KVPairs<Val> res;
   if (req_meta.push) {
+    KVPairs<float> res;
+    server->Response(req_meta, res);
   } else {
-    res.keys = req_data.keys;
-    res.vals.resize(req_data.keys.size());
+    auto iter = mem_map.find(0);
+    if(iter==mem_map.end()){
+      LOG(INFO) << "init...";
+      KVPairs<float> res;
+      res.keys = req_data.keys;
+      res.vals.resize(req_data.keys.size());
+      server->Response(req_meta, res);
+    }else{
+      LOG(INFO) << "in-place memory reuse";
+      KVPairs<float> *res_ptr = &iter->second;
+      res_ptr->keys = req_data.keys;
+      res_ptr->vals.resize(req_data.keys.size());
+      server->Response(req_meta, *res_ptr);
+    }
   }
-  server->Response(req_meta, res);
 }
 
 void StartServer() {
@@ -27,7 +40,7 @@ void RunWorker() {
   KVWorker<float> kv(0, 0);
 
   // init
-  int num = 1000000;
+  int num = 10000000;
   std::vector<Key> keys(num);
   std::vector<float> vals(num);
 
@@ -38,7 +51,7 @@ void RunWorker() {
     vals[i] = (rand() % 1000);
   }
 
-  int repeat = 50;
+  int repeat = 1;
 
   // push
   auto start = std::chrono::high_resolution_clock::now();
@@ -56,6 +69,7 @@ void RunWorker() {
   }
   end = std::chrono::high_resolution_clock::now();
   LL << "num = " << num << ", Pull average time cost: " << (end - start).count() / 1e6 << "ms";
+
 }
 
 int main(int argc, char *argv[]) {
