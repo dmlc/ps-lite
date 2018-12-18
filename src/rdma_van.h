@@ -265,11 +265,14 @@ class AddressPool {
 };
 
 struct Endpoint {
-  std::atomic<bool> connected;
+  enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
+
+  ConnectionStatus status;
   int node_id;
   std::condition_variable cv;
   std::mutex connect_mu;
   struct rdma_cm_id *cm_id;
+
   WRContext rx_ctx[kRxDepth];
 
   WRContext start_ctx[kStartDepth];
@@ -280,8 +283,7 @@ struct Endpoint {
   ThreadsafeQueue<WRContext *> free_reply_ctx;
   ThreadsafeQueue<WRContext *> free_write_ctx;
 
-  explicit Endpoint(struct rdma_cm_id *id)
-      : connected(false), node_id(Node::kEmpty), cm_id(id), rx_ctx() {}
+  Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {}
 
   ~Endpoint() {
     for (int i = 0; i < kRxDepth; ++i) {
@@ -320,21 +322,7 @@ struct Endpoint {
   void Disconnect() {
     std::unique_lock<std::mutex> lk(connect_mu);
     CHECK_EQ(rdma_disconnect(cm_id), 0) << strerror(errno);
-    cv.wait(lk, [this] { return !connected.load(); });
-  }
-
-  void Connect(const Node &remote) {
-    std::unique_lock<std::mutex> lk(connect_mu);
-
-    struct addrinfo *addr;
-    CHECK(getaddrinfo(remote.hostname.c_str(),
-                      std::to_string(remote.port).c_str(), nullptr, &addr) == 0)
-        << "Set address and port for connection failed";
-    CHECK(rdma_resolve_addr(cm_id, nullptr, addr->ai_addr, kTimeoutms) == 0)
-        << "Resolve RDMA address failed with errno: " << errno;
-    freeaddrinfo(addr);
-
-    cv.wait(lk, [this] { return connected.load(); });
+    cv.wait(lk, [this] { return status == IDLE; });
   }
 
   void SetNodeID(int id) { node_id = id; }
@@ -465,7 +453,10 @@ class RDMAVan : public Van {
     CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
     CHECK(!ibv_destroy_comp_channel(comp_event_channel_))
         << "Failed to destroy channel";
-    CHECK(!ibv_dealloc_pd(pd_)) << "Failed to deallocate PD";
+
+    // TODO: ibv_dealloc_pd sometimes complains resource busy, need to fix this
+    // CHECK(!ibv_dealloc_pd(pd_)) << "Failed to deallocate PD: " <<
+    // strerror(errno);
 
     PS_VLOG(1) << "Destroying listener.";
     rdma_destroy_id(listener_);
@@ -510,7 +501,6 @@ class RDMAVan : public Van {
     }
 
     std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
-
     if (node.id != Node::kEmpty) {
       auto it = endpoints_.find(node.id);
 
@@ -519,19 +509,48 @@ class RDMAVan : public Van {
         endpoints_.erase(it);
       }
 
-      struct rdma_cm_id *id = nullptr;
-      CHECK(rdma_create_id(event_channel_, &id, nullptr, RDMA_PS_TCP) == 0)
-          << "Create RDMA connection identifier failed";
-
       Endpoint *endpoint;
-
-      endpoints_[node.id] = std::make_unique<Endpoint>(id);
+      endpoints_[node.id] = std::make_unique<Endpoint>();
       endpoint = endpoints_[node.id].get();
 
-      id->context = endpoint;
-
       endpoint->SetNodeID(node.id);
-      endpoint->Connect(node);
+
+      struct addrinfo *remote_addr;
+      CHECK_EQ(
+          getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(),
+                      nullptr, &remote_addr),
+          0);
+
+      while (endpoint->status != Endpoint::CONNECTED) {
+        std::unique_lock<std::mutex> lk(endpoint->connect_mu);
+        endpoint->status = Endpoint::CONNECTING;
+
+        if (endpoint->cm_id != nullptr) {
+          rdma_destroy_qp(endpoint->cm_id);
+          CHECK_EQ(rdma_destroy_id(endpoint->cm_id), 0) << strerror(errno);
+          endpoint->cm_id = nullptr;
+        }
+
+        CHECK_EQ(rdma_create_id(event_channel_, &endpoint->cm_id, nullptr,
+                                RDMA_PS_TCP),
+                 0)
+            << "Create RDMA connection identifier failed";
+        endpoint->cm_id->context = endpoint;
+
+        CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, nullptr,
+                                   remote_addr->ai_addr, kTimeoutms),
+                 0)
+            << "Resolve RDMA address failed with errno: " << errno;
+
+        endpoint->cv.wait(lk, [endpoint] {
+          return endpoint->status != Endpoint::CONNECTING;
+        });
+
+        if (endpoint->status == Endpoint::CONNECTED) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      }
+
+      freeaddrinfo(remote_addr);
     }
   }
 
@@ -606,7 +625,6 @@ class RDMAVan : public Van {
     wr.send_flags = IBV_SEND_SIGNALED;
     wr.sg_list = &sge;
     wr.num_sge = 1;
-
     CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0)
         << strerror(errno);
 
@@ -673,8 +691,6 @@ class RDMAVan : public Van {
 
     CHECK(cq_) << "Failed to create completion queue";
     CHECK(!ibv_req_notify_cq(cq_, 0)) << "Failed to request CQ notification";
-
-    cq_polling_thread_.reset(new std::thread(&RDMAVan::PollCQ, this));
   }
 
   void ReleaseWorkRequestContext(WRContext *context, Endpoint *endpoint) {
@@ -899,6 +915,7 @@ class RDMAVan : public Van {
           break;
         case RDMA_CM_EVENT_REJECTED:
           OnRejected(event);
+          break;
         default:
           CHECK(0) << "OnEvent: unknown event " << event->event << " ("
                    << rdma_event_str(event->event) << ")";
@@ -913,16 +930,15 @@ class RDMAVan : public Van {
 
     auto it = endpoints_.find(endpoint->node_id);
     CHECK(it != endpoints_.end()) << "Connection not ready.";
+    CHECK_EQ(endpoint->status, Endpoint::CONNECTING);
+    CHECK_EQ(endpoint->cm_id, id);
 
-    endpoint->connected = true;
-
+    PS_VLOG(1) << "Connection rejected";
+    {
+      std::lock_guard<std::mutex> lk(endpoint->connect_mu);
+      endpoint->status = Endpoint::REJECTED;
+    }
     endpoint->cv.notify_all();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    struct ibv_qp_attr attr;
-    memset(&attr, 0, sizeof(attr));
-    attr.qp_state = IBV_QPS_ERR;
-    CHECK_EQ(ibv_modify_qp(endpoint->cm_id->qp, &attr, 0), 0);
   }
 
   void OnConnectRequest(struct rdma_cm_event *event) {
@@ -938,10 +954,10 @@ class RDMAVan : public Van {
     const RequestContext *remote_ctx = reinterpret_cast<const RequestContext *>(
         event->param.conn.private_data);
 
-    const auto r = incoming_.emplace(std::make_unique<Endpoint>(id));
+    const auto r = incoming_.emplace(std::make_unique<Endpoint>());
     Endpoint *endpoint = r.first->get();
     endpoint->SetNodeID(remote_ctx->node);
-
+    endpoint->cm_id = id;
     id->context = endpoint;
 
     if (context_ == nullptr) {
@@ -996,20 +1012,24 @@ class RDMAVan : public Van {
     cm_params.private_data = &ctx;
     cm_params.private_data_len = sizeof(RequestContext);
 
-    CHECK_EQ(rdma_connect(id, &cm_params), 0) << "RDMA connect failed";
+    CHECK_EQ(rdma_connect(id, &cm_params), 0)
+        << "RDMA connect failed" << strerror(errno);
   }
 
   void OnConnected(struct rdma_cm_event *event) {
     struct rdma_cm_id *id = event->id;
     CHECK(id) << "rdma_cm_id not found.";
-
     Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-
     CHECK(endpoint) << "Endpoint not found.";
+
+    if (cq_polling_thread_ == nullptr) {
+      cq_polling_thread_.reset(new std::thread(&RDMAVan::PollCQ, this));
+    }
+
     CHECK_EQ(endpoint->cm_id, id);
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-      endpoint->connected = true;
+      endpoint->status = Endpoint::CONNECTED;
     }
     endpoint->cv.notify_all();
   }
@@ -1020,8 +1040,9 @@ class RDMAVan : public Van {
     Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-      endpoint->connected = false;
+      endpoint->status = Endpoint::IDLE;
     }
+    endpoint->cv.notify_all();
   }
 
   AddressPool<BufferContext> addr_pool_;
