@@ -65,7 +65,7 @@ void RunWorker()
     // pull
     for (int k = 0; k < num; k++)
     {
-      recvTs.push_back(kv.Pull(std::vector<Key>(1, keys[k]), &retVals, &retLens));
+      recvTs.push_back(kv.Pull(std::vector<Key>(1, keys[k]), &retVals));
     }
 
     for (int t : recvTs)
