@@ -12,7 +12,7 @@ void StartServer()
     return;
   }
   auto server = new KVServer<float>(0);
-  server->set_request_handle(KVServerDefaultHandle<float>());
+  server->set_request_handle(KVServerDefaultHandleSingleArray<float>());
   RegisterExitCallback([server]() { delete server; });
 }
 
@@ -26,8 +26,8 @@ void RunWorker()
   int num = 400;
   int keySize = 65536;
   std::vector<Key> keys(num);
-  std::vector<float> vals(num * keySize);
-  std::vector<int> lens(num, keySize);
+  std::vector<float> vals(keySize);
+  std::vector<int> lens(1, keySize);
 
   int rank = MyRank();
   srand(rank + 7);
@@ -43,22 +43,33 @@ void RunWorker()
   std::vector<int> ts;
   std::vector<uint64_t> times;
 
+  std::vector<int> recvTs;
+
   std::vector<int> retLens;
   std::vector<float> retVals;
   for (int i = 0; i < repeat; ++i)
   {
     LOG(INFO) << "[" << i << "] iteration = " << i;
     ts.clear();
+    recvTs.clear();
     uint64_t ms = std::chrono::duration_cast<std::chrono::microseconds>(
                       std::chrono::system_clock::now().time_since_epoch())
                       .count();
-
-    ts.push_back(kv.Push(keys, vals));
+    for (int k = 0; k < num; k++)
+    {
+      ts.push_back(kv.Push(std::vector<ps::Key>(1, keys[k]), vals, lens));
+    }
     for (int t : ts)
       kv.Wait(t);
 
     // pull
-    kv.Wait(kv.Pull(keys, &retVals, &retLens));
+    for (int k = 0; k < num; k++)
+    {
+      recvTs.push_back(kv.Pull(std::vector<Key>(1, keys[k]), &retVals, &retLens));
+    }
+
+    for (int t : recvTs)
+      kv.Wait(t);
 
     uint64_t end = std::chrono::duration_cast<std::chrono::microseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
