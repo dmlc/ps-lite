@@ -1,56 +1,72 @@
 #include "ps/ps.h"
 #include <math.h>
+#include <vector>
+#include <chrono>
+
 using namespace ps;
 
-void StartServer() {
-  if (!IsServer()) {
+void StartServer()
+{
+  if (!IsServer())
+  {
     return;
   }
   auto server = new KVServer<float>(0);
   server->set_request_handle(KVServerDefaultHandle<float>());
-  RegisterExitCallback([server](){ delete server; });
+  RegisterExitCallback([server]() { delete server; });
 }
 
-void RunWorker() {
-  if (!IsWorker()) return;
+void RunWorker()
+{
+  if (!IsWorker())
+    return;
   KVWorker<float> kv(0, 0);
 
   // init
-  int num = 10000;
+  int num = 400;
+  int keySize = 65536;
   std::vector<Key> keys(num);
-  std::vector<float> vals(num);
+  std::vector<float> vals(num * keySize);
 
   int rank = MyRank();
   srand(rank + 7);
-  for (int i = 0; i < num; ++i) {
+  for (int i = 0; i < num; ++i)
+  {
     keys[i] = kMaxKey / num * i + rank;
-    vals[i] = (rand() % 1000);
+    //vals[i] = (rand() % 1000);
   }
 
   // push
+
   int repeat = 50;
   std::vector<int> ts;
-  for (int i = 0; i < repeat; ++i) {
+  std::vector<uint64_t> times;
+  for (int i = 0; i < repeat; ++i)
+  {
+    ts.clear();
+    uint64_t ms = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+
     ts.push_back(kv.Push(keys, vals));
+    for (int t : ts)
+      kv.Wait(t);
 
-    // to avoid too frequency push, which leads huge memory usage
-    if (i > 10) kv.Wait(ts[ts.size()-10]);
+    // pull
+    kv.Wait(kv.Pull(keys, &vals));
+
+    uint64_t end = std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
+                       .count();
+    times.push_back(end - ms);
   }
-  for (int t : ts) kv.Wait(t);
 
-  // pull
-  std::vector<float> rets;
-  kv.Wait(kv.Pull(keys, &rets));
-
-  float res = 0;
-  for (int i = 0; i < num; ++i) {
-    res += fabs(rets[i] - vals[i] * repeat);
-  }
-  CHECK_LT(res / repeat, 1e-5);
-  LL << "error: " << res / repeat;
+  std::sort(times.begin(), times.end());
+  printf("median: (us)\r\n");
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   // start system
   Start(0);
   // setup server nodes
