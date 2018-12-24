@@ -22,7 +22,6 @@ void RunWorker()
     return;
   KVWorker<float> kv(0, 0);
 
-  // init
   int keySize = 65536;
   std::vector<Key> keys(num);
   std::vector<float> vals(keySize);
