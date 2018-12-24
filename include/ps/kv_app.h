@@ -402,7 +402,7 @@ struct KVServerDefaultHandleSingleArray
     size_t n = req_data.keys.size();
     KVPairs<Val> res;
     Key key = req_data.keys[0];
-    int keyLen = req_data.lens.size() > 0 ? req_data.lens[0], store[key].size();
+    int keyLen = req_data.lens.size() > 0 ? req_data.lens[0] : store[key].size();
 
     if (req_meta.push)
     {
