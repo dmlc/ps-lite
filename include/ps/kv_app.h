@@ -340,7 +340,7 @@ struct KVServerDefaultHandle {
     size_t n = req_data.keys.size();
     KVPairs<Val> res;
     if (req_meta.push) {
-      CHECK_EQ(n, req_data.vals.size());
+      CHECK_EQ(n, req_data.vals.size()) << " keys = " << n << " , val = " << req_data.vals.size();
     } else {
       res.keys = req_data.keys; res.vals.resize(n);
     }

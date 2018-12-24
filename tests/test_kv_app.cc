@@ -27,7 +27,7 @@ void RunWorker()
   int keySize = 65536;
   std::vector<Key> keys(num);
   std::vector<float> vals(num * keySize);
-  std::vector<int> lens(num, 65536);
+  std::vector<int> lens(num, keySize);
 
   int rank = MyRank();
   srand(rank + 7);
@@ -42,20 +42,23 @@ void RunWorker()
   int repeat = 50;
   std::vector<int> ts;
   std::vector<uint64_t> times;
+
+  std::vector<int> retLens;
+  std::vector<float> retVals;
   for (int i = 0; i < repeat; ++i)
   {
+    LOG(INFO) << "[" << i << "] iteration = " << i;
     ts.clear();
     uint64_t ms = std::chrono::duration_cast<std::chrono::microseconds>(
                       std::chrono::system_clock::now().time_since_epoch())
                       .count();
 
-    ts.push_back(kv.Push(keys, vals, lens));
+    ts.push_back(kv.Push(keys, vals));
     for (int t : ts)
       kv.Wait(t);
 
     // pull
-    std::vector<int> retLens;
-    kv.Wait(kv.Pull(keys, &vals, &retLens));
+    kv.Wait(kv.Pull(keys, &retVals, &retLens));
 
     uint64_t end = std::chrono::duration_cast<std::chrono::microseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
