@@ -1,4 +1,4 @@
-#include "ps/ps.h"
+4000;136;0c#include "ps/ps.h"
 #include <math.h>
 #include <vector>
 #include <chrono>
@@ -23,7 +23,7 @@ void RunWorker()
   KVWorker<float> kv(0, 0);
 
   // init
-  int num = 400;
+  int num = 512;
   int keySize = 65536;
   std::vector<Key> keys(num);
   std::vector<float> vals(keySize);
