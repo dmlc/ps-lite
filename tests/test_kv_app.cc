@@ -4,7 +4,7 @@
 #include <chrono>
 
 using namespace ps;
-
+int num = 400;
 void StartServer()
 {
   if (!IsServer())
@@ -23,7 +23,6 @@ void RunWorker()
   KVWorker<float> kv(0, 0);
 
   // init
-  int num = 400;
   int keySize = 65536;
   std::vector<Key> keys(num);
   std::vector<float> vals(keySize);
@@ -83,6 +82,10 @@ void RunWorker()
 
 int main(int argc, char *argv[])
 {
+  std::string str = "400";
+    if (argc > 1) { str = argv[1];
+      num = atoi(str.c_str());
+    }
   // start system
   Start(0);
   // setup server nodes
