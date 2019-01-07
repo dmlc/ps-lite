@@ -45,7 +45,6 @@ static const int kMaxConcurrentWorkRequest =
 static const int kMaxHostnameLength = 16;
 static const int kMaxDataFields = 4;
 static const size_t kAlignment = 8;
-static const size_t kInlineThreshold = 1024 * 1024;  // 32 KB
 
 template <typename T>
 static inline T align_floor(T v, T align) {
@@ -59,18 +58,24 @@ static inline T align_ceil(T v, T align) {
 
 class SimpleMempool {
  public:
-  explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x100000000) {
+  explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x10000000) {
+    pd_ = pd;
+    struct ibv_mr *mr;
     char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
+    total_allocated_size += size;
     CHECK(p);
     CHECK(mr = ibv_reg_mr(pd, p, size,
                           IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+    mr_list.emplace(p+size, mr); // this mr is associated with memory address range [p, p+size]
     free_list.emplace(size, p);
   }
 
   ~SimpleMempool() {
     std::lock_guard<std::mutex> lk(mu_);
-    free(mr->addr);
-    CHECK_EQ(ibv_dereg_mr(mr), 0);
+    for(auto it = mr_list.begin(); it != mr_list.end(); it++){
+      CHECK_EQ(ibv_dereg_mr(it->second), 0);
+      free(it->second->addr);
+    }
   }
 
   char *Alloc(size_t size) {
@@ -83,6 +88,23 @@ class SimpleMempool {
     size_t proper_size = align_ceil(size, kAlignment);
 
     auto it = free_list.lower_bound(proper_size);
+
+    if(it == free_list.end()) { // if there is no space left, need to allocate and register new memory
+      size_t new_mem_size = total_allocated_size;
+      while(proper_size > new_mem_size) {
+        new_mem_size *= 2;
+      }
+      char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, new_mem_size));
+      CHECK(p);
+      struct ibv_mr *mr;
+      CHECK(mr = ibv_reg_mr(pd_, p, new_mem_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+      mr_list.emplace(p+new_mem_size, mr);
+      free_list.emplace(proper_size, p);
+      it = free_list.lower_bound(proper_size);
+      PS_VLOG(1) << "Not enough memory in the pool, requested size " << proper_size << ", new allocated size " << new_mem_size;
+      total_allocated_size += new_mem_size;
+    }
+
     CHECK_NE(free_list.end(), it) << "Not enough memory";
     CHECK_GE(it->first, proper_size);
 
@@ -118,14 +140,29 @@ class SimpleMempool {
     free_list.emplace(size, addr);
   }
 
-  uint32_t LocalKey() const { return mr->lkey; }
-  uint32_t RemoteKey() const { return mr->rkey; }
+  uint32_t LocalKey(char *addr) {
+    struct ibv_mr *mr = Addr2MR(addr);
+    return mr->lkey;
+  }
+  uint32_t RemoteKey(char *addr) {
+    struct ibv_mr *mr = Addr2MR(addr);
+    return mr->rkey;
+  }
 
  private:
   std::mutex mu_;
   std::multimap<size_t, char *> free_list;
   std::unordered_map<char *, size_t> used_list;
-  struct ibv_mr *mr;
+  std::map<char *, struct ibv_mr*> mr_list; // first: `end` of this mr address (e.g., for mr with [addr, addr+size], point to `addr+size`)
+  struct ibv_pd *pd_;
+  size_t total_allocated_size = 0;
+
+  inline struct ibv_mr* Addr2MR(char *addr) { // convert the memory address to its associated RDMA memory region
+    auto it = mr_list.lower_bound(addr);
+    CHECK_NE(it, mr_list.end()) << "cannot find the associated memory region";
+    return it->second;
+  }
+
 };
 
 class Block {
@@ -760,7 +797,6 @@ class RDMAVan : public Van {
               // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousStart";
               RendezvousStart *req =
                   reinterpret_cast<RendezvousStart *>(mr->addr);
-
               BufferContext *buf_ctx = new BufferContext();
 
               uint64_t len = req->meta_len;
@@ -785,7 +821,7 @@ class RDMAVan : public Van {
                   reinterpret_cast<RendezvousReply *>(reply_ctx->buffer->addr);
 
               resp->addr = reinterpret_cast<uint64_t>(buffer);
-              resp->rkey = mempool_->RemoteKey();
+              resp->rkey = mempool_->RemoteKey(buffer);
               resp->origin_addr = origin_addr;
               resp->idx = addr_pool_.StoreAddress(buf_ctx);
 
@@ -826,7 +862,7 @@ class RDMAVan : public Van {
 
               sge[0].addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
               sge[0].length = msg_buf->inline_len;
-              sge[0].lkey = mempool_->LocalKey();
+              sge[0].lkey = mempool_->LocalKey(msg_buf->inline_buf);
 
               size_t num_sge = 1;
               for (auto &pair : msg_buf->mrs) {
