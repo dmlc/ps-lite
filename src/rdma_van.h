@@ -58,7 +58,7 @@ static inline T align_ceil(T v, T align) {
 
 class SimpleMempool {
  public:
-  explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x10000000) {
+  explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x1000000) {
     pd_ = pd;
     struct ibv_mr *mr;
     char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
@@ -99,7 +99,7 @@ class SimpleMempool {
       struct ibv_mr *mr;
       CHECK(mr = ibv_reg_mr(pd_, p, new_mem_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
       mr_list.emplace(p+new_mem_size, mr);
-      free_list.emplace(proper_size, p);
+      free_list.emplace(new_mem_size, p);
       it = free_list.lower_bound(proper_size);
       PS_VLOG(1) << "Not enough memory in the pool, requested size " << proper_size << ", new allocated size " << new_mem_size;
       total_allocated_size += new_mem_size;
@@ -969,7 +969,7 @@ class RDMAVan : public Van {
     CHECK_EQ(endpoint->status, Endpoint::CONNECTING);
     CHECK_EQ(endpoint->cm_id, id);
 
-    PS_VLOG(1) << "Connection rejected";
+    PS_VLOG(1) << "Connection rejected, retrying...";
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
       endpoint->status = Endpoint::REJECTED;
