@@ -608,23 +608,37 @@ class RDMAVan : public Van {
 
     CHECK(meta_len);
 
-    msg_buf->inline_len = meta_len;
-    msg_buf->inline_buf = mempool_->Alloc(meta_len);
-    msg_buf->data = msg.data;
-    meta.SerializeToArray(msg_buf->inline_buf, meta_len);
-    for (auto &sa : msg_buf->data) {
-      if (sa.size()) {
-        auto search_map_iterator = memory_mr_map.find(sa.data());
-        if (search_map_iterator != memory_mr_map.end()) {  // if used before
-          MRPtr ptr(search_map_iterator->second, [](struct ibv_mr *mr) {});
-          CHECK(ptr.get()) << strerror(errno);
-          msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-        } else {
-          struct ibv_mr *temp_mr = ibv_reg_mr(pd_, sa.data(), sa.size(), 0);
-          memory_mr_map[sa.data()] = temp_mr;
-          MRPtr ptr(temp_mr, [](struct ibv_mr *mr) {});
-          CHECK(ptr.get()) << strerror(errno);
-          msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
+    if (!msg.meta.control.empty()){ // control message
+      msg_buf->inline_len = total_len;
+      msg_buf->inline_buf = mempool_->Alloc(total_len);
+      meta.SerializeToArray(msg_buf->inline_buf, meta_len);
+      char *cur = msg_buf->inline_buf + meta_len;
+      for (auto &sa : msg.data) {
+        size_t seg_len = sa.size();
+        memcpy(cur, sa.data(), seg_len);
+        cur += seg_len;
+      }
+    }
+    else { // data message
+      msg_buf->inline_len = meta_len;
+      msg_buf->inline_buf = mempool_->Alloc(meta_len);
+      msg_buf->data = msg.data;
+      meta.SerializeToArray(msg_buf->inline_buf, meta_len);
+
+      for (auto &sa : msg_buf->data) {
+        if (sa.size()) {
+          auto search_map_iterator = memory_mr_map.find(sa.data());
+          if (search_map_iterator != memory_mr_map.end()) {  // if used before
+            MRPtr ptr(search_map_iterator->second, [](struct ibv_mr *mr) {});
+            CHECK(ptr.get()) << strerror(errno);
+            msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
+          } else {
+            struct ibv_mr *temp_mr = ibv_reg_mr(pd_, sa.data(), sa.size(), 0);
+            memory_mr_map[sa.data()] = temp_mr;
+            MRPtr ptr(temp_mr, [](struct ibv_mr *mr) {});
+            CHECK(ptr.get()) << strerror(errno);
+            msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
+          }
         }
       }
     }
