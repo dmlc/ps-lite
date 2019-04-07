@@ -14,8 +14,8 @@
 #include "./resender.h"
 namespace ps {
 
-// interval in second between to heartbeast signals. 0 means no heartbeat.
-// don't send heartbeast in default. because if the scheduler received a
+// interval in second between two heartbeast signals. 0 means no heartbeat.
+// don't send heartbeat in default. because if the scheduler received a
 // heartbeart signal from a node before connected to that node, then it could be
 // problem.
 static const int kDefaultHeartbeatInterval = 0;
@@ -155,7 +155,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   }
 }
 
-void Van::ProcessHearbeat(Message* msg) {
+void Van::ProcessHeartbeat(Message* msg) {
   auto& ctrl = msg->meta.control;
   time_t t = time(NULL);
   for (auto &node : ctrl.node) {
@@ -410,7 +410,7 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::BARRIER) {
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        ProcessHearbeat(&msg);
+        ProcessHeartbeat(&msg);
       } else {
         LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
       }

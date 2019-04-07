@@ -172,9 +172,9 @@ class Van {
     void ProcessBarrierCommand(Message* msg);
 
     /**
-     * \brief processing logic of AddNode message (run on each node)
+     * \brief processing logic of Heartbeat message (run on each node)
      */
-    void ProcessHearbeat(Message* msg);
+    void ProcessHeartbeat(Message* msg);
 
     /**
      * \brief processing logic of Data message
