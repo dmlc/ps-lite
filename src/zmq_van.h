@@ -40,10 +40,18 @@ class ZMQVan : public Van {
     if (context_ == nullptr) {
       context_ = zmq_ctx_new();
       CHECK(context_ != NULL) << "create 0mq context failed";
-      zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, 65536);
+
+      auto val = Environment::Get()->find("BYTEPS_ZMQ_MAX_SOCKET");
+      int byteps_zmq_max_socket = val ? atoi(val) : 1024;
+      zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, byteps_zmq_max_socket);
     }
     start_mu_.unlock();
-    // zmq_ctx_set(context_, ZMQ_IO_THREADS, 4);
+
+    auto val = Environment::Get()->find("BYTEPS_ZMQ_NTHREADS");
+    int byteps_zmq_nthreads = val ? atoi(val) : 4;
+    zmq_ctx_set(context_, ZMQ_IO_THREADS, byteps_zmq_nthreads);
+    PS_VLOG(1) << "BYTEPS_ZMQ_NTHREADS set to " << byteps_zmq_nthreads;
+
     Van::Start(customer_id);
   }
 
