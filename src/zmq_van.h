@@ -44,6 +44,7 @@ class ZMQVan : public Van {
       auto val = Environment::Get()->find("BYTEPS_ZMQ_MAX_SOCKET");
       int byteps_zmq_max_socket = val ? atoi(val) : 1024;
       zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, byteps_zmq_max_socket);
+      PS_VLOG(1) << "BYTEPS_ZMQ_MAX_SOCKET set to " << byteps_zmq_max_socket;
     }
     start_mu_.unlock();
 
