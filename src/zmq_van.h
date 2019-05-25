@@ -40,16 +40,16 @@ class ZMQVan : public Van {
     if (context_ == nullptr) {
       context_ = zmq_ctx_new();
       CHECK(context_ != NULL) << "create 0mq context failed";
-
-      auto val = Environment::Get()->find("BYTEPS_ZMQ_MAX_SOCKET");
-      int byteps_zmq_max_socket = val ? atoi(val) : 1024;
-      zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, byteps_zmq_max_socket);
-      PS_VLOG(1) << "BYTEPS_ZMQ_MAX_SOCKET set to " << byteps_zmq_max_socket;
     }
     start_mu_.unlock();
 
-    auto val = Environment::Get()->find("BYTEPS_ZMQ_NTHREADS");
-    int byteps_zmq_nthreads = val ? atoi(val) : 4;
+    auto val1 = Environment::Get()->find("BYTEPS_ZMQ_MAX_SOCKET");
+    int byteps_zmq_max_socket = val1 ? atoi(val1) : 1024;
+    zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, byteps_zmq_max_socket);
+    PS_VLOG(1) << "BYTEPS_ZMQ_MAX_SOCKET set to " << byteps_zmq_max_socket;
+
+    auto val2 = Environment::Get()->find("BYTEPS_ZMQ_NTHREADS");
+    int byteps_zmq_nthreads = val2 ? atoi(val2) : 4;
     zmq_ctx_set(context_, ZMQ_IO_THREADS, byteps_zmq_nthreads);
     PS_VLOG(1) << "BYTEPS_ZMQ_NTHREADS set to " << byteps_zmq_nthreads;
 
@@ -149,7 +149,7 @@ class ZMQVan : public Van {
     int meta_size;
     char* meta_buf = nullptr;
     PackMeta(msg.meta, &meta_buf, &meta_size);
-    int tag = ZMQ_SNDMORE;
+    int tag = ZMQ_SNDMORE | ZMQ_DONTWAIT;
     int n = msg.data.size();
     if (n == 0) tag = 0;
     zmq_msg_t meta_msg;
@@ -168,7 +168,7 @@ class ZMQVan : public Van {
       SArray<char>* data = new SArray<char>(msg.data[i]);
       int data_size = data->size();
       zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
-      if (i == n - 1) tag = 0;
+      if (i == n - 1) tag = ZMQ_DONTWAIT;
       while (true) {
         if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
         if (errno == EINTR) continue;
