@@ -121,10 +121,6 @@ class ZMQVan : public Van {
     if (my_node_.id != Node::kEmpty) {
       std::string my_id = "ps" + std::to_string(my_node_.id);
       zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
-
-      uint64_t affinity = pow(2, (my_node_.id-8)/2); // server: 8/10/12/14/..., worker: 9/11/13/15/...
-      LOG(INFO) << "node_id=" << my_node_.id << ", affinity=" << affinity;
-      zmq_setsockopt(sender, ZMQ_AFFINITY, &affinity, sizeof(uint64_t));
     }
     // connect
     std::string addr =
