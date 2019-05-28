@@ -32,10 +32,6 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
   else {
     auto iter = mem_map.find(key);
     CHECK_NE(iter, mem_map.end());
-    LOG(INFO) << "pull key=" << (int)iter->second.keys[0]
-              << ", val_len=" << iter->second.vals.size()
-              << ", len=" << (int)iter->second.lens[0];
-
     server->Response(req_meta, iter->second);
   }
 }
