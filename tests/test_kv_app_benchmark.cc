@@ -57,23 +57,19 @@ void RunWorker(int argc, char *argv[]) {
   kv.Wait(kv.ZPush(keys, vals, lens));
 
   // push
-  std::vector<int> ts_list;
-  auto start = std::chrono::high_resolution_clock::now();
+  uint64_t accumulated_ms = 0;
   for (int i = 0; i < repeat; ++i) {
-    ts_list.push_back(kv.ZPush(keys, vals, lens));
+    auto start = std::chrono::high_resolution_clock::now();
+    kv.Wait(kv.ZPush(keys, vals, lens));
+    auto end = std::chrono::high_resolution_clock::now();
+    accumulated_ms += (end - start).count(); // ns
   }
-  for (auto& ts : ts_list) {
-    kv.Wait(ts);
-  }
-  auto end = std::chrono::high_resolution_clock::now();
-
-  auto duration = (end - start).count(); // nano second
   LL << "push_byte=" << len * sizeof(float)
      << ", repeat=" << repeat
      << ", total_time="
-     << duration / 1e6
+     << accumulated_ms / 1e6
      << "ms, tput="
-     << len * 1.0 / duration * 8 * sizeof(float)
+     << repeat * len * 1.0 / accumulated_ms * 8 * sizeof(float)
      << "Gbps";
 
 }
