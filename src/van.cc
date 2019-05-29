@@ -560,6 +560,10 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
     }
   }
   pb.set_data_size(meta.data_size);
+  pb.set_key(meta.key);
+  pb.set_addr(meta.addr);
+  pb.set_val_len(meta.val_len);
+  pb.set_option(meta.option);
 
   // to string
   *buf_size = pb.ByteSize();
