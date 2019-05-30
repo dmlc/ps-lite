@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <zmq.h>
 #include <string>
+#include <cstring>
 #include <thread>
 #include <cmath>
 #include "ps/internal/van.h"
@@ -97,6 +98,28 @@ class ZMQVan : public Van {
         port = 10000 + rand_r(&seed) % 40000;
       }
     }
+    switch (node.role) {
+      case Node::SCHEDULER:
+        LOG(INFO) << "My role is SCHEDULER";
+        is_scheduler_ = true;
+        is_server_ = false;
+        is_worker_ = false;
+        break;
+      case Node::SERVER:
+        LOG(INFO) << "My role is SERVER";
+        is_scheduler_ = false;
+        is_server_ = true;
+        is_worker_ = false;
+        break;
+      case Node::WORKER:
+        LOG(INFO) << "My role is WORKER";
+        is_scheduler_ = false;
+        is_server_ = false;
+        is_worker_ = true;
+        break;
+      default:
+        CHECK(0) << "unknown role: " << node.role;
+    }
     return port;
   }
 
@@ -144,7 +167,30 @@ class ZMQVan : public Van {
       LOG(WARNING) << "there is no socket to node " << id;
       return -1;
     }
-    void* socket = it->second;
+    void* socket;
+
+    if (msg.meta.simple_app || !msg.meta.control.empty()
+        || (GetRoleFromId(id) != Node::WORKER)) {
+      socket = it->second;
+    }
+    else { // GetRoleFromId(id) == Node::WORKER
+      socket = receiver_;
+      std::string dst = "ps" + std::to_string(id);
+      int len = dst.size();
+      char *dst_array = new char[len + 1];
+      strcpy(dst_array, dst.c_str());
+      CHECK(dst_array);
+
+      zmq_msg_t zmsg;
+      CHECK_EQ(zmq_msg_init_data(
+          &zmsg, dst_array, len, FreeData, NULL), 0);
+
+      while (true) {
+        if (len == zmq_msg_send(&zmsg, receiver_, ZMQ_SNDMORE)) break;
+        if (errno == EINTR) continue;
+        CHECK(0) << zmq_strerror(errno);
+      }
+    }
 
     // send meta
     int meta_size;
@@ -185,15 +231,84 @@ class ZMQVan : public Van {
   }
 
   int RecvMsg(Message* msg) override {
+    if (!is_worker_) {
+      return CallZmqRecv(receiver_, msg);
+    }
+
+    // belows are all for worker
+    CHECK(is_worker_);
+
+    int rc;
+    size_t n = senders_.size();
+    CHECK_GE(n, 1);
+
+    zmq_pollitem_t pollitem[n+1];
+    size_t j = 0;
+    for (auto& it : senders_) {
+      pollitem[j].socket = it.second;
+      pollitem[j].events = ZMQ_POLLIN;
+      ++j;
+    }
+    CHECK_EQ(j, n);
+    pollitem[n].socket = receiver_;
+    pollitem[n].events = ZMQ_POLLIN;
+
+    while (true) {
+      std::lock_guard<std::mutex> lk(mu_);
+      rc = zmq_poll(pollitem, n + 1, 0);
+      CHECK_NE(rc, -1) << zmq_strerror(errno);
+      if (rc > 0) break;
+    }
+
+    LOG(INFO) << "break, rc=" << rc; // logging, should remove
+
+    std::vector<void*> socketlist;
+    for (size_t k = 0; k < n + 1; ++k) {
+      if (pollitem[k].revents & ZMQ_POLLIN)
+        socketlist.push_back(pollitem[k].socket);
+    }
+    CHECK_EQ((int) socketlist.size(), rc);
+    // always pick the first one (may optimize this, e.g., load-balanced strategy)
+    void *socket = socketlist[0];
+    return CallZmqRecv(socket, msg);
+  }
+
+ private:
+  /**
+   * return the node id given the received identity
+   * \return -1 if not find
+   */
+  int GetNodeID(const char* buf, size_t size) {
+    if (size > 2 && buf[0] == 'p' && buf[1] == 's') {
+      int id = 0;
+      size_t i = 2;
+      for (; i < size; ++i) {
+        if (buf[i] >= '0' && buf[i] <= '9') {
+          id = id * 10 + buf[i] - '0';
+        } else {
+          break;
+        }
+      }
+      if (i == size) return id;
+    }
+    return Meta::kEmpty;
+  }
+
+  int CallZmqRecv(void* socket, Message* msg) {
     msg->data.clear();
     size_t recv_bytes = 0;
     for (int i = 0;; ++i) {
       zmq_msg_t* zmsg = new zmq_msg_t;
       CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
       while (true) {
-        if (zmq_msg_recv(zmsg, receiver_, 0) != -1) break;
+        std::lock_guard<std::mutex> lk(mu_);
+        // the zmq_msg_recv should be non-blocking, otherwise deadlock will happen
+        int tag = ZMQ_DONTWAIT;
+        if (zmq_msg_recv(zmsg, socket, tag) != -1) break;
         if (errno == EINTR) {
           std::cout << "interrupted";
+          continue;
+        } else if (errno == EAGAIN) { // ZMQ_DONTWAIT
           continue;
         }
         LOG(WARNING) << "failed to receive message. errno: " << errno << " "
@@ -234,25 +349,10 @@ class ZMQVan : public Van {
     return recv_bytes;
   }
 
- private:
-  /**
-   * return the node id given the received identity
-   * \return -1 if not find
-   */
-  int GetNodeID(const char* buf, size_t size) {
-    if (size > 2 && buf[0] == 'p' && buf[1] == 's') {
-      int id = 0;
-      size_t i = 2;
-      for (; i < size; ++i) {
-        if (buf[i] >= '0' && buf[i] <= '9') {
-          id = id * 10 + buf[i] - '0';
-        } else {
-          break;
-        }
-      }
-      if (i == size) return id;
-    }
-    return Meta::kEmpty;
+  Node::Role GetRoleFromId(int id) {
+    if (id < 8) return Node::SCHEDULER;
+    if (id % 2) return Node::WORKER;
+    return Node::SERVER;
   }
 
   void* context_ = nullptr;
@@ -262,6 +362,10 @@ class ZMQVan : public Van {
   std::unordered_map<int, void*> senders_;
   std::mutex mu_;
   void* receiver_ = nullptr;
+
+  bool is_scheduler_;
+  bool is_server_;
+  bool is_worker_;
 };
 }  // namespace ps
 
