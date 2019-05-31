@@ -78,6 +78,9 @@ class ZMQVan : public Van {
 
   int Bind(const Node& node, int max_retry) override {
     receiver_ = zmq_socket(context_, ZMQ_ROUTER);
+    int option = 1;
+    CHECK(!zmq_setsockopt(receiver_, ZMQ_ROUTER_MANDATORY, &option, sizeof(option)))
+        << zmq_strerror(errno);
     CHECK(receiver_ != NULL)
         << "create receiver socket failed: " << zmq_strerror(errno);
     int local = GetEnv("DMLC_LOCAL", 0);
@@ -174,19 +177,36 @@ class ZMQVan : public Van {
       socket = it->second;
     }
     else { // GetRoleFromId(id) == Node::WORKER
-      socket = receiver_;
+      socket = receiver_; // scheduler/server --> worker
+
+      // first, send dst id
       std::string dst = "ps" + std::to_string(id);
       int len = dst.size();
       char *dst_array = new char[len + 1];
       strcpy(dst_array, dst.c_str());
       CHECK(dst_array);
 
-      zmq_msg_t zmsg;
+      zmq_msg_t zmsg_dstid;
       CHECK_EQ(zmq_msg_init_data(
-          &zmsg, dst_array, len, FreeData, NULL), 0);
-
+          &zmsg_dstid, dst_array, len, FreeData, NULL), 0);
       while (true) {
-        if (len == zmq_msg_send(&zmsg, receiver_, ZMQ_SNDMORE)) break;
+        if (len == zmq_msg_send(&zmsg_dstid, receiver_, ZMQ_SNDMORE)) break;
+        if (errno == EINTR) continue;
+        CHECK(0) << zmq_strerror(errno);
+      }
+
+      // second, send my id
+      std::string my_id = "ps" + std::to_string(my_node_.id);
+      len = my_id.size();
+      char *myid_array = new char[len + 1];
+      strcpy(myid_array, my_id.c_str());
+      CHECK(myid_array);
+
+      zmq_msg_t zmsg_myid;
+      CHECK_EQ(zmq_msg_init_data(
+          &zmsg_myid, myid_array, len, FreeData, NULL), 0);
+      while (true) {
+        if (len == zmq_msg_send(&zmsg_myid, receiver_, ZMQ_SNDMORE)) break;
         if (errno == EINTR) continue;
         CHECK(0) << zmq_strerror(errno);
       }
@@ -204,7 +224,7 @@ class ZMQVan : public Van {
     while (true) {
       if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
       if (errno == EINTR) continue;
-      return -1;
+      CHECK(0) << zmq_strerror(errno);
     }
     // zmq_msg_close(&meta_msg);
     int send_bytes = meta_size;
@@ -259,8 +279,6 @@ class ZMQVan : public Van {
       CHECK_NE(rc, -1) << zmq_strerror(errno);
       if (rc > 0) break;
     }
-
-    LOG(INFO) << "break, rc=" << rc; // logging, should remove
 
     std::vector<void*> socketlist;
     for (size_t k = 0; k < n + 1; ++k) {
