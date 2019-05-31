@@ -20,13 +20,10 @@
 
 namespace ps {
 
-struct ZmqBufferContext {
+struct ZmqBufferContext { // for clarity, don't merge meta and data
   int sender;
-  char* meta_buf;
-  size_t meta_len;
-  size_t data_num;
-  std::vector<size_t> data_len;
-  std::vector<char*> data_buf;
+  zmq_msg_t* meta_zmsg;
+  std::vector<zmq_msg_t*> data_zmsg;
 };
 
 /**
@@ -121,7 +118,7 @@ class ZMQVan : public Van {
     is_worker_ = (node.role == Node::WORKER ? true : false);
     auto t = new std::thread(&ZMQVan::CallZmqRecvThread, this, (void*) receiver_);
     thread_list_.push_back(t);
-    
+
     return port;
   }
 
@@ -167,45 +164,6 @@ class ZMQVan : public Van {
     senders_[id] = sender;
   }
 
-  int ZmqSendMsg(void* socket, Message& msg) {
-    // send meta
-    int meta_size;
-    char* meta_buf = nullptr;
-    PackMeta(msg.meta, &meta_buf, &meta_size);
-    int tag = ZMQ_SNDMORE | ZMQ_DONTWAIT;
-    int n = msg.data.size();
-    if (n == 0) tag = 0;
-    zmq_msg_t meta_msg;
-    zmq_msg_init_data(&meta_msg, meta_buf, meta_size, FreeData, NULL);
-    while (true) {
-      if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
-      if (errno == EINTR) continue;
-      CHECK(0) << zmq_strerror(errno);
-    }
-    // zmq_msg_close(&meta_msg);
-    int send_bytes = meta_size;
-
-    // send data
-    for (int i = 0; i < n; ++i) {
-      zmq_msg_t data_msg;
-      SArray<char>* data = new SArray<char>(msg.data[i]);
-      int data_size = data->size();
-      zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
-      if (i == n - 1) tag = ZMQ_DONTWAIT;
-      while (true) {
-        if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
-        if (errno == EINTR) continue;
-        LOG(WARNING) << "failed to send message, errno: "
-                     << errno << " " << zmq_strerror(errno)
-                     << ". " << i << "/" << n;
-        return -1;
-      }
-      // zmq_msg_close(&data_msg);
-      send_bytes += data_size;
-    }
-    return send_bytes;
-  }
-
   int SendMsg(Message& msg) override {
     if (!is_worker_) return NonWorkerSendMsg(msg);
 
@@ -227,6 +185,42 @@ class ZMQVan : public Van {
     return ZmqSendMsg(socket, msg);
   }
 
+  int RecvMsg(Message* msg) override {
+    msg->data.clear();
+
+    ZmqBufferContext notification;
+    recv_buffers_.WaitAndPop(&notification);
+
+    size_t recv_bytes = 0;
+
+    msg->meta.sender = notification.sender;
+    msg->meta.recver = my_node_.id;
+
+    char* meta_buf = CHECK_NOTNULL((char*)zmq_msg_data(notification.meta_zmsg));
+    size_t meta_len = zmq_msg_size(notification.meta_zmsg);
+
+    UnpackMeta(meta_buf, meta_len, &(msg->meta));
+    recv_bytes += meta_len;
+
+    for (size_t i = 0; i < notification.data_zmsg.size(); ++i) {
+      auto zmsg = notification.data_zmsg[i];
+      char* buf = CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
+      size_t size = zmq_msg_size(zmsg);
+      recv_bytes += size;
+
+      // zero-copy
+      SArray<char> data;
+      data.reset(buf, size, [zmsg, size](void *) {
+        zmq_msg_close(zmsg);
+        delete zmsg;
+      });
+      msg->data.push_back(data);
+    }
+
+    return recv_bytes;
+  }
+
+ private:
 
   int NonWorkerSendMsg(Message& msg) {
     std::lock_guard<std::mutex> lk(mu_);
@@ -292,7 +286,6 @@ class ZMQVan : public Van {
 
     while (!should_stop_) {
       ZmqBufferContext *buf_ctx = new ZmqBufferContext();
-      buf_ctx->data_num = 0;
 
       for (int i = 0;; ++i) {
         zmq_msg_t* zmsg = new zmq_msg_t;
@@ -340,52 +333,60 @@ class ZMQVan : public Van {
         }
         else if (i == 1) {
           // task
-          buf_ctx->meta_buf = buf;
-          buf_ctx->meta_len = size;
+          buf_ctx->meta_zmsg = zmsg;
           //zmq_msg_close(zmsg);
           bool more = zmq_msg_more(zmsg);
           //delete zmsg;
           if (!more) break;
         }
         else {
-          buf_ctx->data_num += 1;
-          buf_ctx->data_len.push_back(size);
-          buf_ctx->data_buf.push_back(buf);
+          buf_ctx->data_zmsg.push_back(zmsg);
           if (!zmq_msg_more(zmsg)) break;
         }
-
       } // for
 
       recv_buffers_.Push(*buf_ctx);
     } // while
   }
 
-  int RecvMsg(Message* msg) override {
-    msg->data.clear();
-
-    ZmqBufferContext notification;
-    recv_buffers_.WaitAndPop(&notification);
-
-    size_t recv_bytes = 0;
-
-    msg->meta.sender = notification.sender;
-    msg->meta.recver = my_node_.id;
-
-    UnpackMeta(notification.meta_buf, notification.meta_len, &(msg->meta));
-    recv_bytes += notification.meta_len;
-
-    for (size_t i = 0; i < notification.data_num; ++i) {
-      // zero-copy
-      SArray<char> data;
-      auto buf = notification.data_buf[i];
-      data.reset(buf, notification.data_len[i], [buf](void *) {});
-      msg->data.push_back(data);
+  int ZmqSendMsg(void* socket, Message& msg) {
+    // send meta
+    int meta_size;
+    char* meta_buf = nullptr;
+    PackMeta(msg.meta, &meta_buf, &meta_size);
+    int tag = ZMQ_SNDMORE | ZMQ_DONTWAIT;
+    int n = msg.data.size();
+    if (n == 0) tag = 0;
+    zmq_msg_t meta_msg;
+    zmq_msg_init_data(&meta_msg, meta_buf, meta_size, FreeData, NULL);
+    while (true) {
+      if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
+      if (errno == EINTR) continue;
+      CHECK(0) << zmq_strerror(errno);
     }
+    // zmq_msg_close(&meta_msg);
+    int send_bytes = meta_size;
 
-    return recv_bytes;
+    // send data
+    for (int i = 0; i < n; ++i) {
+      zmq_msg_t data_msg;
+      SArray<char>* data = new SArray<char>(msg.data[i]);
+      int data_size = data->size();
+      zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
+      if (i == n - 1) tag = ZMQ_DONTWAIT;
+      while (true) {
+        if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
+        if (errno == EINTR) continue;
+        LOG(WARNING) << "failed to send message, errno: "
+                     << errno << " " << zmq_strerror(errno)
+                     << ". " << i << "/" << n;
+        return -1;
+      }
+      // zmq_msg_close(&data_msg);
+      send_bytes += data_size;
+    }
+    return send_bytes;
   }
-
- private:
 
   /**
    * return the node id given the received identity
