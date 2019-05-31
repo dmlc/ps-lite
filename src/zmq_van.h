@@ -4,7 +4,7 @@
 #ifndef PS_ZMQ_VAN_H_
 #define PS_ZMQ_VAN_H_
 #include <stdio.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <zmq.h>
 #include <string>
 #include <cstring>
@@ -66,6 +66,7 @@ class ZMQVan : public Van {
     int rc = zmq_setsockopt(receiver_, ZMQ_LINGER, &linger, sizeof(linger));
     CHECK(rc == 0 || errno == ETERM);
     CHECK_EQ(zmq_close(receiver_), 0);
+    std::lock_guard<std::mutex> lk(mu_);
     for (auto& it : senders_) {
       int rc = zmq_setsockopt(it.second, ZMQ_LINGER, &linger, sizeof(linger));
       CHECK(rc == 0 || errno == ETERM);
@@ -101,28 +102,7 @@ class ZMQVan : public Van {
         port = 10000 + rand_r(&seed) % 40000;
       }
     }
-    switch (node.role) {
-      case Node::SCHEDULER:
-        LOG(INFO) << "My role is SCHEDULER";
-        is_scheduler_ = true;
-        is_server_ = false;
-        is_worker_ = false;
-        break;
-      case Node::SERVER:
-        LOG(INFO) << "My role is SERVER";
-        is_scheduler_ = false;
-        is_server_ = true;
-        is_worker_ = false;
-        break;
-      case Node::WORKER:
-        LOG(INFO) << "My role is WORKER";
-        is_scheduler_ = false;
-        is_server_ = false;
-        is_worker_ = true;
-        break;
-      default:
-        CHECK(0) << "unknown role: " << node.role;
-    }
+    is_worker_ = (node.role == Node::WORKER ? true : false);
     return port;
   }
 
@@ -131,10 +111,12 @@ class ZMQVan : public Van {
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
     int id = node.id;
+    mu_.lock();
     auto it = senders_.find(id);
     if (it != senders_.end()) {
       zmq_close(it->second);
     }
+    mu_.unlock();
     // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
       return;
@@ -157,6 +139,7 @@ class ZMQVan : public Van {
     if (zmq_connect(sender, addr.c_str()) != 0) {
       LOG(FATAL) << "connect to " + addr + " failed: " + zmq_strerror(errno);
     }
+    std::lock_guard<std::mutex> lk(mu_);
     senders_[id] = sender;
   }
 
@@ -176,8 +159,8 @@ class ZMQVan : public Van {
         || (GetRoleFromId(id) != Node::WORKER)) {
       socket = it->second;
     }
-    else { // GetRoleFromId(id) == Node::WORKER
-      socket = receiver_; // scheduler/server --> worker
+    else { // data msg, and recver is WORKER
+      socket = receiver_; // scheduler/server using receiver socket --> worker sender socket
 
       // first, send dst id
       std::string dst = "ps" + std::to_string(id);
@@ -259,16 +242,19 @@ class ZMQVan : public Van {
     CHECK(is_worker_);
 
     int rc;
+
+    mu_.lock();
     size_t n = senders_.size();
     CHECK_GE(n, 1);
-
-    zmq_pollitem_t pollitem[n+1];
+    zmq_pollitem_t pollitem[n + 1];
     size_t j = 0;
     for (auto& it : senders_) {
       pollitem[j].socket = it.second;
       pollitem[j].events = ZMQ_POLLIN;
       ++j;
     }
+    mu_.unlock();
+
     CHECK_EQ(j, n);
     pollitem[n].socket = receiver_;
     pollitem[n].events = ZMQ_POLLIN;
@@ -280,14 +266,14 @@ class ZMQVan : public Van {
       if (rc > 0) break;
     }
 
-    std::vector<void*> socketlist;
+    std::vector<void*> socket_ready_list;
     for (size_t k = 0; k < n + 1; ++k) {
       if (pollitem[k].revents & ZMQ_POLLIN)
-        socketlist.push_back(pollitem[k].socket);
+        socket_ready_list.push_back(pollitem[k].socket);
     }
-    CHECK_EQ((int) socketlist.size(), rc);
-    // always pick the first one (may optimize this, e.g., load-balanced strategy)
-    void *socket = socketlist[0];
+    CHECK_EQ((int) socket_ready_list.size(), rc);
+    // randomly pick a ready one (may optimize this, e.g., load-balanced strategy)
+    void *socket = socket_ready_list[std::rand() % rc];
     return CallZmqRecv(socket, msg);
   }
 
@@ -381,8 +367,6 @@ class ZMQVan : public Van {
   std::mutex mu_;
   void* receiver_ = nullptr;
 
-  bool is_scheduler_;
-  bool is_server_;
   bool is_worker_;
 };
 }  // namespace ps
