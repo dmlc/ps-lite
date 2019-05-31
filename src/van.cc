@@ -577,7 +577,8 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   // to protobuf
   PBMeta pb;
-  CHECK(pb.ParseFromArray(meta_buf, buf_size)) << "failed to parse string into protobuf";
+  CHECK(pb.ParseFromArray(meta_buf, buf_size))
+      << "failed to parse string into protobuf, buf_size=" << buf_size;
 
   // to meta
   meta->head = pb.head();
