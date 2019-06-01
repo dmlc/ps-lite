@@ -167,21 +167,20 @@ class ZMQVan : public Van {
   int SendMsg(Message& msg) override {
     if (!is_worker_) return NonWorkerSendMsg(msg);
 
-    // find the socket
+    std::lock_guard<std::mutex> lk(mu_);
+
     int id = msg.meta.recver;
     CHECK_NE(id, Meta::kEmpty);
 
-    mu_.lock();
+    // find the socket
     auto it = senders_.find(id);
     if (it == senders_.end()) {
       LOG(WARNING) << "there is no socket to node " << id;
       return -1;
     }
-    mu_.unlock();
 
     void* socket = it->second;
 
-    std::lock_guard<std::mutex> lk(socket_mu_[socket]);
     return ZmqSendMsg(socket, msg);
   }
 
@@ -290,36 +289,19 @@ class ZMQVan : public Van {
       for (int i = 0;; ++i) {
         zmq_msg_t* zmsg = new zmq_msg_t;
         CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
-        if (is_worker_) {
-          while (true) {
-            std::lock_guard<std::mutex> lk(socket_mu_[socket]);
-            // the zmq_msg_recv should be non-blocking, otherwise deadlock will happen
-            int tag = ZMQ_DONTWAIT;
-            if (zmq_msg_recv(zmsg, socket, tag) != -1) break;
-            if (errno == EINTR) {
-              std::cout << "interrupted";
-              continue;
-            } else if (errno == EAGAIN) { // ZMQ_DONTWAIT
-              continue;
-            }
-            CHECK(0) << "failed to receive message. errno: " << errno << " "
-                         << zmq_strerror(errno);
+        while (true) {
+          std::lock_guard<std::mutex> lk(mu_);
+          // the zmq_msg_recv should be non-blocking, otherwise deadlock will happen
+          int tag = ZMQ_DONTWAIT;
+          if (zmq_msg_recv(zmsg, socket, tag) != -1) break;
+          if (errno == EINTR) {
+            std::cout << "interrupted";
+            continue;
+          } else if (errno == EAGAIN) { // ZMQ_DONTWAIT
+            continue;
           }
-        } else {
-          while (true) {
-            std::lock_guard<std::mutex> lk(mu_);
-            // the zmq_msg_recv should be non-blocking, otherwise deadlock will happen
-            int tag = ZMQ_DONTWAIT;
-            if (zmq_msg_recv(zmsg, socket, tag) != -1) break;
-            if (errno == EINTR) {
-              std::cout << "interrupted";
-              continue;
-            } else if (errno == EAGAIN) { // ZMQ_DONTWAIT
-              continue;
-            }
-            CHECK(0) << "failed to receive message. errno: " << errno << " "
-                         << zmq_strerror(errno);
-          }
+          CHECK(0) << "failed to receive message. errno: " << errno << " "
+                       << zmq_strerror(errno);
         }
         char* buf = CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
         size_t size = zmq_msg_size(zmsg);
@@ -431,7 +413,6 @@ class ZMQVan : public Van {
 
   std::vector<std::thread*> thread_list_;
 
-  std::unordered_map<void*, std::mutex> socket_mu_;
 };
 }  // namespace ps
 
