@@ -87,8 +87,8 @@ class KVWorker : public SimpleApp {
     obj_ = new Customer(app_id, customer_id, std::bind(&KVWorker<Val>::Process, this, _1));
 #ifdef USE_PROFILING
     const char *val;
-    val = Environment::Get()->find("IS_WORKER_ZPULL");
-    is_worker_zpull_ = val? atoi(val) : true;
+    val = Environment::Get()->find("DMLC_ENABLE_RDMA");
+    is_worker_zpull_ = val ? atoi(val) : false;
     if (is_worker_zpull_) LOG(INFO) << "Enable worker zero-copy pull";
 
     val = Environment::Get()->find("ENABLE_PROFILING");
