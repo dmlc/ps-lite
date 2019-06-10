@@ -211,7 +211,7 @@ class ZMQVan : public Van {
       SArray<char> data;
       data.reset(buf, size, [zmsg, size](void *) {
         zmq_msg_close(zmsg);
-        delete zmsg;
+        //delete zmsg;
       });
       msg->data.push_back(data);
     }
