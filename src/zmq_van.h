@@ -316,14 +316,17 @@ class ZMQVan : public Van {
         else if (i == 1) {
           // task
           buf_ctx->meta_zmsg = zmsg;
-          //zmq_msg_close(zmsg);
           bool more = zmq_msg_more(zmsg);
-          //delete zmsg;
+          zmq_msg_close(zmsg);
+          delete zmsg;
           if (!more) break;
         }
         else {
           buf_ctx->data_zmsg.push_back(zmsg);
-          if (!zmq_msg_more(zmsg)) break;
+          bool more = zmq_msg_more(zmsg);
+          zmq_msg_close(zmsg);
+          delete zmsg;
+          if (!more) break;
         }
       } // for
 
@@ -346,7 +349,7 @@ class ZMQVan : public Van {
       if (errno == EINTR) continue;
       CHECK(0) << zmq_strerror(errno);
     }
-    // zmq_msg_close(&meta_msg);
+    zmq_msg_close(&meta_msg);
     int send_bytes = meta_size;
 
     // send data
@@ -364,7 +367,7 @@ class ZMQVan : public Van {
                      << ". " << i << "/" << n;
         return -1;
       }
-      // zmq_msg_close(&data_msg);
+      zmq_msg_close(&data_msg);
       send_bytes += data_size;
     }
     return send_bytes;
