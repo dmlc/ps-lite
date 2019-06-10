@@ -317,15 +317,11 @@ class ZMQVan : public Van {
           // task
           buf_ctx->meta_zmsg = zmsg;
           bool more = zmq_msg_more(zmsg);
-          zmq_msg_close(zmsg);
-          delete zmsg;
           if (!more) break;
         }
         else {
           buf_ctx->data_zmsg.push_back(zmsg);
           bool more = zmq_msg_more(zmsg);
-          zmq_msg_close(zmsg);
-          delete zmsg;
           if (!more) break;
         }
       } // for
