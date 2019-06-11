@@ -209,10 +209,21 @@ class ZMQVan : public Van {
 
       // zero-copy
       SArray<char> data;
-      data.reset(buf, size, [zmsg, size](void *) {
+      if (!is_worker_) {
+        // Servers may occur segfault if using zero-copy.
+        // Adding this copy should not be a big deal, because
+        // we have tensor paritioning, and moreover,
+        // we can add a lot of PS instances to scale out.
+        data.CopyFrom(buf, size);
         zmq_msg_close(zmsg);
-        //delete zmsg;
-      });
+        delete zmsg;
+      } else {
+        // For worker, we use zero copy here.
+        data.reset(buf, size, [zmsg, size](void *) {
+          zmq_msg_close(zmsg);
+          delete zmsg;
+        });
+      }
       msg->data.push_back(data);
     }
 
