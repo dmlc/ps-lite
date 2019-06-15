@@ -290,6 +290,8 @@ void Customer::Receiving() {
         init_push_[key].insert(sender);
         recv_handle_(recv);
 
+        // Reset the push flag, to guarantee that subsequent pulls are blocked.
+        // We might be able to remove this, but just in case the compiler does not work as we expect.
         if (init_push_[key].size() == num_worker) {
           is_push_finished[key] = true;
         }
