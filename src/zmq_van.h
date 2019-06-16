@@ -18,8 +18,6 @@
 #define rand_r(x) rand()
 #endif
 
-#define DEFAULT_INIT_RECV_COPY_MSG_THRESHOLD 2048
-
 namespace ps {
 
 struct ZmqBufferContext { // for clarity, don't merge meta and data
@@ -66,10 +64,6 @@ class ZMQVan : public Van {
     int byteps_zmq_nthreads = val2 ? atoi(val2) : 4;
     zmq_ctx_set(context_, ZMQ_IO_THREADS, byteps_zmq_nthreads);
     PS_VLOG(1) << "BYTEPS_ZMQ_NTHREADS set to " << byteps_zmq_nthreads;
-
-    auto val3 = Environment::Get()->find("ZMQ_INIT_RECV_COPY_MSG_THRESHOLD");
-    init_recv_copy_threshold_ = val2 ? atoi(val3) : DEFAULT_INIT_RECV_COPY_MSG_THRESHOLD;
-    PS_VLOG(2) << "init_recv_copy_msg_threshold set to " << init_recv_copy_threshold_;
 
     Van::Start(customer_id);
   }
@@ -215,20 +209,11 @@ class ZMQVan : public Van {
 
 
       SArray<char> data;
-      if (is_worker_ || (recv_msg_cnt_ > init_recv_copy_threshold_)) {
-        // zero copy
-        data.reset(buf, size, [zmsg, size](void *) {
-          zmq_msg_close(zmsg);
-          delete zmsg;
-        });
-      } else {
-        // the server sometimes may segfault at init if using zero copy,
-        // so we do copy for the init data (the threshold should be large enough)
-        data.CopyFrom(buf, size);
+      // zero copy
+      data.reset(buf, size, [zmsg, size](void *) {
         zmq_msg_close(zmsg);
         delete zmsg;
-        ++recv_msg_cnt_;
-      }
+      });
       msg->data.push_back(data);
     }
 
@@ -427,9 +412,6 @@ class ZMQVan : public Van {
   std::atomic<bool> should_stop_{false};
 
   std::vector<std::thread*> thread_list_;
-
-  size_t init_recv_copy_threshold_;
-  size_t recv_msg_cnt_ = 0;
 
 };
 }  // namespace ps
