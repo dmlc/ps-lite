@@ -15,13 +15,11 @@ const int Meta::kEmpty = std::numeric_limits<int>::max();
 size_t num_worker, num_server;
 std::mutex mu_;
 std::mutex key_mu_;
-std::vector<std::list<Message> > buffered_push;
-std::vector<std::list<Message> > buffered_pull;
-std::unordered_map<uint64_t, std::atomic<bool> > is_push_finished;
+std::vector<std::list<Message> > buffered_push_;
+std::vector<std::list<Message> > buffered_pull_;
+std::unordered_map<uint64_t, std::atomic<bool> > is_push_finished_;
 std::unordered_map<uint64_t, std::set<int> > pull_collected_;
 std::vector<std::list<Message> > worker_buffer_;
-
-std::unordered_map<uint64_t, std::set<int> > init_push_;
 
 std::atomic<int> thread_barrier_{0};
 
@@ -100,9 +98,9 @@ void Customer::ProcessPullRequest(int worker_id) {
   while (!should_stop) {
     {
       std::lock_guard<std::mutex> lock(mu_);
-      CHECK_LE((unsigned int) worker_id, buffered_pull.size()) << worker_id << ", " << buffered_pull.size();
-      pull_consumer.splice(pull_consumer.end(), buffered_pull[worker_id]);
-      buffered_pull[worker_id].clear();
+      CHECK_LE((unsigned int) worker_id, buffered_pull_.size()) << worker_id << ", " << buffered_pull_.size();
+      pull_consumer.splice(pull_consumer.end(), buffered_pull_[worker_id]);
+      buffered_pull_[worker_id].clear();
     }
     auto it = pull_consumer.begin();
     while (it != pull_consumer.end()) {
@@ -117,10 +115,10 @@ void Customer::ProcessPullRequest(int worker_id) {
       CHECK(!msg.meta.push);
       uint64_t key = GetKeyFromMsg(msg);
       std::lock_guard<std::mutex> lock(key_mu_);
-      if (is_push_finished[key].load() && (pull_collected_[key].find(worker_id) == pull_collected_[key].end())) {
+      if (is_push_finished_[key].load() && (pull_collected_[key].find(worker_id) == pull_collected_[key].end())) {
         pull_collected_[key].insert(worker_id);
         if (pull_collected_[key].size() == (unsigned int) num_worker) {
-          is_push_finished[key] = false;
+          is_push_finished_[key] = false;
           pull_collected_[key].clear();
         }
         recv_handle_(msg);
@@ -145,9 +143,9 @@ void Customer::ProcessPushRequest(int thread_id) {
   while (!should_stop) {
     {
       std::lock_guard<std::mutex> lock(mu_);
-      CHECK_LE((unsigned int) thread_id, buffered_push.size()) << thread_id << ", " << buffered_push.size();
-      push_consumer.splice(push_consumer.end(), buffered_push[thread_id]);
-      buffered_push[thread_id].clear();
+      CHECK_LE((unsigned int) thread_id, buffered_push_.size()) << thread_id << ", " << buffered_push_.size();
+      push_consumer.splice(push_consumer.end(), buffered_push_[thread_id]);
+      buffered_push_[thread_id].clear();
     }
     auto it = push_consumer.begin();
     while (it != push_consumer.end()) {
@@ -175,7 +173,7 @@ void Customer::ProcessPushRequest(int thread_id) {
 
       if ((size_t) push_finished_cnt[key] == num_worker) {
         std::lock_guard<std::mutex> lock(key_mu_);
-        is_push_finished[key] = true;
+        is_push_finished_[key] = true;
         push_finished_cnt[key] = 0;
       }
 
@@ -230,9 +228,9 @@ void Customer::Receiving() {
     std::vector<std::thread *> push_thread;
     for (int i = 0; i < server_push_nthread; ++i) {
       std::list<Message> buf;
-      buffered_push.push_back(buf);
+      buffered_push_.push_back(buf);
     }
-    CHECK_EQ(buffered_push.size(), (unsigned int) server_push_nthread);
+    CHECK_EQ(buffered_push_.size(), (unsigned int) server_push_nthread);
     for (int i = 0; i < server_push_nthread; ++i) {
       std::lock_guard<std::mutex> lock(mu_);
       auto t = new std::thread(&Customer::ProcessPushRequest, this, i);
@@ -243,9 +241,9 @@ void Customer::Receiving() {
     std::vector<std::thread *> pull_thread;
     for (size_t i = 0; i < num_worker; ++i) {
       std::list<Message> buf;
-      buffered_pull.push_back(buf);
+      buffered_pull_.push_back(buf);
     }
-    CHECK_EQ(buffered_pull.size(), (unsigned int) num_worker);
+    CHECK_EQ(buffered_pull_.size(), (unsigned int) num_worker);
     for (size_t i = 0; i < num_worker; ++i) {
       std::lock_guard<std::mutex> lock(mu_);
       auto t = new std::thread(&Customer::ProcessPullRequest, this, i);
@@ -259,6 +257,8 @@ void Customer::Receiving() {
     }
     LOG(INFO) << "All threads inited, ready to process message ";
 
+    std::unordered_map<uint64_t, std::set<int> > init_push_;
+
     while (true) {
       Message recv;
       recv_queue_.WaitAndPop(&recv);
@@ -266,10 +266,10 @@ void Customer::Receiving() {
         Message terminate_msg;
         terminate_msg.meta.control.cmd = Control::TERMINATE;
         std::lock_guard<std::mutex> lock(mu_);
-        for (auto buf : buffered_push) {
+        for (auto buf : buffered_push_) {
           buf.push_back(terminate_msg);
         }
-        for (auto buf : buffered_pull) {
+        for (auto buf : buffered_pull_) {
           buf.push_back(terminate_msg);
         }
         break;
@@ -293,7 +293,8 @@ void Customer::Receiving() {
         // Reset the push flag, to guarantee that subsequent pulls are blocked.
         // We might be able to remove this, but just in case the compiler does not work as we expect.
         if (init_push_[key].size() == num_worker) {
-          is_push_finished[key] = false;
+          std::lock_guard<std::mutex> lock(key_mu_);
+          is_push_finished_[key] = false;
         }
 
         continue;
@@ -302,11 +303,11 @@ void Customer::Receiving() {
 
       if (recv.meta.push) { // push: same key goes to same thread
         std::lock_guard<std::mutex> lock(mu_);
-        buffered_push[(key/num_server)%server_push_nthread].push_back(recv);
+        buffered_push_[(key/num_server)%server_push_nthread].push_back(recv);
       } else { // pull
         std::lock_guard<std::mutex> lock(mu_);
         int worker_id = (recv.meta.sender - 9) / 2; // worker id: 9, 11, 13 ...
-        buffered_pull[worker_id].push_back(recv);
+        buffered_pull_[worker_id].push_back(recv);
       }
 
     } // while
