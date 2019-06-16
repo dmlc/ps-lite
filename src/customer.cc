@@ -14,11 +14,11 @@ const int Node::kEmpty = std::numeric_limits<int>::max();
 const int Meta::kEmpty = std::numeric_limits<int>::max();
 size_t num_worker, num_server;
 std::mutex mu_;
+std::mutex key_mu_;
 std::vector<std::list<Message> > buffered_push;
 std::vector<std::list<Message> > buffered_pull;
 std::unordered_map<uint64_t, std::atomic<bool> > is_push_finished;
 std::unordered_map<uint64_t, std::set<int> > pull_collected_;
-std::unordered_map<uint64_t, std::mutex > key_mu_;
 std::vector<std::list<Message> > worker_buffer_;
 
 std::unordered_map<uint64_t, std::set<int> > init_push_;
@@ -116,7 +116,7 @@ void Customer::ProcessPullRequest(int worker_id) {
       }
       CHECK(!msg.meta.push);
       uint64_t key = GetKeyFromMsg(msg);
-      std::lock_guard<std::mutex> lock(key_mu_[key]);
+      std::lock_guard<std::mutex> lock(key_mu_);
       if (is_push_finished[key].load() && (pull_collected_[key].find(worker_id) == pull_collected_[key].end())) {
         pull_collected_[key].insert(worker_id);
         if (pull_collected_[key].size() == (unsigned int) num_worker) {
@@ -174,7 +174,7 @@ void Customer::ProcessPushRequest(int thread_id) {
       ++push_finished_cnt[key];
 
       if ((size_t) push_finished_cnt[key] == num_worker) {
-        std::lock_guard<std::mutex> lock(key_mu_[key]);
+        std::lock_guard<std::mutex> lock(key_mu_);
         is_push_finished[key] = true;
         push_finished_cnt[key] = 0;
       }
