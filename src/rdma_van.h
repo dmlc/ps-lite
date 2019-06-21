@@ -1,5 +1,8 @@
 /**
- *  Copyright (c) 2018 by Chang Lan, Jiang Yimin, Jingrong Chen
+ *  Copyright (c) 2018-2019 Bytedance Inc.
+ *  Author: lanchang@bytedance.com (Chang Lan)
+ *          jiangyimin@bytedance.com (Yimin Jiang)
+ *          chenjingrong@bytedance.com (Jingrong Chen)
  */
 #ifndef PS_RDMA_VAN_H_
 #define PS_RDMA_VAN_H_
@@ -31,19 +34,39 @@
 
 namespace ps {
 
+// Number of context buffers for sending START messages
 static const int kStartDepth = 128;
+
+// Number of context buffers for writing messages
 static const int kWriteDepth = kStartDepth;
 
+// Number of context buffers for receiving messages
 static const int kRxDepth = kStartDepth * 2;
+
+// Number of context buffers for sending REPLY messages
 static const int kReplyDepth = kRxDepth;
 
+// Maximum number of scatter/gather elements in any Work Request
 static const int kSGEntry = 4;
+
+// Time to wait for resolution to complete (in milliseconds)
 static const int kTimeoutms = 1000;
+
+// Number of backlog of incoming connection requests
 static const int kRdmaListenBacklog = 128;
+
+// Number of preallocated work request buffers
 static const int kMaxConcurrentWorkRequest =
     kRxDepth + kStartDepth + kReplyDepth + kWriteDepth;
+
+// Length of buffers for storing hostname in the context of a connection request
 static const int kMaxHostnameLength = 16;
+
+// Maximum number of ``data'' in a Message
+// TODO(changlan): What if there are more data in Message?
 static const int kMaxDataFields = 4;
+
+// Alignment in Mempool
 static const size_t kAlignment = 8;
 
 template <typename T>
@@ -56,8 +79,10 @@ static inline T align_ceil(T v, T align) {
   return align_floor(v + align - 1, align);
 }
 
+// A simple thread-safe memory pool for RDMA memory regions
 class SimpleMempool {
  public:
+  // Allocated an initial ``size'' of registered memory regions
   explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x1000000) {
     pd_ = pd;
     struct ibv_mr *mr;
@@ -66,18 +91,23 @@ class SimpleMempool {
     CHECK(p);
     CHECK(mr = ibv_reg_mr(pd, p, size,
                           IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-    mr_list.emplace(p+size, mr); // this mr is associated with memory address range [p, p+size]
+    // this mr is associated with memory address range [p, p+size]
+    mr_list.emplace(p + size, mr);
     free_list.emplace(size, p);
   }
 
+  // Deregister and release all memory regions
   ~SimpleMempool() {
     std::lock_guard<std::mutex> lk(mu_);
-    for(auto it = mr_list.begin(); it != mr_list.end(); it++){
+    for (auto it = mr_list.begin(); it != mr_list.end(); it++) {
       CHECK_EQ(ibv_dereg_mr(it->second), 0);
       free(it->second->addr);
     }
   }
 
+  // Take a buffer of ``size'' from the pool. If there is not enough remaining
+  // space in existing memory regions, allocate and register a new memory
+  // region.
   char *Alloc(size_t size) {
     if (size == 0) {
       return nullptr;
@@ -85,23 +115,30 @@ class SimpleMempool {
 
     std::lock_guard<std::mutex> lk(mu_);
 
+    // Make sure the memory addresses are aligned by rounding the size up to
+    // next power of two
     size_t proper_size = align_ceil(size, kAlignment);
 
+    // Find a buffer of size greater than or equal to proper_size
     auto it = free_list.lower_bound(proper_size);
 
-    if(it == free_list.end()) { // if there is no space left, need to allocate and register new memory
+    if (it == free_list.end()) {  // if there is no space left, need to allocate
+                                  // and register new memory
       size_t new_mem_size = total_allocated_size;
-      while(proper_size > new_mem_size) {
+      while (proper_size > new_mem_size) {
         new_mem_size *= 2;
       }
-      char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, new_mem_size));
+      char *p =
+          reinterpret_cast<char *>(aligned_alloc(kAlignment, new_mem_size));
       CHECK(p);
       struct ibv_mr *mr;
-      CHECK(mr = ibv_reg_mr(pd_, p, new_mem_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-      mr_list.emplace(p+new_mem_size, mr);
+      CHECK(mr = ibv_reg_mr(pd_, p, new_mem_size,
+                            IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+      mr_list.emplace(p + new_mem_size, mr);
       free_list.emplace(new_mem_size, p);
       it = free_list.lower_bound(proper_size);
-      PS_VLOG(1) << "Not enough memory in the pool, requested size " << proper_size << ", new allocated size " << new_mem_size;
+      PS_VLOG(1) << "Not enough memory in the pool, requested size "
+                 << proper_size << ", new allocated size " << new_mem_size;
       total_allocated_size += new_mem_size;
     }
 
@@ -124,6 +161,7 @@ class SimpleMempool {
     return addr;
   }
 
+  // Return the buffer pointed by ``addr'' into the pool
   void Free(char *addr) {
     if (!addr) {
       return;
@@ -144,25 +182,32 @@ class SimpleMempool {
     struct ibv_mr *mr = Addr2MR(addr);
     return mr->lkey;
   }
+
   uint32_t RemoteKey(char *addr) {
     struct ibv_mr *mr = Addr2MR(addr);
     return mr->rkey;
   }
 
  private:
-  std::mutex mu_;
-  std::multimap<size_t, char *> free_list;
-  std::unordered_map<char *, size_t> used_list;
-  std::map<char *, struct ibv_mr*> mr_list; // first: `end` of this mr address (e.g., for mr with [addr, addr+size], point to `addr+size`)
+  std::mutex mu_;  // for thread safety
   struct ibv_pd *pd_;
+
+  // buffer size -> buffer pointer
+  std::multimap<size_t, char *> free_list;
+  // buffer pointer -> buffer size
+  std::unordered_map<char *, size_t> used_list;
+  // first: `end` of this mr address (e.g., for mr with [addr, addr+size), point
+  // to `addr+size`)
+  std::map<char *, struct ibv_mr *> mr_list;
+
   size_t total_allocated_size = 0;
 
-  inline struct ibv_mr* Addr2MR(char *addr) { // convert the memory address to its associated RDMA memory region
+  // Convert the memory address to its associated RDMA memory region
+  inline struct ibv_mr *Addr2MR(char *addr) {
     auto it = mr_list.lower_bound(addr);
     CHECK_NE(it, mr_list.end()) << "cannot find the associated memory region";
     return it->second;
   }
-
 };
 
 class Block {
@@ -177,8 +222,6 @@ class Block {
 
   void Release() {
     int v = counter.fetch_sub(1);
-    // LOG(INFO) << "Decrementing addr " << (uintptr_t)addr << ", counter: " <<
-    // counter;
     if (v == 1) {
       delete this;
     }
@@ -235,16 +278,12 @@ struct LocalBufferContext {
   std::vector<SArray<char>> data;
 };
 
-typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>>
-    MRPtr;
-typedef std::vector<SArray<char>> KV_Type;
-
 struct MessageBuffer {
   size_t inline_len;
   char *inline_buf;
   WRContext *reserved_context;
   std::vector<SArray<char>> data;
-  std::vector<std::pair<MRPtr, size_t>> mrs;
+  std::vector<std::pair<struct ibv_mr *, size_t>> mrs;
 };
 
 struct RequestContext {
@@ -432,7 +471,7 @@ struct Endpoint {
     wr.num_sge = 1;
 
     CHECK_EQ(ibv_post_recv(cm_id->qp, &wr, &bad_wr), 0)
-        << "ibv_post_send failed.";
+        << "ibv_post_recv failed.";
   }
 };
 
@@ -476,10 +515,8 @@ class RDMAVan : public Van {
     PS_VLOG(1) << "Clearing mempool.";
     mempool_.reset();
 
-    auto map_iter = memory_mr_map.begin();
-    while (map_iter != memory_mr_map.end()) {
-      ibv_dereg_mr(map_iter->second);
-      map_iter++;
+    for (auto &it : allocated_mr_) {
+      ibv_dereg_mr(it.second);
     }
 
     PS_VLOG(1) << "Clearing endpoints.";
@@ -491,9 +528,7 @@ class RDMAVan : public Van {
     CHECK(!ibv_destroy_comp_channel(comp_event_channel_))
         << "Failed to destroy channel";
 
-    // TODO: ibv_dealloc_pd sometimes complains resource busy, need to fix this
-    // CHECK(!ibv_dealloc_pd(pd_)) << "Failed to deallocate PD: " <<
-    // strerror(errno);
+    // TODO: ibv_dealloc_pd sometimes complains about busy resources
 
     PS_VLOG(1) << "Destroying listener.";
     rdma_destroy_id(listener_);
@@ -608,7 +643,11 @@ class RDMAVan : public Van {
 
     CHECK(meta_len);
 
-    if (!msg.meta.control.empty()){ // control message
+    // For control messages, inline the message content
+    // into the START message.
+    // Otherwise, register the data buffer as RDMA memory
+    // region.
+    if (!msg.meta.control.empty()) {  // control message
       msg_buf->inline_len = total_len;
       msg_buf->inline_buf = mempool_->Alloc(total_len);
       meta.SerializeToArray(msg_buf->inline_buf, meta_len);
@@ -618,31 +657,30 @@ class RDMAVan : public Van {
         memcpy(cur, sa.data(), seg_len);
         cur += seg_len;
       }
-    }
-    else { // data message
+    } else {  // data message
       msg_buf->inline_len = meta_len;
       msg_buf->inline_buf = mempool_->Alloc(meta_len);
       msg_buf->data = msg.data;
       meta.SerializeToArray(msg_buf->inline_buf, meta_len);
 
       for (auto &sa : msg_buf->data) {
-        if (sa.size()) {
-          auto search_map_iterator = memory_mr_map.find(sa.data());
-          if (search_map_iterator != memory_mr_map.end()) {  // if used before
-            MRPtr ptr(search_map_iterator->second, [](struct ibv_mr *mr) {});
-            CHECK(ptr.get()) << strerror(errno);
-            msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-          } else {
-            struct ibv_mr *temp_mr = ibv_reg_mr(pd_, sa.data(), sa.size(), 0);
-            memory_mr_map[sa.data()] = temp_mr;
-            MRPtr ptr(temp_mr, [](struct ibv_mr *mr) {});
-            CHECK(ptr.get()) << strerror(errno);
-            msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-          }
+        if (sa.size() == 0) {
+          continue;
         }
+        // Optimization: If the memory region has been registered,
+        // (assuming the previously registered address is not freed)
+        // re-use the same memory region.
+        char *p = sa.data();
+        auto it = allocated_mr_.find(p);
+        if (it == allocated_mr_.end()) {
+          allocated_mr_[p] = ibv_reg_mr(pd_, p, sa.size(), 0);
+        }
+        CHECK(allocated_mr_[p]) << "Invalid memory region";
+        msg_buf->mrs.push_back({allocated_mr_[p], sa.size()});
       }
     }
 
+    // Take the second context buffer first to avoid deadlock
     WRContext *context = nullptr, *reserved = nullptr;
     endpoint->free_write_ctx.WaitAndPop(&reserved);
     endpoint->free_start_ctx.WaitAndPop(&context);
@@ -773,7 +811,7 @@ class RDMAVan : public Van {
         CHECK(wc[i].status == IBV_WC_SUCCESS)
             << "Failed status \n"
             << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
-            << static_cast<int>(wc[i].wr_id) << " " << wc[i].vendor_err;
+            << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err;
 
         WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
         Endpoint *endpoint =
@@ -1107,7 +1145,7 @@ class RDMAVan : public Van {
   struct rdma_event_channel *event_channel_ = nullptr;
   struct ibv_context *context_ = nullptr;
 
-  std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
+  std::unordered_map<char *, struct ibv_mr *> allocated_mr_;
 
   // ibverbs protection domain
   struct ibv_pd *pd_ = nullptr;
