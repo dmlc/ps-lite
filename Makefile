@@ -22,7 +22,7 @@ INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread
 
-ifeq ($(USE_RDMA), 1)
+ifdef USE_RDMA
 LIBS += -lrdmacm -libverbs
 CFLAGS += -DDMLC_USE_RDMA
 endif
