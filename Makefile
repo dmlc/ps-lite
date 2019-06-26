@@ -17,7 +17,6 @@ ifndef PROTOC
 PROTOC = ${DEPS_PATH}/bin/protoc
 endif
 
-
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread
@@ -37,7 +36,7 @@ all: ps test
 include make/deps.mk
 
 clean:
-	rm -rf build $(TEST) tests/*.d tests/*.dSYM
+	rm -rf build $(TEST) tests/*.d
 	find src -name "*.pb.[ch]*" -delete
 
 lint:
@@ -51,7 +50,7 @@ build/libps.a: $(OBJS)
 
 build/%.o: src/%.cc ${ZMQ} src/meta.pb.h
 	@mkdir -p $(@D)
-	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
+	$(CXX) $(INCPATH) -std=c++14 -MM -MT build/$*.o $< >build/$*.d
 	$(CXX) $(CFLAGS) $(LIBS) -c $< -o $@
 
 src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}

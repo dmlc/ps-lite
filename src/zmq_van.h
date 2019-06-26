@@ -17,7 +17,7 @@ namespace ps {
 /**
  * \brief be smart on freeing recved data
  */
-inline void FreeData(void* data, void* hint) {
+inline void FreeData(void *data, void *hint) {
   if (hint == NULL) {
     delete[] static_cast<char*>(data);
   } else {
@@ -103,7 +103,7 @@ class ZMQVan : public Van {
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
       return;
     }
-    void* sender = zmq_socket(context_, ZMQ_DEALER);
+    void *sender = zmq_socket(context_, ZMQ_DEALER);
     CHECK(sender != NULL)
         << zmq_strerror(errno)
         << ". it often can be solved by \"sudo ulimit -n 65536\""
@@ -113,13 +113,12 @@ class ZMQVan : public Van {
       zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
     }
     // connect
-    std::string addr =
-        "tcp://" + node.hostname + ":" + std::to_string(node.port);
+    std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
     if (GetEnv("DMLC_LOCAL", 0)) {
       addr = "ipc:///tmp/" + std::to_string(node.port);
     }
     if (zmq_connect(sender, addr.c_str()) != 0) {
-      LOG(FATAL) << "connect to " + addr + " failed: " + zmq_strerror(errno);
+      LOG(FATAL) <<  "connect to " + addr + " failed: " + zmq_strerror(errno);
     }
     senders_[id] = sender;
   }
@@ -134,11 +133,10 @@ class ZMQVan : public Van {
       LOG(WARNING) << "there is no socket to node " << id;
       return -1;
     }
-    void* socket = it->second;
+    void *socket = it->second;
 
     // send meta
-    int meta_size;
-    char* meta_buf = nullptr;
+    int meta_size; char* meta_buf;
     PackMeta(msg.meta, &meta_buf, &meta_size);
     int tag = ZMQ_SNDMORE;
     int n = msg.data.size();
@@ -152,7 +150,6 @@ class ZMQVan : public Van {
     }
     // zmq_msg_close(&meta_msg);
     int send_bytes = meta_size;
-
     // send data
     for (int i = 0; i < n; ++i) {
       zmq_msg_t data_msg;
@@ -177,7 +174,7 @@ class ZMQVan : public Van {
   int RecvMsg(Message* msg) override {
     msg->data.clear();
     size_t recv_bytes = 0;
-    for (int i = 0;; ++i) {
+    for (int i = 0; ; ++i) {
       zmq_msg_t* zmsg = new zmq_msg_t;
       CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
       while (true) {
@@ -186,11 +183,11 @@ class ZMQVan : public Van {
           std::cout << "interrupted";
           continue;
         }
-        LOG(WARNING) << "failed to receive message. errno: " << errno << " "
-                     << zmq_strerror(errno);
+        LOG(WARNING) << "failed to receive message. errno: "
+                     << errno << " " << zmq_strerror(errno);
         return -1;
       }
-      char* buf = CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
+      char* buf = CHECK_NOTNULL((char *)zmq_msg_data(zmsg));
       size_t size = zmq_msg_size(zmsg);
       recv_bytes += size;
 
@@ -245,13 +242,13 @@ class ZMQVan : public Van {
     return Meta::kEmpty;
   }
 
-  void* context_ = nullptr;
+  void *context_ = nullptr;
   /**
    * \brief node_id to the socket for sending data to this node
    */
   std::unordered_map<int, void*> senders_;
   std::mutex mu_;
-  void* receiver_ = nullptr;
+  void *receiver_ = nullptr;
 };
 }  // namespace ps
 
@@ -286,8 +283,8 @@ class ZMQVan : public Van {
 
 //     if (event == ZMQ_EVENT_DISCONNECTED) {
 //       if (!is_scheduler_) {
-//         PS_VLOG(1) << my_node_.ShortDebugString() << ": scheduler is dead.
-//         exit."; exit(-1);
+//         PS_VLOG(1) << my_node_.ShortDebugString() << ": scheduler is dead. exit.";
+//         exit(-1);
 //       }
 //     }
 //     if (event == ZMQ_EVENT_MONITOR_STOPPED) {
