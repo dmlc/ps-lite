@@ -52,17 +52,16 @@
 
 /*! \brief whether or not use c++11 support */
 #ifndef DMLC_USE_CXX11
-#define DMLC_USE_CXX11 \
-  (defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L || defined(_MSC_VER))
+#define DMLC_USE_CXX11 (defined(__GXX_EXPERIMENTAL_CXX0X__) ||\
+                        __cplusplus >= 201103L || defined(_MSC_VER))
 #endif
 
 /// check if g++ is before 4.6
 #if DMLC_USE_CXX11 && defined(__GNUC__) && !defined(__clang_version__)
 #if __GNUC__ == 4 && __GNUC_MINOR__ < 6
-#pragma message(                                 \
-    "Will need g++-4.6 or higher to compile all" \
-    "the features in dmlc-core, "                \
-    "compile without c++0x, some features may be disabled")
+#pragma message("Will need g++-4.6 or higher to compile all"           \
+                "the features in dmlc-core, "                           \
+                "compile without c++11, some features may be disabled")
 #undef DMLC_USE_CXX11
 #define DMLC_USE_CXX11 0
 #endif
@@ -77,17 +76,17 @@
  * section if C++11 is not available.
  */
 #ifndef DISALLOW_COPY_AND_ASSIGN
-#if DMLC_USE_CXX11
-#define DISALLOW_COPY_AND_ASSIGN(T) \
-  T(T const &) = delete;            \
-  T(T &&) = delete;                 \
-  T &operator=(T const &) = delete; \
-  T &operator=(T &&) = delete
-#else
-#define DISALLOW_COPY_AND_ASSIGN(T) \
-  T(T const &);                     \
-  T &operator=(T const &)
-#endif
+#  if DMLC_USE_CXX11
+#    define DISALLOW_COPY_AND_ASSIGN(T) \
+       T(T const&) = delete; \
+       T(T&&) = delete; \
+       T& operator=(T const&) = delete; \
+       T& operator=(T&&) = delete
+#  else
+#    define DISALLOW_COPY_AND_ASSIGN(T) \
+       T(T const&); \
+       T& operator=(T const&)
+#  endif
 #endif
 
 ///
@@ -170,7 +169,7 @@ inline const T *BeginPtr(const std::vector<T> &vec) {
  * \param str input string
  * \return beginning address of a string
  */
-inline char *BeginPtr(std::string &str) {  // NOLINT(*)
+inline char* BeginPtr(std::string &str) {  // NOLINT(*)
   if (str.length() == 0) return NULL;
   return &str[0];
 }
@@ -179,7 +178,7 @@ inline char *BeginPtr(std::string &str) {  // NOLINT(*)
  * \param str input string
  * \return beginning address of a string
  */
-inline const char *BeginPtr(const std::string &str) {
+inline const char* BeginPtr(const std::string &str) {
   if (str.length() == 0) return NULL;
   return &str[0];
 }

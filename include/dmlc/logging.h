@@ -51,41 +51,40 @@ struct Error : public std::runtime_error {
 #include <glog/logging.h>
 
 namespace dmlc {
-inline void InitLogging(const char *argv0) { google::InitGoogleLogging(argv0); }
+inline void InitLogging(const char* argv0) {
+  google::InitGoogleLogging(argv0);
+}
 }  // namespace dmlc
 
 #else
 // use a light version of glog
 #include <assert.h>
-#include <ctime>
 #include <iostream>
 #include <sstream>
+#include <ctime>
 
 #if defined(_MSC_VER)
 #pragma warning(disable : 4722)
 #endif
 
 namespace dmlc {
-inline void InitLogging(const char *argv0) {
+inline void InitLogging(const char* argv0) {
   // DO NOTHING
 }
 
 // Always-on checking
-#define CHECK(x)                                                      \
-  if (!(x))                                                           \
-  dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check "      \
-                                                        "failed: " #x \
-                                                     << ' '
+#define CHECK(x)                                           \
+  if (!(x))                                                \
+    dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check "  \
+      "failed: " #x << ' '
 #define CHECK_LT(x, y) CHECK((x) < (y))
 #define CHECK_GT(x, y) CHECK((x) > (y))
 #define CHECK_LE(x, y) CHECK((x) <= (y))
 #define CHECK_GE(x, y) CHECK((x) >= (y))
 #define CHECK_EQ(x, y) CHECK((x) == (y))
 #define CHECK_NE(x, y) CHECK((x) != (y))
-#define CHECK_NOTNULL(x)                                                                 \
-  ((x) == NULL                                                                           \
-   ? dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check  notnull: " #x << ' ', \
-   (x) : (x))  // NOLINT(*)
+#define CHECK_NOTNULL(x) \
+  ((x) == NULL ? dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check  notnull: "  #x << ' ', (x) : (x)) // NOLINT(*)
 // Debug-only checking.
 #ifdef NDEBUG
 #define DCHECK(x) \
@@ -149,25 +148,25 @@ class DateLogger {
     _tzset();
 #endif
   }
-  const char *HumanDate() {
+  const char* HumanDate() {
 #if defined(_MSC_VER)
     _strtime_s(buffer_, sizeof(buffer_));
 #else
     time_t time_value = time(NULL);
     struct tm now;
     localtime_r(&time_value, &now);
-    snprintf(buffer_, sizeof(buffer_), "%02d:%02d:%02d", now.tm_hour, now.tm_min, now.tm_sec);
+    snprintf(buffer_, sizeof(buffer_), "%02d:%02d:%02d", now.tm_hour,
+             now.tm_min, now.tm_sec);
 #endif
     return buffer_;
   }
-
  private:
   char buffer_[9];
 };
 
 class LogMessage {
  public:
-  LogMessage(const char *file, int line)
+  LogMessage(const char* file, int line)
       :
 #ifdef __ANDROID__
         log_stream_(std::cout)
@@ -175,18 +174,19 @@ class LogMessage {
         log_stream_(std::cerr)
 #endif
   {
-    log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":" << line << ": ";
+    log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":"
+                << line << ": ";
   }
   ~LogMessage() { log_stream_ << "\n"; }
-  std::ostream &stream() { return log_stream_; }
+  std::ostream& stream() { return log_stream_; }
 
  protected:
-  std::ostream &log_stream_;
+  std::ostream& log_stream_;
 
  private:
   DateLogger pretty_date_;
-  LogMessage(const LogMessage &);
-  void operator=(const LogMessage &);
+  LogMessage(const LogMessage&);
+  void operator=(const LogMessage&);
 };
 
 #if DMLC_LOG_STACK_TRACE
@@ -249,21 +249,22 @@ inline std::string StackTrace() {
 #if DMLC_LOG_FATAL_THROW == 0
 class LogMessageFatal : public LogMessage {
  public:
-  LogMessageFatal(const char *file, int line) : LogMessage(file, line) {}
+  LogMessageFatal(const char* file, int line) : LogMessage(file, line) {}
   ~LogMessageFatal() {
     log_stream_ << "\n";
     abort();
   }
 
  private:
-  LogMessageFatal(const LogMessageFatal &);
-  void operator=(const LogMessageFatal &);
+  LogMessageFatal(const LogMessageFatal&);
+  void operator=(const LogMessageFatal&);
 };
 #else
 class LogMessageFatal {
  public:
-  LogMessageFatal(const char *file, int line) {
-    log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":" << line << ": ";
+  LogMessageFatal(const char* file, int line) {
+    log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":"
+                << line << ": ";
   }
   std::ostringstream &stream() { return log_stream_; }
   ~LogMessageFatal() DMLC_THROW_EXCEPTION {
@@ -293,7 +294,7 @@ class LogMessageVoidify {
   LogMessageVoidify() {}
   // This has to be an operator with a precedence lower than << but
   // higher than "?:". See its usage.
-  void operator&(std::ostream &) {}
+  void operator&(std::ostream&) {}
 };
 
 }  // namespace dmlc
