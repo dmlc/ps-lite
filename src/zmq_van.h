@@ -336,7 +336,7 @@ class ZMQVan : public Van {
     int meta_size;
     char* meta_buf = nullptr;
     PackMeta(msg.meta, &meta_buf, &meta_size);
-    int tag = ZMQ_SNDMORE | ZMQ_DONTWAIT;
+    int tag = ZMQ_SNDMORE;
     int n = msg.data.size();
     if (n == 0) tag = 0;
     zmq_msg_t meta_msg;
