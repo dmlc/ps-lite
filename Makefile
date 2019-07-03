@@ -52,7 +52,7 @@ build/libps.a: $(OBJS)
 build/%.o: src/%.cc ${ZMQ} src/meta.pb.h
 	@mkdir -p $(@D)
 	$(CXX) $(INCPATH) -std=c++11 -MM -MT build/$*.o $< >build/$*.d
-	$(CXX) $(CFLAGS) $(LIBS) -c $< -o $@
+	$(CXX) $(CFLAGS) -c $< -o $@ $(LIBS)
 
 src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 	$(PROTOC) --cpp_out=./src --proto_path=./src $<
