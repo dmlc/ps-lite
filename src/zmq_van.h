@@ -71,6 +71,9 @@ class ZMQVan : public Van {
   void Stop() override {
     PS_VLOG(1) << my_node_.ShortDebugString() << " is stopping";
     Van::Stop();
+    // join all threads
+    should_stop_ = true;
+    for (auto t : thread_list_) t->join();
     // close sockets
     int linger = 0;
     int rc = zmq_setsockopt(receiver_, ZMQ_LINGER, &linger, sizeof(linger));
@@ -85,8 +88,6 @@ class ZMQVan : public Van {
     senders_.clear();
     zmq_ctx_destroy(context_);
     context_ = nullptr;
-    should_stop_ = true;
-    for (auto t : thread_list_) t->join();
   }
 
   int Bind(const Node& node, int max_retry) override {
