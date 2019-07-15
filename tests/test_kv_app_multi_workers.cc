@@ -41,12 +41,21 @@ void RunWorker(int customer_id) {
   std::vector<float> rets;
   kv.Wait(kv.Pull(keys, &rets));
 
+  // pushpull
+  std::vector<float> outs;
+  for (int i = 0; i < repeat; ++i) {
+    kv.Wait(kv.PushPull(keys, vals, &outs));
+  }
+
   float res = 0;
+  float res2 = 0;
   for (int i = 0; i < num; ++i) {
     res += fabs(rets[i] - vals[i] * repeat);
+    res += fabs(outs[i] - vals[i] * 2 * repeat);
   }
   CHECK_LT(res / repeat, 1e-5);
-  LL << "error: " << res / repeat;
+  CHECK_LT(res2 / (2 * repeat), 1e-5);
+  LL << "error: " << res / repeat << ", " << res2 / (2 * repeat);
   // stop system
   Finalize(customer_id, true);
 }
