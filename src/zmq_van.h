@@ -8,6 +8,7 @@
 #include <zmq.h>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include "ps/internal/van.h"
 #if _MSC_VER
 #define rand_r(x) rand()
