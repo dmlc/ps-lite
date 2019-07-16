@@ -904,6 +904,8 @@ class RDMAVan : public Van {
       msg->data.push_back(vals);
       msg->data.push_back(lens);
       total_len += keys.size() + vals.size() + lens.size();
+
+      mempool_->Free(buffer_ctx->buffer);
     } else if (data_num > 0) {
       Block *mem_block =
           new Block(mempool_.get(), buffer_ctx->buffer, data_num);
