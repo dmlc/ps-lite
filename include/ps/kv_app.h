@@ -266,7 +266,6 @@ class KVWorker : public SimpleApp {
     kvs.keys = keys;
     Send(ts, false, true, cmd, kvs);
     return ts;
-
   }
 
   /**
