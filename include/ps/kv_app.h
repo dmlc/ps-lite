@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 #include "ps/base.h"
 #include "ps/simple_app.h"
 namespace ps {

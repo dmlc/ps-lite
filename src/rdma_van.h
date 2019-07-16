@@ -22,11 +22,14 @@
 #include <algorithm>
 #include <map>
 #include <queue>
+#include <memory>
 #include <set>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "ps/internal/threadsafe_queue.h"
@@ -528,7 +531,7 @@ class RDMAVan : public Van {
     CHECK(!ibv_destroy_comp_channel(comp_event_channel_))
         << "Failed to destroy channel";
 
-    // TODO: ibv_dealloc_pd sometimes complains about busy resources
+    // TODO(changlan): ibv_dealloc_pd sometimes complains about busy resources
 
     PS_VLOG(1) << "Destroying listener.";
     rdma_destroy_id(listener_);

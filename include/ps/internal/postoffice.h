@@ -6,6 +6,8 @@
 #include <mutex>
 #include <algorithm>
 #include <vector>
+#include <unordered_map>
+#include <memory>
 #include "ps/range.h"
 #include "ps/internal/env.h"
 #include "ps/internal/customer.h"
@@ -35,7 +37,7 @@ class Postoffice {
   /**
    * \brief terminate the system
    *
-   * All nodes should call this function before existing. 
+   * All nodes should call this function before existing.
    * \param do_barrier whether to do block until every node is finalized, default true.
    */
   void Finalize(const int customer_id, const bool do_barrier = true);
