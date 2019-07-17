@@ -10,7 +10,7 @@ asynchronous and zero-copy key-value pair communications between machines.
 
    overview
    get_started
-   tutorials
    how_to
    api
+   history
 ```
