@@ -4,10 +4,10 @@
  *          jiangyimin@bytedance.com (Yimin Jiang)
  *          chenjingrong@bytedance.com (Jingrong Chen)
  */
-#ifndef PS_RDMA_VAN_H_
-#define PS_RDMA_VAN_H_
+#ifndef PS_IBVERBS_VAN_H_
+#define PS_IBVERBS_VAN_H_
 
-#ifdef DMLC_USE_RDMA
+#ifdef DMLC_USE_IBVERBS
 
 #include <errno.h>
 #include <fcntl.h>
@@ -478,10 +478,10 @@ struct Endpoint {
   }
 };
 
-class RDMAVan : public Van {
+class IBVerbsVan : public Van {
  public:
-  RDMAVan() {}
-  ~RDMAVan() {}
+  IBVerbsVan() {}
+  ~IBVerbsVan() {}
 
  protected:
   void Start(int customer_id) override {
@@ -493,7 +493,7 @@ class RDMAVan : public Van {
       CHECK(event_channel_) << "Create RDMA event channel failed";
 
       cm_event_polling_thread_.reset(
-          new std::thread(&RDMAVan::PollEvents, this));
+          new std::thread(&IBVerbsVan::PollEvents, this));
     }
 
     start_mu_.unlock();
@@ -1114,7 +1114,7 @@ class RDMAVan : public Van {
     CHECK(endpoint) << "Endpoint not found.";
 
     if (cq_polling_thread_ == nullptr) {
-      cq_polling_thread_.reset(new std::thread(&RDMAVan::PollCQ, this));
+      cq_polling_thread_.reset(new std::thread(&IBVerbsVan::PollCQ, this));
     }
 
     CHECK_EQ(endpoint->cm_id, id);
@@ -1165,5 +1165,5 @@ class RDMAVan : public Van {
 };  // namespace ps
 };  // namespace ps
 
-#endif  // DMLC_USE_RDMA
-#endif  // PS_RDMA_VAN_H_
+#endif  // DMLC_USE_IBVERBS
+#endif  // PS_IBVERBS_VAN_H_

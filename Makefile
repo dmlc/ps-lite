@@ -21,9 +21,9 @@ INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++11 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread
 
-ifdef USE_RDMA
+ifdef USE_IBVERBS
 LIBS += -lrdmacm -libverbs
-CFLAGS += -DDMLC_USE_RDMA
+CFLAGS += -DDMLC_USE_IBVERBS
 endif
 
 ifdef ASAN
