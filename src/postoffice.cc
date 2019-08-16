@@ -15,10 +15,10 @@ Postoffice::Postoffice() {
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
-  int enable_rdma = GetEnv("DMLC_ENABLE_RDMA", 0);
-  if (enable_rdma) {
-    LOG(INFO) << "enable RDMA for networking";
-    van_ = Van::Create("rdma");
+  int enable_ibverbs = GetEnv("DMLC_ENABLE_IBVERBS", 0);
+  if (enable_ibverbs) {
+    LOG(INFO) << "ibverbs enabled.";
+    van_ = Van::Create("ibverbs");
   } else {
     van_ = Van::Create("zmq");
   }

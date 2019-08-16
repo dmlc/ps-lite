@@ -13,7 +13,7 @@
 
 #include "./meta.pb.h"
 #include "./network_utils.h"
-#include "./rdma_van.h"
+#include "./ibverbs_van.h"
 #include "./resender.h"
 #include "./zmq_van.h"
 
@@ -28,9 +28,9 @@ static const int kDefaultHeartbeatInterval = 0;
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
     return new ZMQVan();
-#ifdef DMLC_USE_RDMA
-  } else if (type == "rdma") {
-    return new RDMAVan();
+#ifdef DMLC_USE_IBVERBS
+} else if (type == "ibverbs") {
+    return new IBVerbsVan();
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
