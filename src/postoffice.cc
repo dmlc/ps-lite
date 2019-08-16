@@ -15,13 +15,8 @@ Postoffice::Postoffice() {
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
-  int enable_ibverbs = GetEnv("DMLC_ENABLE_IBVERBS", 0);
-  if (enable_ibverbs) {
-    LOG(INFO) << "ibverbs enabled.";
-    van_ = Van::Create("ibverbs");
-  } else {
-    van_ = Van::Create("zmq");
-  }
+  std::string van_type = GetEnv("DMLC_PS_VAN_TYPE", "zmq");
+  van_ = Van::Create(van_type);
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
   val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
