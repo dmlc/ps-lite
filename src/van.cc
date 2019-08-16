@@ -33,7 +33,7 @@ Van* Van::Create(const std::string& type) {
     return new IBVerbsVan();
 #endif
   } else {
-    LOG(FATAL) << "unsupported van type: " << type;
+    LOG(FATAL) << "Unsupported van type: " << type;
     return nullptr;
   }
 }
