@@ -220,7 +220,12 @@ void Customer::Receiving() {
   int worker_thread_num = val ? atoi(val) : 4;
   val = Environment::Get()->find("SERVER_PUSH_NTHREADS");
   int server_push_nthread = val ? atoi(val) : 1;
-  val = Environment::Get()->find("ENABLE_PROFILING");
+  val = Environment::Get()->find("BYTEPS_ENABLE_ASYNC");
+  bool enable_async = val ? atoi(val) : false;
+  if (is_server && enable_async) {
+    is_server_multi_pull_enabled = false;
+    LOG(INFO) << "Multi-threading has been disabled for asynchronous training";
+  }
 
   if (is_server && is_server_multi_pull_enabled){ // server multi-thread
     LOG(INFO) << "Use seperate thread to process pull requests from each worker.";
