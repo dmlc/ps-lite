@@ -50,8 +50,9 @@ cd ps-lite && make -j4
 `ps-lite` provides asynchronous communication for other projects: 
   - Distributed deep neural networks:
     [MXNet](https://github.com/dmlc/mxnet),
-    [CXXNET](https://github.com/dmlc/cxxnet) and
-    [Minverva](https://github.com/minerva-developers/minerva)
+    [CXXNET](https://github.com/dmlc/cxxnet),
+    [Minverva](https://github.com/minerva-developers/minerva), and
+    [BytePS](https://github.com/bytedance/byteps/)
   - Distributed high dimensional inference, such as sparse logistic regression,
     factorization machines:
     [DiFacto](https://github.com/dmlc/difacto)
