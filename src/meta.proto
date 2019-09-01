@@ -50,7 +50,7 @@ message PBMeta {
   // whether or not a push message
   optional bool push = 5;
   // whether or not a pull message
-  optional bool pull = 11;
+  optional bool pull = 12;
   // whether or not it's for SimpleApp
   optional bool simple_app = 6 [default = false];
   // message.data_size 
