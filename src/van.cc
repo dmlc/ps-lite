@@ -478,6 +478,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   if (meta.timestamp != Meta::kEmpty) pb.set_timestamp(meta.timestamp);
   if (meta.body.size()) pb.set_body(meta.body);
   pb.set_push(meta.push);
+  pb.set_pull(meta.pull);
   pb.set_request(meta.request);
   pb.set_simple_app(meta.simple_app);
   pb.set_customer_id(meta.customer_id);
@@ -520,6 +521,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   meta->timestamp = pb.has_timestamp() ? pb.timestamp() : Meta::kEmpty;
   meta->request = pb.request();
   meta->push = pb.push();
+  meta->pull = pb.pull();
   meta->simple_app = pb.simple_app();
   meta->body = pb.body();
   meta->customer_id = pb.customer_id();
