@@ -1,5 +1,3 @@
-<img src="http://parameterserver.org/images/parameterserver.png"  width=400 />
-
 [![Build Status](https://travis-ci.org/dmlc/ps-lite.svg?branch=master)](https://travis-ci.org/dmlc/ps-lite)
 [![GitHub license](http://dmlc.github.io/img/apache2.svg)](./LICENSE)
 
