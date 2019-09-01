@@ -32,11 +32,10 @@ can install it by
 ```
 sudo apt-get update && sudo apt-get install -y build-essential git
 ```
-Instructions for
-[older Ubuntu](http://ubuntuhandbook.org/index.php/2013/08/install-gcc-4-8-via-ppa-in-ubuntu-12-04-13-04/),
-[Centos](http://linux.web.cern.ch/linux/devtoolset/),
-and
-[Mac Os X](http://hpc.sourceforge.net/).
+Instructions for gcc 4.8 installation on other platforms:
+- [Ubuntu 12.04](http://ubuntuhandbook.org/index.php/2013/08/install-gcc-4-8-via-ppa-in-ubuntu-12-04-13-04/)
+- [Centos](http://linux.web.cern.ch/linux/devtoolset/)
+- [Mac Os X](http://hpc.sourceforge.net/).
 
 Then clone and build
 
