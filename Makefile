@@ -19,10 +19,10 @@ endif
 
 
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
-CFLAGS = -std=c++11 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
+CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread
 
-ifdef USE_RDMA
+ifeq ($(USE_RDMA), 1)
 LIBS += -lrdmacm -libverbs
 CFLAGS += -DDMLC_USE_RDMA
 endif
@@ -51,8 +51,8 @@ build/libps.a: $(OBJS)
 
 build/%.o: src/%.cc ${ZMQ} src/meta.pb.h
 	@mkdir -p $(@D)
-	$(CXX) $(INCPATH) -std=c++11 -MM -MT build/$*.o $< >build/$*.d
-	$(CXX) $(CFLAGS) -c $< -o $@ $(LIBS)
+	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
+	$(CXX) $(CFLAGS) $(LIBS) -c $< -o $@
 
 src/%.pb.cc src/%.pb.h : src/%.proto ${PROTOBUF}
 	$(PROTOC) --cpp_out=./src --proto_path=./src $<
