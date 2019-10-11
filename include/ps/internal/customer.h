@@ -12,7 +12,7 @@
 #include <thread>
 #include <memory>
 #include "ps/internal/message.h"
-#include "ps/internal/threadsafe_queue.h"
+#include "ps/internal/threadsafe_pqueue.h"
 namespace ps {
 
 /**
@@ -100,7 +100,7 @@ class Customer {
   int customer_id_;
 
   RecvHandle recv_handle_;
-  ThreadsafeQueue<Message> recv_queue_;
+  ThreadsafePQueue recv_queue_;
   std::unique_ptr<std::thread> recv_thread_;
 
   std::mutex tracker_mu_;

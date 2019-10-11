@@ -40,6 +40,8 @@ struct KVPairs {
   SArray<Val> vals;
   /** \brief the according value lengths (could be empty) */
   SArray<int> lens;
+  /** \brief priority */
+  int priority = 0;
 };
 
 /**
@@ -113,9 +115,11 @@ class KVWorker : public SimpleApp {
            const std::vector<Val>& vals,
            const std::vector<int>& lens = {},
            int cmd = 0,
-           const Callback& cb = nullptr) {
+           const Callback& cb = nullptr,
+           int priority = 0) {
     return ZPush(
-        SArray<Key>(keys), SArray<Val>(vals), SArray<int>(lens), cmd, cb);
+        SArray<Key>(keys), SArray<Val>(vals), SArray<int>(lens), cmd, cb,
+        priority);
   }
 
   /**
@@ -148,11 +152,13 @@ class KVWorker : public SimpleApp {
            std::vector<Val>* vals,
            std::vector<int>* lens = nullptr,
            int cmd = 0,
-           const Callback& cb = nullptr) {
+           const Callback& cb = nullptr,
+           int priority = 0) {
     SArray<Key> skeys(keys);
     int ts = AddPullCB(skeys, vals, lens, cmd, cb);
     KVPairs<Val> kvs;
     kvs.keys = skeys;
+    kvs.priority = priority;
     Send(ts, false, true, cmd, kvs);
     return ts;
   }
@@ -190,7 +196,8 @@ class KVWorker : public SimpleApp {
                std::vector<Val>* outs,
                std::vector<int>* lens = nullptr,
                int cmd = 0,
-               const Callback& cb = nullptr) {
+               const Callback& cb = nullptr,
+               int priority = 0) {
     CHECK_NOTNULL(outs);
     if (outs->empty())
       outs->resize(vals.size());
@@ -207,7 +214,7 @@ class KVWorker : public SimpleApp {
           delete souts;
           delete slens;
           if (cb) cb();
-        });
+        }, priority);
     return ts;
   }
 
@@ -237,13 +244,15 @@ class KVWorker : public SimpleApp {
             const SArray<Val>& vals,
             const SArray<int>& lens = {},
             int cmd = 0,
-            const Callback& cb = nullptr) {
+            const Callback& cb = nullptr,
+            int priority = 0) {
     int ts = obj_->NewRequest(kServerGroup);
     AddCallback(ts, cb);
     KVPairs<Val> kvs;
     kvs.keys = keys;
     kvs.vals = vals;
     kvs.lens = lens;
+    kvs.priority = priority;
     Send(ts, true, false, cmd, kvs);
     return ts;
   }
@@ -260,10 +269,12 @@ class KVWorker : public SimpleApp {
             SArray<Val>* vals,
             SArray<int>* lens = nullptr,
             int cmd = 0,
-            const Callback& cb = nullptr) {
+            const Callback& cb = nullptr,
+            int priority = 0) {
     int ts = AddPullCB(keys, vals, lens, cmd, cb);
     KVPairs<Val> kvs;
     kvs.keys = keys;
+    kvs.priority = priority;
     Send(ts, false, true, cmd, kvs);
     return ts;
   }
@@ -281,11 +292,13 @@ class KVWorker : public SimpleApp {
                 SArray<Val>* outs,
                 SArray<int>* lens = nullptr,
                 int cmd = 0,
-                const Callback& cb = nullptr) {
+                const Callback& cb = nullptr,
+                int priority = 0) {
     int ts = AddPullCB(keys, outs, lens, cmd, cb);
     KVPairs<Val> kvs;
     kvs.keys = keys;
     kvs.vals = vals;
+    kvs.priority = priority;
     if (lens)
       kvs.lens = *lens;
     Send(ts, true, true, cmd, kvs);
@@ -586,6 +599,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, bool pull, int cmd, const KVP
     msg.meta.head        = cmd;
     msg.meta.timestamp   = timestamp;
     msg.meta.recver      = Postoffice::Get()->ServerRankToID(i);
+    msg.meta.priority    = kvs.priority;
     const auto& kvs = s.second;
     if (kvs.keys.size()) {
       msg.AddData(kvs.keys);

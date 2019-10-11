@@ -13,3 +13,4 @@ additional variables:
 - `DMLC_INTERFACE` : the network interface a node should use. in default choose
   automatically
 - `DMLC_LOCAL` : runs in local machines, no network is needed
+- `DMLC_PS_WATER_MARK`  : limit on the maximum number of outstanding messages
