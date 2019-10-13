@@ -13,3 +13,4 @@ additional variables:
 - `DMLC_INTERFACE` : the network interface a node should use. in default choose
   automatically
 - `DMLC_LOCAL` : runs in local machines, no network is needed
+- `DMLC_PS_VAN_TYPE` : the type of the Van for communication, can be `ibverbs` for RDMA, `zmq` for TCP
