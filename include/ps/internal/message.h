@@ -195,6 +195,8 @@ struct Meta {
   Control control;
   /** \brief the byte size */
   int data_size = 0;
+  /** \brief message priority */
+  int priority = 0;
 };
 /**
  * \brief messages that communicated amaong nodes.

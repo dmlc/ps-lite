@@ -160,7 +160,7 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   req.meta.customer_id = customer_id;
   req.meta.control.barrier_group = node_group;
   req.meta.timestamp = van_->GetTimestamp();
-  CHECK_GT(van_->Send(req), 0);
+  van_->Send(req);
   barrier_cond_.wait(ulk, [this, customer_id] {
       return barrier_done_[0][customer_id];
     });

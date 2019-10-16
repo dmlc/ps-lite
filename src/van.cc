@@ -16,6 +16,7 @@
 #include "./ibverbs_van.h"
 #include "./resender.h"
 #include "./zmq_van.h"
+#include "./p3_van.h"
 
 namespace ps {
 
@@ -28,6 +29,8 @@ static const int kDefaultHeartbeatInterval = 0;
 Van* Van::Create(const std::string& type) {
   if (type == "zmq") {
     return new ZMQVan();
+  } else if (type == "p3") {
+    return new P3Van();
 #ifdef DMLC_USE_IBVERBS
 } else if (type == "ibverbs") {
     return new IBVerbsVan();
@@ -208,7 +211,7 @@ void Van::ProcessBarrierCommand(Message* msg) {
         if (shared_node_mapping_.find(r) == shared_node_mapping_.end()) {
           res.meta.recver = recver_id;
           res.meta.timestamp = timestamp_++;
-          CHECK_GT(Send(res), 0);
+          Send(res);
         }
       }
     }
@@ -447,6 +450,7 @@ void Van::PackMetaPB(const Meta& meta, PBMeta* pb) {
   pb->set_push(meta.push);
   pb->set_request(meta.request);
   pb->set_simple_app(meta.simple_app);
+  pb->set_priority(meta.priority);
   pb->set_customer_id(meta.customer_id);
   for (auto d : meta.data_type) pb->add_data_type(d);
   if (!meta.control.empty()) {
@@ -481,6 +485,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   pb.set_pull(meta.pull);
   pb.set_request(meta.request);
   pb.set_simple_app(meta.simple_app);
+  pb.set_priority(meta.priority);
   pb.set_customer_id(meta.customer_id);
   for (auto d : meta.data_type) pb.add_data_type(d);
   if (!meta.control.empty()) {
@@ -523,6 +528,7 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   meta->push = pb.push();
   meta->pull = pb.pull();
   meta->simple_app = pb.simple_app();
+  meta->priority = pb.priority();
   meta->body = pb.body();
   meta->customer_id = pb.customer_id();
   meta->data_type.resize(pb.data_type_size());
