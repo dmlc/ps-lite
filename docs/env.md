@@ -14,3 +14,4 @@ additional variables:
   automatically
 - `DMLC_LOCAL` : runs in local machines, no network is needed
 - `DMLC_PS_WATER_MARK`  : limit on the maximum number of outstanding messages
+- `DMLC_PS_VAN_TYPE` : the type of the Van for transport, can be `ibverbs` for RDMA, `zmq` for TCP, `p3` for TCP with [priority based parameter propagation](https://anandj.in/wp-content/uploads/sysml.pdf).
