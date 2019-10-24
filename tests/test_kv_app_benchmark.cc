@@ -19,6 +19,7 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
     CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]);
 
     if (mem_map.find(key) == mem_map.end()) {
+      PS_VLOG(1) << "key " << key << " from worker-" << req_meta.sender;
       size_t len = (size_t) req_data.vals.size();
       mem_map[key].keys.push_back(key);
       mem_map[key].vals.CopyFrom(req_data.vals);
@@ -142,6 +143,8 @@ void RunWorker(int argc, char *argv[]) {
         auto end = std::chrono::high_resolution_clock::now();
         auto val = Environment::Get()->find("THRESHOLD");
         unsigned int threshold = val ? atoi(val) : 10;
+        val = Environment::Get()->find("LOG_DURATION");
+        unsigned int log_duration = val ? atoi(val) : 500;
         int cnt = 0;
         while (1) {
           for (int server = 0; server < num_servers; server++) {
@@ -160,9 +163,9 @@ void RunWorker(int argc, char *argv[]) {
             }
             timestamp_list.clear();
             cnt++;
-            if (cnt % 100 == 0) {
+            if (cnt % log_duration == 0) {
               end = std::chrono::high_resolution_clock::now();
-              LL << "Benchmark throughput: " 
+              LL << "Application goodput: " 
                  << 8.0 * len * sizeof(float) * num_servers * cnt * threshold / (end - start).count() 
                  << " Gbps";
               cnt = 0;

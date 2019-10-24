@@ -49,6 +49,9 @@ static const int kMaxHostnameLength = 16;
 static const int kMaxDataFields = 4;
 static const size_t kAlignment = 8;
 
+static const int kMaxResolveRetry = 50000;
+static const int kBasePort = 9010;
+
 template <typename T>
 static inline T align_floor(T v, T align) {
   return v - (v % align);
@@ -513,9 +516,16 @@ class RDMAVan : public Van {
   int Bind(const Node &node, int max_retry) override {
     CHECK(rdma_create_id(event_channel_, &listener_, nullptr, RDMA_PS_TCP) == 0)
         << "Create RDMA connection identifier failed";
-
+    
     struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
+    memset(&addr, 0, sizeof(addr));    
+
+    auto val = Environment::Get()->find("DMLC_NODE_HOST");
+    if (val) {
+      PS_VLOG(1) << "bind to DMLC_NODE_HOST: " << std::string(val);
+      addr.sin_addr.s_addr = inet_addr(val);
+    } 
+    
     addr.sin_family = AF_INET;
     int port = node.port;
     unsigned seed = static_cast<unsigned>(time(NULL) + port);
@@ -584,10 +594,34 @@ class RDMAVan : public Van {
             << "Create RDMA connection identifier failed";
         endpoint->cm_id->context = endpoint;
 
-        CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, nullptr,
-                                   remote_addr->ai_addr, kTimeoutms),
-                 0)
-            << "Resolve RDMA address failed with errno: " << errno;
+        int max_retry = kMaxResolveRetry;
+        int port = kBasePort;
+        unsigned seed = static_cast<unsigned>(time(NULL) + port);
+        auto val = Environment::Get()->find("DMLC_NODE_HOST");
+        if (val) {
+          struct sockaddr_in addr;
+          memset(&addr, 0, sizeof(addr)); 
+          addr.sin_addr.s_addr = inet_addr(val);
+          addr.sin_family = AF_INET;
+          for (int i = 0; i < max_retry + 1; ++i) {
+            addr.sin_port = htons(port);
+            if (rdma_resolve_addr(endpoint->cm_id, 
+                                  reinterpret_cast<struct sockaddr *>(&addr),
+                                  remote_addr->ai_addr, kTimeoutms) == 0) {
+              break;
+            }
+            if (i == max_retry) {
+              port = -1;
+            } else {
+              port = 10000 + rand_r(&seed) % 40000;
+            }
+          }
+        } else {
+          CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, nullptr,
+                                     remote_addr->ai_addr, kTimeoutms),
+                   0)
+              << "Resolve RDMA address failed with errno: " << strerror(errno);
+        }
 
         endpoint->cv.wait(lk, [endpoint] {
           return endpoint->status != Endpoint::CONNECTING;
