@@ -68,6 +68,12 @@ class SimpleMempool {
     std::lock_guard<std::mutex> lk(mu_);
     pd_ = pd;
     struct ibv_mr *mr;
+    
+    // set init mempool size
+    auto val = Environment::Get()->find("BYTEPS_RDMA_MEMPOOL_SIZE");
+    size = val ? atoi(val) : size;
+    PS_VLOG(1) << "RDMA initial mempool size set to " << size;
+    
     char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
     total_allocated_size += size;
     CHECK(p);
