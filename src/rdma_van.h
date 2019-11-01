@@ -276,6 +276,7 @@ class AddressPool {
  public:
   AddressPool() {
     std::lock_guard<std::mutex> lk(mu_);
+    // init the queue
     for (int i = 0; i < kMaxEntries; i++) {
       indices_.push(i);
       table_[i] = nullptr;
@@ -294,15 +295,18 @@ class AddressPool {
   uint32_t StoreAddress(T *ptr) {
     std::lock_guard<std::mutex> lk(mu_);
     CHECK(ptr);
+    CHECK(!indices_.empty())
+      << "Address pool size is too small, "
+      << "consider increasing kMaxEntries";
     uint32_t idx = indices_.front();
     indices_.pop();
-    CHECK_EQ(table_[idx], nullptr);
+    CHECK_EQ(table_[idx], nullptr) << idx;
     table_[idx] = ptr;
     return idx;
   }
 
  private:
-  static const int kMaxEntries = 512;
+  static const int kMaxEntries = 5120;
 
   std::mutex mu_;
   std::queue<uint32_t> indices_;

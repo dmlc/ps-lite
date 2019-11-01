@@ -144,7 +144,7 @@ void RunWorker(int argc, char *argv[]) {
         auto val = Environment::Get()->find("THRESHOLD");
         unsigned int threshold = val ? atoi(val) : 10;
         val = Environment::Get()->find("LOG_DURATION");
-        unsigned int log_duration = val ? atoi(val) : 500;
+        unsigned int log_duration = val ? atoi(val) : 50;
         int cnt = 0;
         while (1) {
           for (int server = 0; server < num_servers; server++) {
