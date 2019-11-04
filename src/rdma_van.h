@@ -557,7 +557,7 @@ class RDMAVan : public Van {
   }
 
   void Connect(const Node &node) override {
-    PS_VLOG(1) << "Connecting to " << my_node_.ShortDebugString();
+    PS_VLOG(1) << "Connecting to Node " << node.id;
     CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
@@ -1321,10 +1321,12 @@ class RDMAVan : public Van {
       endpoint->status = Endpoint::CONNECTED;
     }
     endpoint->cv.notify_all();
+    if (endpoint->node_id != my_node_.id) {
+      PS_VLOG(1) << "OnConnected to Node " << endpoint->node_id;
+    }
   }
 
   void OnDisconnected(struct rdma_cm_event *event) {
-    LOG(INFO) << "OnDisconnected from Node " << my_node_.id;
     struct rdma_cm_id *id = event->id;
     Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
     {
@@ -1332,6 +1334,7 @@ class RDMAVan : public Van {
       endpoint->status = Endpoint::IDLE;
     }
     endpoint->cv.notify_all();
+    LOG(INFO) << "OnDisconnected from Node " << endpoint->node_id;
   }
 
   AddressPool<BufferContext> addr_pool_;
