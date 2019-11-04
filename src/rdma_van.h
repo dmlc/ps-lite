@@ -70,17 +70,22 @@ class SimpleMempool {
     struct ibv_mr *mr;
     
     // set init mempool size
-    auto val = Environment::Get()->find("BYTEPS_RDMA_MEMPOOL_SIZE");
-    size = val ? atoi(val) : size;
-    PS_VLOG(1) << "RDMA initial mempool size set to " << size;
+    auto byteps_rdma_mempool_size = Environment::Get()->find("BYTEPS_RDMA_MEMPOOL_SIZE");
+    size = byteps_rdma_mempool_size ? atoi(byteps_rdma_mempool_size) : size;
+    auto byteps_rdma_mempool_num = Environment::Get()->find("BYTEPS_RDMA_MEMPOOL_NUM");
+    size_t mempool_num = byteps_rdma_mempool_num ? atoi(byteps_rdma_mempool_num) : 1;
+    PS_VLOG(1) << "RDMA initial mempool size set to " << size
+               << ", mempool num set to " << mempool_num;
     
-    char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
-    total_allocated_size += size;
-    CHECK(p);
-    CHECK(mr = ibv_reg_mr(pd, p, size,
-                          IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-    mr_list.emplace(p+size, mr); // this mr is associated with memory address range [p, p+size]
-    free_list.emplace(size, p);
+    for (size_t i = 0; i < mempool_num; ++i) {
+      char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
+      total_allocated_size += size;
+      CHECK(p);
+      CHECK(mr = ibv_reg_mr(pd, p, size,
+                            IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+      mr_list.emplace(p+size, mr); // this mr is associated with memory address range [p, p+size]
+      free_list.emplace(size, p);
+    }
   }
 
   ~SimpleMempool() {
