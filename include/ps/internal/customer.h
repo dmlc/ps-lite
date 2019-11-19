@@ -14,18 +14,6 @@
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"
 namespace ps {
-
-/**
- * \brief The structure for profiling
- */
-struct Profile {
-  uint64_t key;
-  int sender;
-  bool is_push;
-  std::string ts;
-  bool is_begin;
-};
-
 /**
  * \brief The object for communication.
  *
@@ -100,14 +88,6 @@ class Customer {
     recv_queue_.Push(recved);
   }
 
-  void ProcessPullRequest(int worker_id);
-  void ProcessPushRequest(int thread_id);
-  void ProcessProfileData();
-  bool IsValidPushpull(const Message& msg);
-  uint64_t GetKeyFromMsg(const Message& msg);
-  void ProcessResponse(int thread_id);
-  std::string GetTimestampNow();
-
  private:
   /**
    * \brief the thread function
@@ -125,9 +105,6 @@ class Customer {
   std::mutex tracker_mu_;
   std::condition_variable tracker_cond_;
   std::vector<std::pair<int, int>> tracker_;
-
-  // for storing profile data
-  ThreadsafeQueue<Profile> pdata_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(Customer);
 };
