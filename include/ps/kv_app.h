@@ -469,39 +469,36 @@ struct KVServerNewHandle {
       const KVMeta& req_meta, const KVPairs<Val>& req_data, KVServer<Val>* server) {
     size_t n = req_data.keys.size();
     KVPairs<Val> res;
-   int k=0; // for push 
-   int t =0;
-   if (!req_meta.pull) {
-  if(req_data.lens.size()==0){
-   k = req_data.vals.size() / req_data.keys.size();
-   CHECK_EQ( k*req_data.keys.size(),req_data.vals.size());
-     // CHECK_EQ(n, req_data.vals.size());
-  // CHECK_EQ( req_data.vals.size()%n, 0);
-   }else { t = 0 ;}
+    int k = 0; // for push 
+    int t = 0;
+    if (!req_meta.pull) {
+      if (req_data.lens.size() == 0) {
+        k = req_data.vals.size() / req_data.keys.size();
+        CHECK_EQ(k*req_data.keys.size(), req_data.vals.size());
+      } else { 
+        t = 0;
+      }
     } else {
       res.keys = req_data.keys;
-      // res.vals.resize(n*k);
     }
     for (size_t i = 0; i < n; ++i) {
       Key key = req_data.keys[i];
       if (req_meta.push) {
-        //store[key] += req_data.vals[i];
-         if(req_data.lens.size()==0){
-        for(size_t j = i*k ; j<(i+1)*k;j++)
-        store[key].push_back(req_data.vals[j]);
-      }else{
-        for(int j = 0 ; j< req_data.lens[i] ;j++){
-          store[key].push_back(req_data.vals[t]);
-          t++;
+         if (req_data.lens.size() = =0) {
+           for (size_t j = i*k ; j < (i+1)*k; j++)
+             store[key].push_back(req_data.vals[j]);
+         } else {
+           for (int j = 0 ; j < req_data.lens[i]; j++) {
+             store[key].push_back(req_data.vals[t]);
+             t++;
+           }
          }
-     }
-     }
+      }
       if (req_meta.pull) {
-        //res.vals[i] = store[key];
-        res.lens.push_back(int(store[key].size()));
-       for(size_t j = 0 ; j< store[key].size();j++){
-           res.vals.push_back(store[key][j]);
-         }
+       res.lens.push_back((int)store[key].size());
+       for (size_t j = 0; j < store[key].size(); j++){
+         res.vals.push_back(store[key][j]);
+       }
       }
     }
     server->Response(req_meta, res);
