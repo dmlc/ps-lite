@@ -30,6 +30,7 @@ namespace ps {
  *
  * \verbatim {keys[i], (vals[n], ..., vals[lens[i]+n-1])} \endverbatim
  */
+
 template <typename Val>
 struct KVPairs {
   // /** \brief empty constructor */
@@ -248,11 +249,13 @@ class KVWorker : public SimpleApp {
             int priority = 0) {
     int ts = obj_->NewRequest(kServerGroup);
     AddCallback(ts, cb);
+
     KVPairs<Val> kvs;
     kvs.keys = keys;
     kvs.vals = vals;
     kvs.lens = lens;
     kvs.priority = priority;
+
     Send(ts, true, false, cmd, kvs);
     return ts;
   }
@@ -339,6 +342,7 @@ class KVWorker : public SimpleApp {
     if (!cb) return;
     std::lock_guard<std::mutex> lk(mu_);
     callbacks_[timestamp] = cb;
+
   }
 
   /**
@@ -363,12 +367,16 @@ class KVWorker : public SimpleApp {
 
   /** \brief data buffer for received kvs for each timestamp */
   std::unordered_map<int, std::vector<KVPairs<Val>>> recv_kvs_;
+
   /** \brief callbacks for each timestamp */
   std::unordered_map<int, Callback> callbacks_;
+
   /** \brief lock */
   std::mutex mu_;
+
   /** \brief kv list slicer */
   Slicer slicer_;
+
 };
 
 /** \brief meta information about a kv request */
@@ -463,6 +471,85 @@ struct KVServerDefaultHandle {
 };
 
 
+
+
+
+
+
+template <typename Val>
+struct KVServerNewHandle {
+  void operator()(
+      const KVMeta& req_meta, const KVPairs<Val>& req_data, KVServer<Val>* server) {
+    size_t n = req_data.keys.size();
+    KVPairs<Val> res;
+        
+   int k=0; // for push 
+   int t =0;
+
+   if (!req_meta.pull) {
+
+  if(req_data.lens.size()==0){   
+
+   k = req_data.vals.size() / req_data.keys.size();
+   CHECK_EQ( k*req_data.keys.size(),req_data.vals.size());   
+     // CHECK_EQ(n, req_data.vals.size());
+  // CHECK_EQ( req_data.vals.size()%n, 0);
+     
+   }else { t = 0 ;}
+
+    } else {
+
+      res.keys = req_data.keys; 
+      // res.vals.resize(n*k);
+
+    }
+
+
+    for (size_t i = 0; i < n; ++i) {
+
+      Key key = req_data.keys[i];
+      if (req_meta.push) {
+        
+
+	//store[key] += req_data.vals[i];
+
+         if(req_data.lens.size()==0){
+
+        for(size_t j = i*k ; j<(i+1)*k;j++) 
+        store[key].push_back(req_data.vals[j]);
+
+      }else{
+        
+        for(int j = 0 ; j< req_data.lens[i] ;j++){ 
+          store[key].push_back(req_data.vals[t]);
+          t++;
+         }
+
+
+     }
+
+      }
+      if (req_meta.pull) {
+
+        //res.vals[i] = store[key];
+        res.lens.push_back(int(store[key].size())); 
+       for(size_t j = 0 ; j< store[key].size();j++){ 
+           res.vals.push_back(store[key][j]);
+          
+         }
+
+      }
+    }
+    server->Response(req_meta, res);
+  }
+  std::unordered_map<Key, std::vector<Val>> store;
+};
+
+
+
+
+
+
 ///////////////////////////////////////////////////////////////////////////////
 
 template <typename Val>
@@ -516,15 +603,20 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
 
 template <typename Val>
 void KVWorker<Val>::DefaultSlicer(
+
     const KVPairs<Val>& send, const std::vector<Range>& ranges,
     typename KVWorker<Val>::SlicedKVs* sliced) {
-  sliced->resize(ranges.size());
+
+   sliced->resize(ranges.size());
 
   // find the positions in msg.key
   size_t n = ranges.size();
   std::vector<size_t> pos(n+1);
+
   const Key* begin = send.keys.begin();
   const Key* end = send.keys.end();
+
+
   for (size_t i = 0; i < n; ++i) {
     if (i == 0) {
       pos[0] = std::lower_bound(begin, end, ranges[0].begin()) - begin;
@@ -532,6 +624,7 @@ void KVWorker<Val>::DefaultSlicer(
     } else {
       CHECK_EQ(ranges[i-1].end(), ranges[i].begin());
     }
+
     size_t len = std::lower_bound(begin, end, ranges[i].end()) - begin;
     begin += len;
     pos[i+1] = pos[i] + len;
@@ -539,7 +632,9 @@ void KVWorker<Val>::DefaultSlicer(
     // don't send it to servers for empty kv
     sliced->at(i).first = (len != 0);
   }
+
   CHECK_EQ(pos[n], send.keys.size());
+
   if (send.keys.empty()) return;
 
   // the length of value
@@ -559,37 +654,50 @@ void KVWorker<Val>::DefaultSlicer(
     }
     sliced->at(i).first = true;
     auto& kv = sliced->at(i).second;
+
     kv.keys = send.keys.segment(pos[i], pos[i+1]);
+
     if (send.lens.size()) {
       kv.lens = send.lens.segment(pos[i], pos[i+1]);
       for (int l : kv.lens) val_end += l;
       kv.vals = send.vals.segment(val_begin, val_end);
       val_begin = val_end;
     } else {
-      kv.vals = send.vals.segment(pos[i]*k, pos[i+1]*k);
+      kv.vals = send.vals.segment( pos[i]*k, pos[i+1]*k );
     }
   }
 }
 
+
+
+
 template <typename Val>
 void KVWorker<Val>::Send(int timestamp, bool push, bool pull, int cmd, const KVPairs<Val>& kvs) {
-  // slice the message
+  
+
+// slice the message
   SlicedKVs sliced;
   slicer_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
+
+
+
 
   // need to add response first, since it will not always trigger the callback
   int skipped = 0;
   for (size_t i = 0; i < sliced.size(); ++i) {
     if (!sliced[i].first) ++skipped;
   }
+
   obj_->AddResponse(timestamp, skipped);
   if ((size_t)skipped == sliced.size()) {
     RunCallback(timestamp);
   }
 
+
   for (size_t i = 0; i < sliced.size(); ++i) {
     const auto& s = sliced[i];
     if (!s.first) continue;
+
     Message msg;
     msg.meta.app_id = obj_->app_id();
     msg.meta.customer_id = obj_->customer_id();
@@ -602,6 +710,10 @@ void KVWorker<Val>::Send(int timestamp, bool push, bool pull, int cmd, const KVP
     msg.meta.priority    = kvs.priority;
     const auto& kvs = s.second;
     if (kvs.keys.size()) {
+
+//       std::cout<<"Send"<<kvs.keys.size()<<std::endl;
+//       std::cout<<"Send"<<kvs.vals.size()<<std::endl;
+
       msg.AddData(kvs.keys);
       msg.AddData(kvs.vals);
       if (kvs.lens.size()) {
@@ -669,12 +781,16 @@ int KVWorker<Val>::AddPullCB(
       size_t total_key = 0, total_val = 0;
       for (const auto& s : kvs) {
         Range range = FindRange(keys, s.keys.front(), s.keys.back()+1);
+
         CHECK_EQ(range.size(), s.keys.size())
             << "unmatched keys size from one server";
+
+
         if (lens) CHECK_EQ(s.lens.size(), s.keys.size());
         total_key += s.keys.size();
         total_val += s.vals.size();
       }
+
       CHECK_EQ(total_key, keys.size()) << "lost some servers?";
 
       // fill vals and lens
@@ -682,11 +798,14 @@ int KVWorker<Val>::AddPullCB(
           const KVPairs<Val>& a, const KVPairs<Val>& b) {
                   return a.keys.front() < b.keys.front();
         });
+
       CHECK_NOTNULL(vals);
       if (vals->empty()) {
         vals->resize(total_val);
       } else {
+       //std::cout<<"check"<< vals->size()<<" "<<total_val;
         CHECK_EQ(vals->size(), total_val);
+
       }
       Val* p_vals = vals->data();
       int *p_lens = nullptr;
