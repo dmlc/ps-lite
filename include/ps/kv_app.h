@@ -469,13 +469,13 @@ struct KVServerNewHandle {
       const KVMeta& req_meta, const KVPairs<Val>& req_data, KVServer<Val>* server) {
     size_t n = req_data.keys.size();
     KVPairs<Val> res;
-    int k = 0; // for push 
+    int k = 0;
     int t = 0;
     if (!req_meta.pull) {
       if (req_data.lens.size() == 0) {
         k = req_data.vals.size() / req_data.keys.size();
         CHECK_EQ(k*req_data.keys.size(), req_data.vals.size());
-      } else { 
+      } else {
         t = 0;
       }
     } else {
@@ -496,7 +496,7 @@ struct KVServerNewHandle {
       }
       if (req_meta.pull) {
        res.lens.push_back(static_cast<int>(store[key].size()));
-       for (size_t j = 0; j < store[key].size(); j++){
+       for (size_t j = 0; j < store[key].size(); j++) {
          res.vals.push_back(store[key][j]);
        }
       }
