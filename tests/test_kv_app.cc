@@ -8,56 +8,18 @@ void StartServer() {
     return;
   }
   auto server = new KVServer<float>(0);
-  server->set_request_handle(KVServerNewHandle<float>());
+  server->set_request_handle(KVServerDefaultHandle<float>());
   RegisterExitCallback([server](){ delete server; });
 }
 
 void RunWorker() {
-
   if (!IsWorker()) return;
   KVWorker<float> kv(0, 0);
-
-
-  int num = 100;
-  std::vector<Key> keys(2,0);
-  keys[1]=1;
-
-
-  std::vector<float> vals(num);
-
- 
- std::vector<int> lens (2);
- lens[0] = 45;
- lens[1] = 55; 
-
-
- for (int i = 0; i < num; ++i) {
-
-//    keys[i] = i;
-      vals[i] = i;
-
-  }
-
- 
-  for(auto e: keys) std::cout<< e << std::endl;
-  std::vector<float> outs(num,0);
-   
-  std::vector<int> lenss (2,0);
-  kv.Wait(kv.Push(keys, vals,lens));
-  kv.Wait(kv.Pull(keys, &outs,&lenss));
-
-  for(auto e: lenss) std::cout<< e << std::endl;
-
-
-
-
-/*
 
   // init
   int num = 10000;
   std::vector<Key> keys(num);
   std::vector<float> vals(num);
-
 
   int rank = MyRank();
   srand(rank + 7);
@@ -65,11 +27,6 @@ void RunWorker() {
     keys[i] = kMaxKey / num * i + rank;
     vals[i] = (rand() % 1000);
   }
-
-  std::vector<float> outs;
-  kv.Wait(kv.PushPull(keys, vals, &outs));
-
-
 
   // push
   int repeat = 50;
@@ -102,8 +59,6 @@ void RunWorker() {
   CHECK_LT(res / repeat, 1e-5);
   CHECK_LT(res2 / (2 * repeat), 1e-5);
   LL << "error: " << res / repeat << ", " << res2 / (2 * repeat);
-*/
-
 }
 
 int main(int argc, char *argv[]) {
