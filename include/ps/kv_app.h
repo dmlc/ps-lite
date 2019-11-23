@@ -478,7 +478,7 @@ struct KVServerNewHandle {
         CHECK_EQ(k*req_data.keys.size(), req_data.vals.size());
       } else {
         t = 0;
-        CHECK_EQ(n,req_data.lens.size());
+        CHECK_EQ(n, req_data.lens.size());
       }
     }
     if (req_meta.pull) {
@@ -491,12 +491,16 @@ struct KVServerNewHandle {
          if (req_data.lens.size() == 0) {
            for (size_t j = i*k; j < (i+1)*k; j++) {
              if (flag == false )store[key].push_back(req_data.vals[j]);
-             else store[key][j-i*k] += req_data.vals[j];
+             else {
+             store[key][j-i*k] += req_data.vals[j];
+             }
            }
          } else {
            for (int j = 0 ; j < req_data.lens[i]; j++) {
              if (flag == false)store[key].push_back(req_data.vals[t]);
-             else store[key][j] += req_data.vals[t];
+             else {
+             store[key][j] += req_data.vals[t];
+             }
              t++;
            }
          }
