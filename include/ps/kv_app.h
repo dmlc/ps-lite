@@ -463,6 +463,7 @@ struct KVServerDefaultHandle {
 };
 
 
+
 template <typename Val>
 struct KVServerNewHandle {
   void operator()(
@@ -471,25 +472,31 @@ struct KVServerNewHandle {
     KVPairs<Val> res;
     int k = 0;
     int t = 0;
-    if (!req_meta.pull) {
+    if (req_meta.push) {
       if (req_data.lens.size() == 0) {
         k = req_data.vals.size() / req_data.keys.size();
         CHECK_EQ(k*req_data.keys.size(), req_data.vals.size());
       } else {
         t = 0;
+        CHECK_EQ(n,req_data.lens.size());
       }
-    } else {
+    }
+    if (req_meta.pull) {
       res.keys = req_data.keys;
     }
     for (size_t i = 0; i < n; ++i) {
       Key key = req_data.keys[i];
       if (req_meta.push) {
+         bool flag = (store[key].size() == 0) ? false : true;
          if (req_data.lens.size() == 0) {
-           for (size_t j = i*k; j < (i+1)*k; j++)
-             store[key].push_back(req_data.vals[j]);
+           for (size_t j = i*k; j < (i+1)*k; j++) {
+             if (flag == false )store[key].push_back(req_data.vals[j]);
+             else store[key][j-i*k] += req_data.vals[j];
+           }
          } else {
            for (int j = 0 ; j < req_data.lens[i]; j++) {
-             store[key].push_back(req_data.vals[t]);
+             if (flag == false)store[key].push_back(req_data.vals[t]);
+             else store[key][j] += req_data.vals[t];
              t++;
            }
          }
