@@ -7,7 +7,8 @@ using namespace ps;
 
 enum MODE {
     PUSH_THEN_PULL = 0,
-    PUSH_PULL_MIX_ENDLESS = 1
+    PUSH_PULL_MIX_ENDLESS = 1,
+    PUSH_ONLY = 2
 };
 std::unordered_map<uint64_t, KVPairs<float> > mem_map;
 
@@ -173,8 +174,44 @@ void RunWorker(int argc, char *argv[]) {
             }
           }
         }
-      }
-      break;
+      } break;
+    case PUSH_ONLY: {
+        LOG(INFO) << "PUSH_ONLY mode, should exit by Ctrl+C";
+        std::vector<int> timestamp_list;
+        auto start = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::high_resolution_clock::now();
+        auto val = Environment::Get()->find("THRESHOLD");
+        unsigned int threshold = val ? atoi(val) : 10;
+        val = Environment::Get()->find("LOG_DURATION");
+        unsigned int log_duration = val ? atoi(val) : 50;
+        int cnt = 0;
+        while (1) {
+          for (int server = 0; server < num_servers; server++) {
+            int key = server;
+            PSKV& pskv = ps_kv_[key];
+            auto keys = pskv.keys;
+            auto lens = pskv.lens;
+            auto vals = server_vals[server];
+
+            timestamp_list.push_back(kv.ZPush(keys, vals, lens));
+          }
+          if (timestamp_list.size()/num_servers >= threshold) { // flow control
+            for (auto& ts : timestamp_list) {
+              kv.Wait(ts);
+            }
+            timestamp_list.clear();
+            cnt++;
+            if (cnt % log_duration == 0) {
+              end = std::chrono::high_resolution_clock::now();
+              LL << "Application goodput: " 
+                 << 8.0 * len * sizeof(float) * num_servers * cnt * threshold / (end - start).count() 
+                 << " Gbps";
+              cnt = 0;
+              start = std::chrono::high_resolution_clock::now();
+            }
+          }
+        }
+    } break;
 
     default:
       CHECK(0) << "unknown mode " << mode;
