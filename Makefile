@@ -23,7 +23,7 @@ CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $
 LIBS = -pthread
 
 ifeq ($(USE_RDMA), 1)
-LIBS += -lrdmacm -libverbs
+LIBS += -lrdmacm -libverbs -lrt
 CFLAGS += -DDMLC_USE_RDMA
 endif
 
