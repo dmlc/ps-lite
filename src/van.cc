@@ -14,7 +14,7 @@
 #include "ps/internal/van.h"
 #include "ps/sarray.h"
 
-#include "./meta.pb.h"
+#include "./meta.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
 #include "./resender.h"
@@ -494,129 +494,116 @@ void Van::Receiving() {
   }
 }
 
-void Van::PackMetaPB(const Meta &meta, PBMeta *pb) {
-  pb->set_head(meta.head);
-  if (meta.app_id != Meta::kEmpty) pb->set_app_id(meta.app_id);
-  if (meta.timestamp != Meta::kEmpty) pb->set_timestamp(meta.timestamp);
-  if (meta.body.size()) pb->set_body(meta.body);
-  pb->set_push(meta.push);
-  pb->set_request(meta.request);
-  pb->set_simple_app(meta.simple_app);
-  pb->set_customer_id(meta.customer_id);
-  for (auto d : meta.data_type) pb->add_data_type(d);
-  if (!meta.control.empty()) {
-    auto ctrl = pb->mutable_control();
-    ctrl->set_cmd(meta.control.cmd);
-    if (meta.control.cmd == Control::BARRIER) {
-      ctrl->set_barrier_group(meta.control.barrier_group);
-    } else if (meta.control.cmd == Control::ACK) {
-      ctrl->set_msg_sig(meta.control.msg_sig);
-    }
-    for (const auto &n : meta.control.node) {
-      auto p = ctrl->add_node();
-      p->set_id(n.id);
-      p->set_role(n.role);
-      p->set_port(n.port);
-      p->set_hostname(n.hostname);
-      p->set_is_recovery(n.is_recovery);
-      p->set_customer_id(n.customer_id);
-    }
-  }
-  pb->set_data_size(meta.data_size);
-  pb->set_key(meta.key);
-  pb->set_addr(meta.addr);
-  pb->set_val_len(meta.val_len);
-  pb->set_option(meta.option);
+int Van::GetPackMetaLen(const Meta &meta) {
+  return sizeof(RawMeta) + meta.body.size() +
+         meta.data_type.size() * sizeof(int) +
+         meta.control.node.size() * sizeof(RawNode);
 }
 
 void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
-  // convert into protobuf
-  PBMeta pb;
-  pb.set_head(meta.head);
-  if (meta.app_id != Meta::kEmpty) pb.set_app_id(meta.app_id);
-  if (meta.timestamp != Meta::kEmpty) pb.set_timestamp(meta.timestamp);
-  if (meta.body.size()) pb.set_body(meta.body);
-  pb.set_push(meta.push);
-  pb.set_request(meta.request);
-  pb.set_simple_app(meta.simple_app);
-  pb.set_customer_id(meta.customer_id);
-  for (auto d : meta.data_type) pb.add_data_type(d);
-  if (!meta.control.empty()) {
-    auto ctrl = pb.mutable_control();
-    ctrl->set_cmd(meta.control.cmd);
-    if (meta.control.cmd == Control::BARRIER) {
-      ctrl->set_barrier_group(meta.control.barrier_group);
-    } else if (meta.control.cmd == Control::ACK) {
-      ctrl->set_msg_sig(meta.control.msg_sig);
-    }
-    for (const auto &n : meta.control.node) {
-      auto p = ctrl->add_node();
-      p->set_id(n.id);
-      p->set_role(n.role);
-      p->set_port(n.port);
-      p->set_hostname(n.hostname);
-      p->set_is_recovery(n.is_recovery);
-      p->set_customer_id(n.customer_id);
-    }
-  }
-  pb.set_data_size(meta.data_size);
-  pb.set_key(meta.key);
-  pb.set_addr(meta.addr);
-  pb.set_val_len(meta.val_len);
-  pb.set_option(meta.option);
-
-  // to string
-  *buf_size = pb.ByteSize();
+  *buf_size = GetPackMetaLen(meta);
   // allocate buffer only when needed
   if (*meta_buf == nullptr) {
     *meta_buf = new char[*buf_size + 1];
   }
-  CHECK(pb.SerializeToArray(*meta_buf, *buf_size)) << "failed to serialize protbuf";
+
+  RawMeta *raw = (RawMeta*)*meta_buf;
+  bzero(raw, sizeof(RawMeta));
+  char *raw_body = *meta_buf + sizeof(RawMeta);
+  int *raw_data_type = (int*)(raw_body + meta.body.size());
+  RawNode *raw_node = (RawNode*)(raw_data_type + meta.data_type.size());
+
+  // convert into raw buffer
+  raw->head = meta.head;
+  raw->app_id = meta.app_id;
+  raw->timestamp = meta.timestamp;
+  if (meta.body.size()) {
+    memcpy(raw_body, meta.body.c_str(), meta.body.size());
+    raw->body_size = meta.body.size();
+  }
+  raw->push = meta.push;
+  raw->request = meta.request;
+  raw->simple_app = meta.simple_app;
+  raw->customer_id = meta.customer_id;
+  int data_type_count = 0;
+  for (auto d : meta.data_type) {
+    raw_data_type[data_type_count] = d;
+    data_type_count++;
+  }
+  raw->data_type_size = meta.data_type.size();
+  auto ctrl = &(raw->control);
+  if (!meta.control.empty()) {
+    ctrl->cmd = meta.control.cmd;
+    if (meta.control.cmd == Control::BARRIER) {
+      ctrl->barrier_group = meta.control.barrier_group;
+    } else if (meta.control.cmd == Control::ACK) {
+      ctrl->msg_sig = meta.control.msg_sig;
+    }
+    ctrl->node_size = meta.control.node.size();
+    int node_count = 0;
+    for (const auto &n : meta.control.node) {
+      raw_node[node_count].id = n.id;
+      raw_node[node_count].role = n.role;
+      raw_node[node_count].port = n.port;
+      bzero(raw_node[node_count].hostname, sizeof(raw_node[node_count].hostname));
+      memcpy(raw_node[node_count].hostname, n.hostname.c_str(), n.hostname.size());
+      raw_node[node_count].is_recovery = n.is_recovery;
+      raw_node[node_count].customer_id = n.customer_id;
+      node_count++;
+    }
+  }
+  else {
+    ctrl->cmd = Control::EMPTY;
+  }
+  raw->data_size = meta.data_size;
+  raw->key = meta.key;
+  raw->addr = meta.addr;
+  raw->val_len = meta.val_len;
+  raw->option = meta.option;
 }
 
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
-  // to protobuf
-  PBMeta pb;
-  CHECK(pb.ParseFromArray(meta_buf, buf_size))
-      << "failed to parse string into protobuf, buf_size=" << buf_size;
+
+  RawMeta *raw = (RawMeta*)meta_buf;
+  const char *raw_body = meta_buf + sizeof(RawMeta);
+  const int *raw_data_type = (const int*)(raw_body + raw->body_size);
+  const RawNode *raw_node = (RawNode*)(raw_data_type + raw->data_type_size);
 
   // to meta
-  meta->head = pb.head();
-  meta->app_id = pb.has_app_id() ? pb.app_id() : Meta::kEmpty;
-  meta->timestamp = pb.has_timestamp() ? pb.timestamp() : Meta::kEmpty;
-  meta->request = pb.request();
-  meta->push = pb.push();
-  meta->simple_app = pb.simple_app();
-  meta->body = pb.body();
-  meta->customer_id = pb.customer_id();
-  meta->data_type.resize(pb.data_type_size());
-  for (int i = 0; i < pb.data_type_size(); ++i) {
-    meta->data_type[i] = static_cast<DataType>(pb.data_type(i));
+  meta->head = raw->head;
+  meta->app_id = raw->app_id;
+  meta->timestamp = raw->timestamp;
+  meta->request = raw->request;
+  meta->push = raw->push;
+  meta->simple_app = raw->simple_app;
+  meta->body = std::string(raw_body, raw->body_size);
+  meta->customer_id = raw->customer_id;
+  meta->data_type.resize(raw->data_type_size);
+  for (int i = 0; i < raw->data_type_size; ++i) {
+    meta->data_type[i] = static_cast<DataType>(raw_data_type[i]);
   }
-  if (pb.has_control()) {
-    const auto &ctrl = pb.control();
-    meta->control.cmd = static_cast<Control::Command>(ctrl.cmd());
-    meta->control.barrier_group = ctrl.barrier_group();
-    meta->control.msg_sig = ctrl.msg_sig();
-    for (int i = 0; i < ctrl.node_size(); ++i) {
-      const auto &p = ctrl.node(i);
-      Node n;
-      n.role = static_cast<Node::Role>(p.role());
-      n.port = p.port();
-      n.hostname = p.hostname();
-      n.id = p.has_id() ? p.id() : Node::kEmpty;
-      n.is_recovery = p.is_recovery();
-      n.customer_id = p.customer_id();
-      meta->control.node.push_back(n);
-    }
-  } else {
-    meta->control.cmd = Control::EMPTY;
+
+  auto ctrl = &(raw->control);
+  meta->control.cmd = static_cast<Control::Command>(ctrl->cmd);
+  meta->control.barrier_group = ctrl->barrier_group;
+  meta->control.msg_sig = ctrl->msg_sig;
+  for (int i = 0; i < ctrl->node_size; ++i) {
+    const auto &p = raw_node[i];
+    Node n;
+    n.role = static_cast<Node::Role>(p.role);
+    n.port = p.port;
+    n.hostname = p.hostname;
+    n.id = p.id;
+    n.is_recovery = p.is_recovery;
+    n.customer_id = p.customer_id;
+    meta->control.node.push_back(n);
   }
-  meta->data_size = pb.data_size();
-  meta->key = pb.key();
-  meta->addr = pb.addr();
-  meta->val_len = pb.val_len();
-  meta->option = pb.option();
+
+  meta->data_size = raw->data_size;
+  meta->key = raw->key;
+  meta->addr = raw->addr;
+  meta->val_len = raw->val_len;
+  meta->option = raw->option;
 }
 
 void Van::Heartbeat() {
