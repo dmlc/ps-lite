@@ -305,7 +305,7 @@ class RDMATransport : public Transport {
   }
 
   void SendPushRequest(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
-    CHECK_EQ(msg_buf->mrs.size(), 3);
+    CHECK_EQ(msg_buf->mrs.size(), 1);
     auto raddr = std::get<0>(remote_tuple);
     auto rkey = std::get<1>(remote_tuple);
     auto idx = std::get<2>(remote_tuple);
@@ -313,9 +313,9 @@ class RDMATransport : public Transport {
     // push request, split the meta and data into two writes
     // further, it does not send keys and lens since these meta already carries these info 
     struct ibv_sge my_sge;
-    my_sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[1].first->addr);
-    my_sge.length = msg_buf->mrs[1].second;
-    my_sge.lkey = msg_buf->mrs[1].first->lkey;
+    my_sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[0].first->addr);
+    my_sge.length = msg_buf->mrs[0].second;
+    my_sge.lkey = msg_buf->mrs[0].first->lkey;
 
     // this rdma-write will not trigger any signal both remotely and locally
     struct ibv_send_wr wr, *bad_wr = nullptr;

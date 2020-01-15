@@ -366,7 +366,7 @@ class RDMAVan : public Van {
       LOG(INFO) << "Send Push Request: key=" << msg.meta.key
           << "\t timestamp=" << msg.meta.timestamp 
           << "\t recver=" << msg.meta.recver
-          << "\t tensor_len=" << msg_buf->mrs[1].second
+          << "\t tensor_len=" << msg_buf->mrs[0].second
           << "\t remote_idx=" << std::get<2>(remote_tuple)
           << "\t remote_addr=" << std::get<0>(remote_tuple) 
           << std::flush;
@@ -532,11 +532,12 @@ class RDMAVan : public Van {
     return msg_buf;
   }
 
-  void RegisterMemory(Message &msg) {
+  void RegisterMemory(Message &msg) { 
+    size_t sa_cnt = 0;
     for (auto& sa : msg.data) {
       if (sa.size() == 0) continue;
       std::lock_guard<std::mutex> lock(map_mu_);
-      if (mem_mr_.find(sa.data()) == mem_mr_.end()) {
+      if ((mem_mr_.find(sa.data()) == mem_mr_.end()) && (sa_cnt==1)) { // only vals register memory
         struct ibv_mr *temp_mr;
         CHECK (temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), sa.data(), sa.size(),
             IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE))
@@ -544,19 +545,20 @@ class RDMAVan : public Van {
             << ", sa.size()=" << sa.size();
         mem_mr_[sa.data()] = temp_mr;
       }
+      ++sa_cnt;
     }
   }
 
   void PrepareData(Message &msg, MessageBuffer *msg_buf) {
     if (!(msg.meta.push && msg.meta.request)) return; // only push request
-    for (auto &sa : msg_buf->data) {
-      if (sa.size() == 0) continue;
-      std::lock_guard<std::mutex> lock(map_mu_);
-      auto it = mem_mr_.find(sa.data());
-      MRPtr ptr(it->second, [](struct ibv_mr *mr) {});
-      CHECK(ptr.get()) << strerror(errno);
-      msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
-    }
+    auto &sa = msg_buf->data[1];
+    if (sa.size() == 0) return;
+    std::lock_guard<std::mutex> lock(map_mu_);
+    auto it = mem_mr_.find(sa.data());
+    CHECK_NE(it, mem_mr_.end());
+    MRPtr ptr(it->second, [](struct ibv_mr *mr) {});
+    CHECK(ptr.get()) << strerror(errno);
+    msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
   }
 
   void AddMeta(Message &msg) {
