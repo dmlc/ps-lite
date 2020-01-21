@@ -94,8 +94,8 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
   size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
   if (nodes->control.node.size() == num_nodes) {
     bool mixed_mode = 
-        getenv("BYTEPS_ENABLE_MIXED_PS_ALLREDUCE") 
-        ? atoi(getenv("BYTEPS_ENABLE_MIXED_PS_ALLREDUCE")) 
+        getenv("BYTEPS_ENABLE_MIXED_MODE") 
+        ? atoi(getenv("BYTEPS_ENABLE_MIXED_MODE")) 
         : false;
     if (mixed_mode) {
       std::unordered_map<std::string, size_t> ip_cnt;
