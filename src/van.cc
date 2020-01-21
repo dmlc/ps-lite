@@ -107,14 +107,20 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       // put non-colocate servers' IP to front
       std::sort(nodes->control.node.begin(), nodes->control.node.end(),
                 [&ip_cnt](const Node &a, const Node &b) {
+                  if (ip_cnt[a.hostname] == ip_cnt[b.hostname]) {
+                    return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
+                  }
                   return ip_cnt[a.hostname] < ip_cnt[b.hostname];
                 });
 
-      size_t i = 0;
       for (auto &node : nodes->control.node) {
         std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
-        PS_VLOG(1) << "Sorted IP-" << i << ": \t" << node_host_ip;
-        ++i;
+        if (ip_cnt[node.hostname] == 1) {
+          PS_VLOG(1) << "Non-Colocate Server: " << node_host_ip;
+          CHECK_EQ(node.role, Node::SERVER);
+        } else {
+          PS_VLOG(1) << "Colocated " << ((node.role == Node::SERVER) ? "Server" : "Worker") << ": \t" << node_host_ip;
+        }
       }
     } else {
       // sort the nodes according their ip and port
