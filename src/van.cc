@@ -93,11 +93,37 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
   time_t t = time(NULL);
   size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
   if (nodes->control.node.size() == num_nodes) {
-    // sort the nodes according their ip and port,
-    std::sort(nodes->control.node.begin(), nodes->control.node.end(),
-              [](const Node &a, const Node &b) {
-                return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
-              });
+    bool mixed_mode = 
+        getenv("BYTEPS_ENABLE_MIXED_PS_ALLREDUCE") 
+        ? atoi(getenv("BYTEPS_ENABLE_MIXED_PS_ALLREDUCE")) 
+        : false;
+    if (mixed_mode) {
+      std::unordered_map<std::string, size_t> ip_cnt;
+      for (auto &node : nodes->control.node) { 
+        ip_cnt[node.hostname] += 1; 
+        CHECK_LE(ip_cnt[node.hostname], 2) << node.hostname;
+      }
+
+      // put non-colocate servers' IP to front
+      std::sort(nodes->control.node.begin(), nodes->control.node.end(),
+                [&ip_cnt](const Node &a, const Node &b) {
+                  return ip_cnt[a.hostname] < ip_cnt[b.hostname];
+                });
+
+      size_t i = 0;
+      for (auto &node : nodes->control.node) {
+        std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
+        PS_VLOG(1) << "Sorted IP-" << i << ": \t" << node_host_ip;
+        ++i;
+      }
+    } else {
+      // sort the nodes according their ip and port
+      std::sort(nodes->control.node.begin(), nodes->control.node.end(),
+               [](const Node &a, const Node &b) {
+                 return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
+               });
+    }
+
     // assign node rank
     for (auto &node : nodes->control.node) {
       std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
