@@ -291,7 +291,7 @@ void Customer::Receiving() {
   // profiling
   val = Environment::Get()->find("BYTEPS_SERVER_ENABLE_PROFILE");
   enable_profile_ = val ? atoi(val) : false;
-  std::thread* profile_thread;
+  std::thread* profile_thread = nullptr;
   if (enable_profile_ && is_server) {
     LOG(INFO) << "Enable server profiling";
     profile_thread = new std::thread(&Customer::ProcessProfileData, this);

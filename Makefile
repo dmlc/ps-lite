@@ -12,6 +12,9 @@ ifndef DEPS_PATH
 DEPS_PATH = $(shell pwd)/deps
 endif
 
+ifndef FABRIC_PATH
+FABRIC_PATH = /opt/amazon/efa
+endif
 
 ifndef PROTOC
 PROTOC = ${DEPS_PATH}/bin/protoc
@@ -25,6 +28,12 @@ LIBS = -pthread
 ifeq ($(USE_RDMA), 1)
 LIBS += -lrdmacm -libverbs
 CFLAGS += -DDMLC_USE_RDMA
+endif
+
+ifeq ($(USE_FABRIC), 1)
+LIBS += -lrdmacm -lfabric -L$(FABRIC_PATH)/lib64 -L$(FABRIC_PATH)/lib
+CFLAGS += -DDMLC_USE_FABRIC
+INCPATH += -I$(FABRIC_PATH)/include
 endif
 
 ifdef ASAN

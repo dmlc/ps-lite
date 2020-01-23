@@ -17,6 +17,7 @@
 #include "./meta.pb.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
+#include "./fabric_van.h"
 #include "./resender.h"
 #include "./zmq_van.h"
 #define USE_PROFILING
@@ -75,6 +76,10 @@ Van *Van::Create(const std::string &type) {
 #ifdef DMLC_USE_RDMA
   } else if (type == "rdma") {
     return new RDMAVan();
+#endif
+#ifdef DMLC_USE_FABRIC
+  } else if (type == "fabric") {
+    return new FabricVan();
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
@@ -165,7 +170,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
     CHECK_EQ(ctrl.node.size(), 1);
-    if (static_cast<int>(nodes->control.node.size()) < num_nodes) {
+    if (nodes->control.node.size() < num_nodes) {
       nodes->control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
@@ -359,6 +364,10 @@ void Van::Start(int customer_id) {
 
     // connect to the scheduler
     Connect(scheduler_);
+    if (GetEnv("DMLC_EFA_DEBUG", 0)) {
+      LOG(INFO) << "ABOUT TO SPIN";
+      while (true) ;
+    }
 
     // for debug use
     if (Environment::Get()->find("PS_DROP_MSG")) {
@@ -380,6 +389,10 @@ void Van::Start(int customer_id) {
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;
     Send(msg);
+  }
+  if (GetEnv("DMLC_EFA_DEBUG", 0)) {
+    LOG(INFO) << "ABOUT TO SPIN";
+    while (true) ;
   }
 
   // wait until ready
@@ -480,13 +493,16 @@ void Van::Receiving() {
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
+        LOG(INFO) << "Process ADD_NODE";
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
+        LOG(INFO) << "Process BARRIER";
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
+        LOG(INFO) << "Process HEARTBEAT";
         ProcessHearbeat(&msg);
       } else {
-        LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
+        LOG(INFO) << "Drop unknown typed message " << msg.DebugString();
       }
     } else {
       ProcessDataMsg(&msg);
