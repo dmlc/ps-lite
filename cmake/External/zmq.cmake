@@ -23,6 +23,7 @@ if (NOT __ZMQ_INCLUDED) # guard against multiple includes
     set(ZMQ_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${ZMQ_EXTRA_COMPILER_FLAGS})
     set(ZMQ_C_FLAGS ${CMAKE_C_FLAGS} ${ZMQ_EXTRA_COMPILER_FLAGS})
 
+    include(ExternalProject)
     ExternalProject_Add(ZMQ
       PREFIX ${ZMQ_PREFIX}
       GIT_REPOSITORY "https://github.com/zeromq/libZMQ.git"
