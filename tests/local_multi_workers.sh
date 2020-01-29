@@ -15,8 +15,11 @@ shift
 arg="$@"
 
 # start the scheduler
-export DMLC_PS_ROOT_URI='127.0.0.1'
-export DMLC_PS_ROOT_PORT=8000
+export DMLC_PS_ROOT_URI=${DMLC_PS_ROOT_URI:-'127.0.0.1'}
+export DMLC_PS_ROOT_PORT=${DMLC_PS_ROOT_PORT:-8000}
+export DMLC_INTERFACE=${DMLC_INTERFACE:-eth10}
+export DMLC_ROLE='scheduler'
+${bin} ${arg} &
 
 
 # start servers

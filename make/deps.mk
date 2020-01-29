@@ -1,20 +1,9 @@
 # Install dependencies
 
 URL1=https://raw.githubusercontent.com/mli/deps/master/build
-URL2=https://github.com/google/protobuf/releases/download/v3.5.1
 ifndef WGET
 WGET = wget
 endif
-
-# protobuf
-PROTOBUF = ${DEPS_PATH}/include/google/protobuf/message.h
-${PROTOBUF}:
-	$(eval FILE=protobuf-cpp-3.5.1.tar.gz)
-	$(eval DIR=protobuf-3.5.1)
-	rm -rf $(FILE) $(DIR)
-	$(WGET) $(URL2)/$(FILE) && tar --no-same-owner -zxf $(FILE)
-	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) && $(MAKE) && $(MAKE) install
-	rm -rf $(FILE) $(DIR)
 
 # zmq
 ZMQ = ${DEPS_PATH}/include/zmq.h
