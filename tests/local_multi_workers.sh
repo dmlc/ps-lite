@@ -5,6 +5,7 @@ if [ $# -lt 3 ]; then
     exit -1;
 fi
 
+#export FI_LOG_LEVEL=Debug
 export DMLC_NUM_SERVER=$1
 shift
 export DMLC_NUM_WORKER=$1
@@ -25,14 +26,20 @@ ${bin} ${arg} &
 export DMLC_ROLE='server'
 for ((i=0; i<${DMLC_NUM_SERVER}; ++i)); do
     export HEAPPROFILE=./S${i}
-    ${bin} ${arg} &
+    (${bin} ${arg} 2>&1 | tee server.log &)
 done
+
+export DMLC_ROLE='scheduler'
+(${bin} ${arg} 2>&1 | tee sched.log &)
 
 # start workers
 export DMLC_ROLE='worker'
 for ((i=0; i<${DMLC_NUM_WORKER}; ++i)); do
     export HEAPPROFILE=./W${i}
-    ${bin} ${arg} &
+    (${bin} ${arg} 2>&1 | tee worker.log &)
 done
+
+#gdb -ex=r --args ${bin} ${arg}
+
 
 wait
