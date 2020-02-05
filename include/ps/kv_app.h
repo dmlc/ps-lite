@@ -686,7 +686,7 @@ int KVWorker<Val>::AddPullCB(
       if (vals->empty()) {
         vals->resize(total_val);
       } else {
-        CHECK_EQ(vals->size(), total_val);
+        CHECK_GE(vals->size(), total_val);
       }
       Val* p_vals = vals->data();
       int *p_lens = nullptr;
