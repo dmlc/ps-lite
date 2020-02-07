@@ -43,10 +43,10 @@ class Van {
    *
    * must call it before calling Send
    *
-   * it initalizes all connections to other nodes.  start the receiving
-   * threads, which keeps receiving messages. if it is a system
+   * it initializes all connections to other nodes.  start the receiving
+   * thread, which keeps receiving messages. if it is a system
    * control message, give it to postoffice::manager, otherwise, give it to the
-   * accoding app.
+   * corresponding app.
    */
   virtual void Start(int customer_id);
 
