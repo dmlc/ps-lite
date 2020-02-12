@@ -9,7 +9,7 @@ The data communicated are presented as key-value
   2. Zero-copy versions: \ref ps::KVWorker::ZPush, \ref
      ps::KVWorker::ZPull
 
-To support dynamic length, pull operations(`Pull` and `ZPull`), do not require the buffer(`vals`) to be the same size as the total data size of pulling down. Larger buffer is allowed while `lens` records the actual size of each key. So the reliable way to read valid message is to read the length of the actual size. If you ensure that the data size of a key does not change during push or pull, you can verify it by checking whether `lens` of the key is equal to the fixed size.  
+To support dynamic length, pull operations(`Pull` and `ZPull`), do not require the buffer(`vals`) to be the same size as the total data size of pulling down. Larger buffer is allowed while `lens` records the actual size of each key. So the reliable way to read a valid message is to read `lens` bytes. If you ensure that the data size of a key does not change during push or pull, you can verify it by checking whether `lens` of the key is equal to the fixed size.  
 
 often server *i* handles the keys (feature indices) within the i-th
   segment of <em>[0, uint64_max]</em>. The server node allows user-defined handles to
