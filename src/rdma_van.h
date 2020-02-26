@@ -174,28 +174,15 @@ class RDMAVan : public Van {
             << "Create RDMA connection identifier failed";
         endpoint->cm_id->context = endpoint;
 
-        int max_retry = kMaxResolveRetry;
-        int port = kBasePort;
-        unsigned seed = static_cast<unsigned>(time(NULL) + port);
         auto val = Environment::Get()->find("DMLC_NODE_HOST");
         if (val) {
-          struct sockaddr_in addr;
-          memset(&addr, 0, sizeof(addr)); 
-          addr.sin_addr.s_addr = inet_addr(val);
-          addr.sin_family = AF_INET;
-          for (int i = 0; i < max_retry + 1; ++i) {
-            addr.sin_port = htons(port);
-            if (rdma_resolve_addr(endpoint->cm_id, 
-                                  reinterpret_cast<struct sockaddr *>(&addr),
-                                  remote_addr->ai_addr, kTimeoutms) == 0) {
-              break;
-            }
-            if (i == max_retry) {
-              port = -1;
-            } else {
-              port = 10000 + rand_r(&seed) % 40000;
-            }
-          }
+          struct addrinfo *addr;
+          auto rc = getaddrinfo(val, "", NULL, &addr);
+          CHECK_EQ(rc, 0) << "getaddrinfo failed: " << gai_strerror(rc);
+
+          CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, addr->ai_addr,
+                              remote_addr->ai_addr, kTimeoutms), 0)
+              << "Resolve RDMA address failed with errno: " << strerror(errno);
         } else {
           CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, nullptr,
                                      remote_addr->ai_addr, kTimeoutms),
