@@ -8,11 +8,15 @@ endif
 # zmq
 ZMQ = ${DEPS_PATH}/include/zmq.h
 
+ifndef ZMQ_URL
+ZMQ_URL = $(URL1)/$(FILE)
+endif
+
 ${ZMQ}:
 	$(eval FILE=zeromq-4.1.4.tar.gz)
 	$(eval DIR=zeromq-4.1.4)
 	rm -rf $(FILE) $(DIR)
-	$(WGET) $(URL1)/$(FILE) && tar --no-same-owner -zxf $(FILE)
+	$(WGET) $(ZMQ_URL) && tar --no-same-owner -zxf $(FILE)
 	cd $(DIR) && export CFLAGS=-fPIC && export CXXFLAGS=-fPIC && ./configure -prefix=$(DEPS_PATH) --with-libsodium=no --with-libgssapi_krb5=no && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
