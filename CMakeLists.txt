@@ -9,9 +9,30 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 add_library(pslite)
 
 # ---[ zmq
-include("cmake/External/zmq.cmake")
-target_include_directories(pslite PRIVATE ${ZMQ_INCLUDE_DIRS})
-target_link_libraries(pslite PUBLIC ${ZMQ_LIBRARIES})
+find_package(ZMQ)
+if(NOT ZMQ_FOUND)
+  cmake_minimum_required(VERSION 3.11)
+  include(FetchContent)
+  FetchContent_Declare(zmq
+    URL https://github.com/zeromq/libzmq/releases/download/v4.3.2/zeromq-4.3.2.zip
+    URL_HASH SHA256=d01517983ded9ff1b6c40f8206fc2b44ac96157a5aea7b974e8b0079547edfda)
+  FetchContent_GetProperties(zmq)
+  if(NOT zmq_POPULATED)
+    FetchContent_Populate(zmq)
+    if(POLICY CMP0077)
+      # Avoid building shared library and tests on CMake 3.13+
+      cmake_policy(SET CMP0077 NEW)
+      set(BUILD_SHARED OFF CACHE BOOL "")
+      set(BUILD_TESTS OFF CACHE BOOL "")
+    endif()
+    add_subdirectory(${zmq_SOURCE_DIR} ${zmq_BINARY_DIR})
+  endif()
+  target_link_libraries(pslite PUBLIC libzmq-static)
+else()
+  target_include_directories(pslite PRIVATE ${ZMQ_INCLUDE_DIRS})
+  target_link_libraries(pslite PUBLIC ${ZMQ_LIBRARIES})
+endif()
+
 # ---[ Google-protobuf
 include(cmake/ProtoBuf.cmake)
 target_link_libraries(pslite PUBLIC ${PROTOBUF_LIBRARY})
