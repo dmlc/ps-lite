@@ -17,7 +17,7 @@
 #include "./meta.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
-#include "./fabric_van.h"
+#include "./fabric_rma_van.h"
 #include "./resender.h"
 #include "./zmq_van.h"
 #define USE_PROFILING
@@ -417,6 +417,8 @@ void Van::Start(int customer_id) {
     Node customer_specific_node = my_node_;
     customer_specific_node.customer_id = customer_id;
     msg.meta.recver = kScheduler;
+    // Add node commands calls Van::ProcessAddNodeCommand()
+    // this sets Node ID
     msg.meta.control.cmd = Control::ADD_NODE;
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;

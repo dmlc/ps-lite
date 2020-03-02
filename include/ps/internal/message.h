@@ -107,7 +107,9 @@ struct Control {
   std::string DebugString() const {
     if (empty()) return "";
     std::vector<std::string> cmds = {
-      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT", "BOOTSTRAP"};
+      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT", "BOOTSTRAP", "ADDR_REQUEST",
+	  "ADDR_RESOLVED"
+    };
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
     if (node.size()) {
@@ -120,7 +122,8 @@ struct Control {
     return ss.str();
   }
   /** \brief all commands */
-  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, BOOTSTRAP};
+  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, BOOTSTRAP, ADDR_REQUEST,
+	  	  	  	 ADDR_RESOLVED};
   /** \brief the command */
   Command cmd;
   /** \brief node infos */
