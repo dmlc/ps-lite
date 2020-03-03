@@ -79,7 +79,7 @@ Van *Van::Create(const std::string &type) {
 #endif
 #ifdef DMLC_USE_FABRIC
   } else if (type == "fabric") {
-    return new FabricVan();
+    return new FabricRMAVan();
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
