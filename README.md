@@ -44,7 +44,7 @@ export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
 export DMLC_INTERFACE=eth5        # my RDMA interface 
 
 # launch scheduler
-DMLC_ROLE=scheduler test_benchmark
+DMLC_ROLE=scheduler ./tests/test_benchmark
 ```
 
 
@@ -59,7 +59,7 @@ export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
 export DMLC_INTERFACE=eth5        # my RDMA interface 
 
 # launch server
-DMLC_ROLE=server test_benchmark
+DMLC_ROLE=server ./tests/test_benchmark
 ```
 
 For the worker:
@@ -73,7 +73,7 @@ export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
 export DMLC_INTERFACE=eth5        # my RDMA interface 
 
 # launch worker
-DMLC_ROLE=worker test_benchmark
+DMLC_ROLE=worker ./tests/test_benchmark
 ```
 
 If you just want to use TCP, make sure to set `DMLC_ENABLE_RDMA=0` for all processes.
@@ -96,7 +96,7 @@ export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
 export DMLC_INTERFACE=eth5        # my RDMA interface 
 
 # launch scheduler
-DMLC_ROLE=scheduler test_ipc_benchmark
+DMLC_ROLE=scheduler ./tests/test_ipc_benchmark
 ```
 
 For machine-0 and machine-1:
@@ -111,8 +111,8 @@ export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
 export DMLC_INTERFACE=eth5        # my RDMA interface 
 
 # launch server and worker
-DMLC_ROLE=server test_ipc_benchmark &
-DMLC_ROLE=worker test_ipc_benchmark 
+DMLC_ROLE=server ./tests/test_ipc_benchmark &
+DMLC_ROLE=worker ./tests/test_ipc_benchmark 
 ```
 
 
