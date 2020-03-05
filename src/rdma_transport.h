@@ -469,6 +469,21 @@ class IPCTransport : public RDMATransport {
     val = Environment::Get()->find("BYTEPS_IPC_ENABLE_ASYNC_COPY");
     enable_async_copy_ = val ? atoi(val) : 1; // default enabled
     if (!enable_async_copy_) LOG(INFO) << "Async copy has been disabled, this could affect the performance";
+
+    val = Environment::Get()->find("BYTEPS_PCIE_SWITCH_SIZE");
+    auto byteps_nccl_pcie_size = val ? atoi(val) : 8;
+    if (byteps_local_size % byteps_nccl_pcie_size != 0) {
+      // local_size < pcie_size or unbalance PCIe switches
+      byteps_nccl_pcie_size = byteps_local_size;
+    }
+    // ensure this name corresponds with that in BytePSSharedMemory::openPcieSharedMemory()
+    if (byteps_local_size > byteps_nccl_pcie_size) {
+      // cross pcie switch, use the last pcie cpu buffer
+      auto byteps_pcie_num = byteps_local_size / byteps_nccl_pcie_size;
+      shm_prefix_ = kShmPciePrefix + std::to_string(byteps_pcie_num - 1) + "_Shm_";
+    } else {
+      shm_prefix_ = kShmPrefix;
+    }
   };
 
   ~IPCTransport() {
@@ -486,7 +501,7 @@ class IPCTransport : public RDMATransport {
 
   void SendPullResponse(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple, size_t lkey) {
     auto addr = (void*) CHECK_NOTNULL(msg.data[1].data());
-    void* shm_addr = CHECK_NOTNULL(GetSharedMemory(kShmPrefix, msg.meta.key));
+    void* shm_addr = CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
 
     if (enable_async_copy_) {
       // async copy with a simple load-balancing strategy
@@ -508,7 +523,7 @@ class IPCTransport : public RDMATransport {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
 
     SArray<char> vals;
-    void* addr = GetSharedMemory(kShmPrefix, key);
+    void* addr = GetSharedMemory(shm_prefix_, key);
     vals.reset(reinterpret_cast<char*>(addr), len, [](void *){});
 
     SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
@@ -585,6 +600,8 @@ class IPCTransport : public RDMATransport {
   std::atomic<unsigned long long> cpy_counter_{0};
 
   int byteps_partition_bytes_ = 4096000;
+
+  std::string shm_prefix_;
 
   std::mutex shm_mu_;
   std::unordered_map<uint64_t, void *> key_shm_addr_;

@@ -71,6 +71,7 @@ static const int kBasePort = 9010;
 
 // should have the same prefix with BytePS shared memory
 static const std::string kShmPrefix("BytePS_ShM_");
+static const std::string kShmPciePrefix("BytePS_Pcie");
 
 template <typename T>
 static inline T align_floor(T v, T align) {
