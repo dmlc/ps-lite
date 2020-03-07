@@ -1453,6 +1453,17 @@ class FabricRMAVan : public Van {
 
   std::mutex map_mu_;
 
+  // note that ZMQ use the node id to identify the senders.
+  // to setup the connection for libfabric, we don't know the node id ahead of time
+  // therefore, we need to use the add sender / receiver hostport to the message meta
+  // such that when we unpack the message, we can still know where the message was sent
+  // this requires that when calling these APIs:
+  // - zmq_->Connect
+  // - zmq_->SendMsg
+  // - zmq_->RecvMsg
+  // we need to make sure req.meta.recver is set correctly.
+  // we use hostport_id_map_ to map host:port to IDs. The ID can be arbtrary, as long
+  // as the id is unique.
   std::unordered_map<std::string, int> hostport_id_map_;
 
   Van* zmq_;
