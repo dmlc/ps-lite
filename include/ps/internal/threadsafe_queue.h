@@ -34,7 +34,9 @@ template<typename T> class ThreadsafeQueue {
    * \param value the poped value
    */
   void WaitAndPop(T* value) {
+  	LOG(INFO) << "acquiring lock";
     std::unique_lock<std::mutex> lk(mu_);
+    LOG(INFO) << "lock acquired";
     cond_.wait(lk, [this]{return !queue_.empty();});
     *value = std::move(queue_.front());
     queue_.pop();

@@ -16,9 +16,9 @@ Postoffice::Postoffice() {
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
   int enable_rdma = GetEnv("DMLC_ENABLE_RDMA", 0);
-  int enable_fabric = GetEnv("DMLC_ENABLE_FABRIC", 0);
+  int enable_fabric = GetEnv("DMLC_ENABLE_FABRIC", 1);
   if (enable_fabric) {
-    LOG(INFO) << "enable Fabric for networking";
+    LOG(INFO) << "enable Fabric";
     van_ = Van::Create("fabric");
   } else if (enable_rdma) {
     LOG(INFO) << "enable RDMA for networking";

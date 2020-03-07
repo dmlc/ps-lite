@@ -17,7 +17,11 @@
 #include "./meta.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
+#if DMLC_FABRIC_TYPE == 1
+#include "./fabric_van.h"
+#elif DMLC_FABRIC_TYPE == 2
 #include "./fabric_rma_van.h"
+#endif
 #include "./resender.h"
 #include "./zmq_van.h"
 #define USE_PROFILING
@@ -79,7 +83,11 @@ Van *Van::Create(const std::string &type) {
 #endif
 #ifdef DMLC_USE_FABRIC
   } else if (type == "fabric") {
+#if DMLC_FABRIC_TYPE == 1
+    return new FabricVan();
+#elif DMLC_FABRIC_TYPE == 2
     return new FabricRMAVan();
+#endif
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
@@ -348,13 +356,13 @@ void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes)
 void Van::Start(int customer_id) {
   // get scheduler info
   start_mu_.lock();
-
   if (init_stage == 0) {
     scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
     scheduler_.port = atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
     scheduler_.role = Node::SCHEDULER;
     scheduler_.id = kScheduler;
     is_scheduler_ = Postoffice::Get()->is_scheduler();
+
 
     // get my node info
     if (is_scheduler_) {
@@ -390,11 +398,17 @@ void Van::Start(int customer_id) {
     }
 
     // bind.
+    if(is_scheduler_) {
+    	LOG(INFO) << "scheduler: port = " << my_node_.port;
+    } else {
+    	LOG(INFO) << "non-scheduler";
+    }
     my_node_.port = Bind(my_node_, is_scheduler_ ? 0 : 40);
     PS_VLOG(1) << "Bind to " << my_node_.DebugString();
     CHECK_NE(my_node_.port, -1) << "bind failed";
 
     // connect to the scheduler
+    LOG(INFO) << "connecting to scheduler";
     Connect(scheduler_);
     if (GetEnv("DMLC_EFA_DEBUG", 0)) {
       LOG(INFO) << "ABOUT TO SPIN";
