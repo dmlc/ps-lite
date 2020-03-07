@@ -482,7 +482,7 @@ struct Endpoint {
 };
 
 struct FabricEndpoint {
-	enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
+  enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
   ConnectionStatus status;
   int node_id;
   struct fid_ep *ep; // the endpoint
@@ -499,16 +499,16 @@ struct FabricEndpoint {
 
   void Init(struct fid_domain *domain, struct fi_info *info, struct fid_cq *cq) {
     // bind completion queue
-  	LOG(INFO) << "inside init";
-  	int ret;
-  	if (cq != nullptr){
-  		LOG(INFO) << "inside if calling fi_ep_bind";
-  		// check for error code using 'ret' integer code
-  		ret = fi_ep_bind(ep, (fid_t) cq, FI_SEND | FI_RECV);
-  		check_err(ret, "Couldn't bind EP-CQ");
-  		LOG(INFO) << "ret = " << ret;
-  	}
-//  	LOG(INFO) << "";
+    LOG(INFO) << "inside init";
+    int ret;
+    if (cq != nullptr){
+      LOG(INFO) << "inside if calling fi_ep_bind";
+      // check for error code using 'ret' integer code
+      ret = fi_ep_bind(ep, (fid_t) cq, FI_SEND | FI_RECV);
+      check_err(ret, "Couldn't bind EP-CQ");
+      LOG(INFO) << "ret = " << ret;
+    }
+//    LOG(INFO) << "";
     // create and bind addresss vector
     struct fi_av_attr av_attr = {};
     av_attr.type = FI_AV_TABLE;
@@ -539,49 +539,49 @@ struct FabricEndpoint {
 
 class FabricRMAVan : public Van {
  private:
-	struct fi_info *info_; // fabric provider info
-	struct fid_fabric *fabric_; // fabric top-level object
-	struct fid_domain *domain; // domains, which maps to a specific local network interface adapter
-	struct fid_cq *cq; // completion queue
-	std::unique_ptr<FabricEndpoint> my_endpoint_;
-	void* context_ = nullptr;
-	struct fi_info* ofi_provider_ = nullptr;
+  struct fi_info *info_; // fabric provider info
+  struct fid_fabric *fabric_; // fabric top-level object
+  struct fid_domain *domain; // domains, which maps to a specific local network interface adapter
+  struct fid_cq *cq; // completion queue
+  std::unique_ptr<FabricEndpoint> my_endpoint_;
+  void* context_ = nullptr;
+  struct fi_info* ofi_provider_ = nullptr;
 
-	// name of the endpoint
-	char av_name_[DMLC_PS_MAX_EP_ADDR] = {};
-	// length of the name
-	size_t av_name_len_ = sizeof(av_name_);
-	std::mutex mu_;
-	bool is_worker_;
-	std::vector<std::thread*> thread_list_;
+  // name of the endpoint
+  char av_name_[DMLC_PS_MAX_EP_ADDR] = {};
+  // length of the name
+  size_t av_name_len_ = sizeof(av_name_);
+  std::mutex mu_;
+  bool is_worker_;
+  std::vector<std::thread*> thread_list_;
 
-	void* receiver_ = nullptr; // for incoming connect queries
-	std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> endpoints_;
-	// str = "hostname:port"
-	std::unordered_map<std::string, void*> zmq_sockets_;
-//	std::unordered_map<std::string, void*> senders_;
-	// <key, recver>, (<remote_addr, rkey, idx, local_addr>)
-	// std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
-	// std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
+  void* receiver_ = nullptr; // for incoming connect queries
+  std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> endpoints_;
+  // str = "hostname:port"
+  std::unordered_map<std::string, void*> zmq_sockets_;
+//  std::unordered_map<std::string, void*> senders_;
+  // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
+  // std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
+  // std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
 
-	std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
+  std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
 
-	// local IPC related
-	bool disable_ipc_ = false;
-	std::mutex local_mu_;
-	std::unordered_map<int, bool> is_local_;
+  // local IPC related
+  bool disable_ipc_ = false;
+  std::mutex local_mu_;
+  std::unordered_map<int, bool> is_local_;
  public:
   FabricRMAVan() {
-	struct fi_info *hints = fi_allocinfo();
-	// set hints for capacity and modes, create fabric, domain and cq
-	fi_getinfo(FI_VERSION(1, 6), nullptr, 0, 0, hints, &info_);
-	fi_fabric(info_->fabric_attr, &fabric_, nullptr);
-	fi_domain(fabric_, info_, &domain, nullptr);
-	// Open CQ
-	struct fi_cq_attr cq_attr = {};
-	cq_attr.format = FI_CQ_FORMAT_TAGGED;
-	fi_cq_open(domain, &cq_attr, &cq, nullptr);
-//	fi_cq_open(domain, &cq_attr, &my_endpoint_->cq, nullptr);
+  struct fi_info *hints = fi_allocinfo();
+  // set hints for capacity and modes, create fabric, domain and cq
+  fi_getinfo(FI_VERSION(1, 6), nullptr, 0, 0, hints, &info_);
+  fi_fabric(info_->fabric_attr, &fabric_, nullptr);
+  fi_domain(fabric_, info_, &domain, nullptr);
+  // Open CQ
+  struct fi_cq_attr cq_attr = {};
+  cq_attr.format = FI_CQ_FORMAT_TAGGED;
+  fi_cq_open(domain, &cq_attr, &cq, nullptr);
+//  fi_cq_open(domain, &cq_attr, &my_endpoint_->cq, nullptr);
   }
   ~FabricRMAVan() {}
 
@@ -759,7 +759,7 @@ class FabricRMAVan : public Van {
 
 
     // create my endpoint
-  	OfiCreateEndpoint();
+    OfiCreateEndpoint();
 //    my_endpoint_->Init(domain, info_, cq);
     // ZMQ for out-of-band communication
     int my_port = ZMQBind(node, max_retry);
@@ -857,34 +857,34 @@ class FabricRMAVan : public Van {
 
 
   void ZMQPollEvent() {
-  	auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) receiver_);
-  	thread_list_.push_back(t);
+    auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) receiver_);
+    thread_list_.push_back(t);
   }
 
   void ZMQProcessMsg() {
-  	LOG(INFO) << "Start processing incoming messages";
-  	while (!should_stop_) {
-  		Message* msg = (Message *)malloc(sizeof(Message));
-  		LOG(INFO) << "calling recvMsg";
-  		int len = ZMQRecvMsg(msg);
-  		Node sender_node = msg->meta.control.node[1];
-			switch (msg->meta.control.cmd) {
-				case Control::ADDR_REQUEST:
-					OnConnectionRequest(sender_node);
-					break;
-				case Control::ADDR_RESOLVED:
-					OnConnected(sender_node);
-					break;
-				// case: OnDisconnected();
-				// break;
-			}
-			// TODO: clean up msg memory
-		}
+    LOG(INFO) << "Start processing incoming messages";
+    while (!should_stop_) {
+      Message* msg = (Message *)malloc(sizeof(Message));
+      LOG(INFO) << "calling recvMsg";
+      int len = ZMQRecvMsg(msg);
+      Node sender_node = msg->meta.control.node[1];
+      switch (msg->meta.control.cmd) {
+        case Control::ADDR_REQUEST:
+          OnConnectionRequest(sender_node);
+          break;
+        case Control::ADDR_RESOLVED:
+          OnConnected(sender_node);
+          break;
+        // case: OnDisconnected();
+        // break;
+      }
+      // TODO: clean up msg memory
+    }
   }
 
   int ZMQRecvMsg(Message* msg) /*override */{
-  	LOG(INFO) << "Inside ZMQRecvMsg";
-  	if(msg == nullptr) LOG(INFO) << "msg ptr is null";
+    LOG(INFO) << "Inside ZMQRecvMsg";
+    if(msg == nullptr) LOG(INFO) << "msg ptr is null";
     msg->data.clear();
     LOG(INFO) << "msg->data cleared";
     ZmqBufferContext notification;
@@ -945,14 +945,14 @@ class FabricRMAVan : public Van {
         << ". it often can be solved by \"sudo ulimit -n 65536\""
         << " or edit /etc/security/limits.conf";
     if (!key.empty()) {
-			std::string my_id = "ps" + std::to_string(my_node_.id);
-			zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
-			std::lock_guard<std::mutex> lk(mu_);
-			if (is_worker_ && (zmq_sockets_.find(key)==zmq_sockets_.end())) {
-				LOG(INFO) << "THIS IS A WORKER's bi-directional thread with server !";
-				auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) sender);
-				thread_list_.push_back(t);
-			}
+      std::string my_id = "ps" + std::to_string(my_node_.id);
+      zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
+      std::lock_guard<std::mutex> lk(mu_);
+      if (is_worker_ && (zmq_sockets_.find(key)==zmq_sockets_.end())) {
+        LOG(INFO) << "THIS IS A WORKER's bi-directional thread with server !";
+        auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) sender);
+        thread_list_.push_back(t);
+      }
     }
     // connect
     std::string addr =
@@ -974,32 +974,32 @@ class FabricRMAVan : public Van {
   }
 
   void OnConnectionRequest(Node node) {
-	  // prepare av_name and av_name_len;
-//	  OfiCreateEndpoint();
-//	  ret = fi_getname(&(my_endpoint_->ep->fid), (void *)&av_name_, &av_name_len_);
-//	  check_err(ret, "Call to fi_getname() failed");
+    // prepare av_name and av_name_len;
+//    OfiCreateEndpoint();
+//    ret = fi_getname(&(my_endpoint_->ep->fid), (void *)&av_name_, &av_name_len_);
+//    check_err(ret, "Call to fi_getname() failed");
 
       // key
-  	LOG(INFO) << "inside OnConnectionRequest";
-		// value
-		Node value;
-		value.hostname = av_name_; // My av_name
-		value.port = av_name_len_;
+    LOG(INFO) << "inside OnConnectionRequest";
+    // value
+    Node value;
+    value.hostname = av_name_; // My av_name
+    value.port = av_name_len_;
 
-		std::string addr = node.hostname + ":" + std::to_string(node.port);
-		LOG(INFO) << "ADDR_REQ received from " << addr;
-		auto iter = zmq_sockets_.find(addr);
-		if (iter == zmq_sockets_.end()) {
-			LOG(INFO) << "Calling ZmqConnect";
-			ZmqConnect(node);
-		}
-		Message req;
-//		  req.meta.recver = Node::kEmpty;
-		req.meta.control.cmd = Control::ADDR_RESOLVED;
-		req.meta.control.node.push_back(node);
-		req.meta.control.node.push_back(value);
-		LOG(INFO) << "Sending ADDR_RESOLVED Request";
-		int bytes = ZmqSendMsg(req);
+    std::string addr = node.hostname + ":" + std::to_string(node.port);
+    LOG(INFO) << "ADDR_REQ received from " << addr;
+    auto iter = zmq_sockets_.find(addr);
+    if (iter == zmq_sockets_.end()) {
+      LOG(INFO) << "Calling ZmqConnect";
+      ZmqConnect(node);
+    }
+    Message req;
+//      req.meta.recver = Node::kEmpty;
+    req.meta.control.cmd = Control::ADDR_RESOLVED;
+    req.meta.control.node.push_back(node);
+    req.meta.control.node.push_back(value);
+    LOG(INFO) << "Sending ADDR_RESOLVED Request";
+    int bytes = ZmqSendMsg(req);
   }
 
   int ZmqSendMsg(Message& msg) {
@@ -1051,7 +1051,7 @@ class FabricRMAVan : public Van {
 
   void OfiCreateEndpoint() {
     // TODO: use smart pointer
-  	LOG(INFO) << "calling Create Endpoint";
+    LOG(INFO) << "calling Create Endpoint";
     my_endpoint_ = std::unique_ptr<FabricEndpoint>(new FabricEndpoint());
     CHECK(my_endpoint_ != nullptr) << "Failed to allocate Endpoint";
 
@@ -1122,11 +1122,11 @@ class FabricRMAVan : public Van {
 
   void OnConnected(Node node) {
     // process and insert av_name and av_name_len;
-  	LOG(INFO) << "Inside OnConnected";
-  	fi_addr_t remote_addr;
-  	std::string remote_endpoint = node.hostname;
-  	int ret = fi_av_insert(my_endpoint_->av, (void *) remote_endpoint.c_str(), 1,
-	                           &remote_addr, 0, nullptr);
+    LOG(INFO) << "Inside OnConnected";
+    fi_addr_t remote_addr;
+    std::string remote_endpoint = node.hostname;
+    int ret = fi_av_insert(my_endpoint_->av, (void *) remote_endpoint.c_str(), 1,
+                             &remote_addr, 0, nullptr);
 //    fi_av_insert(struct fid_av *av, void *addr, size_t count
 //                 fi_addr_t *fi_addr, uint64_t flags, void *context);
     my_endpoint_->status = FabricEndpoint::CONNECTED;
@@ -1169,8 +1169,8 @@ class FabricRMAVan : public Van {
   }
 
   void Connect(const Node &node) override {
-  	LOG(INFO) << "Inside connect";
-		LOG(INFO) << "node_role = " << node.role << " and my_node_role=" << my_node_.role;
+    LOG(INFO) << "Inside connect";
+    LOG(INFO) << "node_role = " << node.role << " and my_node_role=" << my_node_.role;
     if ((node.role == my_node_.role) /*&& (node.id != my_node_.id)*/) {
       return;
     }
@@ -1180,20 +1180,20 @@ class FabricRMAVan : public Van {
     // Terminology as seen by receiver
     // Destination Node
     Node key;
-	  key.role = node.role;
-	  key.hostname = node.hostname; // My IP Address
-	  key.port = node.port; // My Port
-	  // Origin Node
-	  Node val;
-	  val.role = my_node_.role;
-	  val.hostname = my_node_.hostname; // My IP Address
-	  val.port = my_node_.port; // My Port
-	  req.meta.control.cmd = Control::ADDR_REQUEST;
-	  req.meta.control.node.push_back(key);
-	  req.meta.control.node.push_back(val);
-	  LOG(INFO) << "sending ADDR_REQUEST";
-	  ZmqSendMsg(req);
-	  LOG(INFO) << "ADDR_REQUEST sent";
+    key.role = node.role;
+    key.hostname = node.hostname; // My IP Address
+    key.port = node.port; // My Port
+    // Origin Node
+    Node val;
+    val.role = my_node_.role;
+    val.hostname = my_node_.hostname; // My IP Address
+    val.port = my_node_.port; // My Port
+    req.meta.control.cmd = Control::ADDR_REQUEST;
+    req.meta.control.node.push_back(key);
+    req.meta.control.node.push_back(val);
+    LOG(INFO) << "sending ADDR_REQUEST";
+    ZmqSendMsg(req);
+    LOG(INFO) << "ADDR_REQUEST sent";
 //    PS_VLOG(1) << "Connecting to " << my_node_.ShortDebugString();
     PS_VLOG(1) << "Connecting to " << node.ShortDebugString();
 //    CHECK_NE(node.id, node.kEmpty);
@@ -1204,7 +1204,7 @@ class FabricRMAVan : public Van {
 
     std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
     if (!node_host_ip.empty()) {
-    	LOG(INFO) << "dest IP not empty";
+      LOG(INFO) << "dest IP not empty";
       auto it = endpoints_.find(node_host_ip);
 
       // if there is an endpoint with pending connection
@@ -1274,8 +1274,8 @@ class FabricRMAVan : public Van {
         });
         LOG(INFO) << "Out of While";
         if (endpoint->status == FabricEndpoint::CONNECTED) {
-        	LOG(INFO) << "Connected to dest";
-        	break;
+          LOG(INFO) << "Connected to dest";
+          break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
@@ -1305,7 +1305,7 @@ class FabricRMAVan : public Van {
 
 
   int SendMsg(Message &msg) override {
-  	return 0;
+    return 0;
   }
 
   int RecvMsg(Message *msg) override {
@@ -1710,7 +1710,7 @@ class FabricRMAVan : public Van {
   // event thread
   std::unique_ptr<std::thread> cm_event_polling_thread_;
   // Recv buffer queue
-//  ThreadsafeQueue<std::tuple<Endpoint *, BufferContext *>> recv_buffers_;
+  // ThreadsafeQueue<std::tuple<Endpoint *, BufferContext *>> recv_buffers_;
 
   // JYM: the following are for push/pull buffer reuse
 
