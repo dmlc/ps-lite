@@ -558,8 +558,6 @@ class FabricRMAVan : public Van {
   void* receiver_ = nullptr; // for incoming connect queries
   std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> endpoints_;
   // str = "hostname:port"
-  std::unordered_map<std::string, void*> zmq_sockets_;
-//  std::unordered_map<std::string, void*> senders_;
   // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
   // std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
   // std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
@@ -587,7 +585,7 @@ class FabricRMAVan : public Van {
 
 
  protected:
-  void Start(int customer_id) override {
+  void Start(int customer_id, bool standalone) override {
     start_mu_.lock();
     should_stop_ = false;
 
@@ -613,28 +611,9 @@ class FabricRMAVan : public Van {
 //    }
 
     start_mu_.unlock();
-    ZmqStart();
-    Van::Start(customer_id);
+    zmq_ = Van::Create("zmq");
+    zmq_->Start(customer_id, true);
   }
-
-  void ZmqStart() {
-      start_mu_.lock();
-      if (context_ == nullptr) {
-        context_ = zmq_ctx_new();
-        CHECK(context_ != NULL) << "create 0mq context failed";
-      }
-      start_mu_.unlock();
-
-      auto val1 = Environment::Get()->find("BYTEPS_ZMQ_MAX_SOCKET");
-      int byteps_zmq_max_socket = val1 ? atoi(val1) : 1024;
-      zmq_ctx_set(context_, ZMQ_MAX_SOCKETS, byteps_zmq_max_socket);
-      PS_VLOG(1) << "BYTEPS_ZMQ_MAX_SOCKET set to " << byteps_zmq_max_socket;
-
-      auto val2 = Environment::Get()->find("BYTEPS_ZMQ_NTHREADS");
-      int byteps_zmq_nthreads = val2 ? atoi(val2) : 4;
-      zmq_ctx_set(context_, ZMQ_IO_THREADS, byteps_zmq_nthreads);
-      PS_VLOG(1) << "BYTEPS_ZMQ_NTHREADS set to " << byteps_zmq_nthreads;
-    }
 
   void OfiInit() {
     // Get a list of fi_info structures for a single provider
@@ -726,45 +705,15 @@ class FabricRMAVan : public Van {
   }
 
   int Bind(const Node &node, int max_retry) override {
-//    CHECK(rdma_create_id(event_channel_, &listener_, nullptr, RDMA_PS_TCP) == 0)
-//        << "Create RDMA connection identifier failed";
-//
-//    struct sockaddr_in addr;
-//    memset(&addr, 0, sizeof(addr));
-//
-//    auto val = Environment::Get()->find("DMLC_NODE_HOST");
-//    if (val) {
-//      PS_VLOG(1) << "bind to DMLC_NODE_HOST: " << std::string(val);
-//      addr.sin_addr.s_addr = inet_addr(val);
-//    }
-//
-//    addr.sin_family = AF_INET;
-//    int port = node.port;
-//    unsigned seed = static_cast<unsigned>(time(NULL) + port);
-//    for (int i = 0; i < max_retry + 1; ++i) {
-//      addr.sin_port = htons(port);
-//      if (rdma_bind_addr(listener_,
-//                         reinterpret_cast<struct sockaddr *>(&addr)) == 0) {
-//        break;
-//      }
-//      if (i == max_retry) {
-//        port = -1;
-//      } else {
-//        port = 10000 + rand_r(&seed) % 40000;
-//      }
-//    }
-//    CHECK(rdma_listen(listener_, kRdmaListenBacklog) == 0)
-//        << "Listen RDMA connection failed: " << strerror(errno);
-//    return port;
-
-
     // create my endpoint
     OfiCreateEndpoint();
 //    my_endpoint_->Init(domain, info_, cq);
     // ZMQ for out-of-band communication
-    int my_port = ZMQBind(node, max_retry);
+
+    // TODO: my node should have the right ID
+    int my_port = zmq_->Bind(node, max_retry);
     LOG(INFO) << "Starting zmq_recv_thread to receive and enqueue incoming threads";
-    ZMQPollEvent();
+    //ZMQPollEvent();
 //    auto t = new std::thread(&FabricRMAVan::ZMQPollEvent, this);
 //    thread_list_.push_back(t);
     LOG(INFO) << "starting polling process to poll incoming message queue";
@@ -798,75 +747,13 @@ class FabricRMAVan : public Van {
 
   ThreadsafeQueue<ZmqBufferContext> recv_buffers_;
 
-  void CallZmqRecvThread(void* socket) {
-    CHECK(socket);
-    LOG(INFO) << "Start ZMQ recv thread";
-
-    while (true) {
-      ZmqBufferContext *buf_ctx = new ZmqBufferContext();
-
-      for (int i = 0;; ++i) {
-        zmq_msg_t* zmsg = new zmq_msg_t;
-        CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
-        while (true) {
-//          std::lock_guard<std::mutex> lk(mu_);
-          // the zmq_msg_recv should be non-blocking, otherwise deadlock will happen
-          int tag = ZMQ_DONTWAIT;
-          if (should_stop_ || zmq_msg_recv(zmsg, socket, tag) != -1) break;
-          if (errno == EINTR) {
-            std::cout << "interrupted";
-            continue;
-          } else if (errno == EAGAIN) { // ZMQ_DONTWAIT
-            continue;
-          }
-          CHECK(0) << "failed to receive message. errno: " << errno << " "
-                       << zmq_strerror(errno);
-          LOG(INFO) << "waiting for message";
-        }
-        if (should_stop_) break;
-        char* buf = CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
-        size_t size = zmq_msg_size(zmsg);
-        LOG(INFO) << "out of while loop message received";
-        LOG(INFO) << "i=" << i;
-        if  (i == 0) {
-          // identify
-//          buf_ctx->sender = GetNodeID(buf, size);
-          CHECK(zmq_msg_more(zmsg));
-          zmq_msg_close(zmsg);
-          delete zmsg;
-        }
-        else if (i == 1) {
-          // task
-          buf_ctx->meta_zmsg = zmsg;
-          bool more = zmq_msg_more(zmsg);
-          LOG(INFO) << "more=" << more;
-          if (!more) break;
-        }
-        else {
-          buf_ctx->data_zmsg.push_back(zmsg);
-          bool more = zmq_msg_more(zmsg);
-          LOG(INFO) << "more2=" << more;
-          if (!more) break;
-        }
-      } // for
-      if (should_stop_) break;
-      LOG(INFO) << "pushed";
-      recv_buffers_.Push(*buf_ctx);
-    } // while
-  }
-
-
-  void ZMQPollEvent() {
-    auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) receiver_);
-    thread_list_.push_back(t);
-  }
 
   void ZMQProcessMsg() {
     LOG(INFO) << "Start processing incoming messages";
     while (!should_stop_) {
       Message* msg = (Message *)malloc(sizeof(Message));
       LOG(INFO) << "calling recvMsg";
-      int len = ZMQRecvMsg(msg);
+      int len = zmq_->RecvMsg(msg);
       Node sender_node = msg->meta.control.node[1];
       switch (msg->meta.control.cmd) {
         case Control::ADDR_REQUEST:
@@ -882,96 +769,6 @@ class FabricRMAVan : public Van {
     }
   }
 
-  int ZMQRecvMsg(Message* msg) /*override */{
-    LOG(INFO) << "Inside ZMQRecvMsg";
-    if(msg == nullptr) LOG(INFO) << "msg ptr is null";
-    msg->data.clear();
-    LOG(INFO) << "msg->data cleared";
-    ZmqBufferContext notification;
-    LOG(INFO) << "waiting for message";
-    recv_buffers_.WaitAndPop(&notification);
-    LOG(INFO) << "message received";
-    size_t recv_bytes = 0;
-
-//    msg->meta.sender = notification.sender;
-//    msg->meta.recver = my_node_.id;
-
-    char* meta_buf = CHECK_NOTNULL((char*)zmq_msg_data(notification.meta_zmsg));
-    size_t meta_len = zmq_msg_size(notification.meta_zmsg);
-
-    UnpackMeta(meta_buf, meta_len, &(msg->meta));
-    recv_bytes += meta_len;
-
-    for (size_t i = 0; i < notification.data_zmsg.size(); ++i) {
-      auto zmsg = notification.data_zmsg[i];
-      char* buf = CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
-      size_t size = zmq_msg_size(zmsg);
-      recv_bytes += size;
-
-
-      SArray<char> data;
-      // zero copy
-      data.reset(buf, size, [zmsg, size](void *) {
-        zmq_msg_close(zmsg);
-        delete zmsg;
-      });
-      msg->data.push_back(data);
-    }
-    LOG(INFO) << "from  = " << msg->meta.control.node[1].hostname;
-    return recv_bytes;
-  }
-
-  void ZmqConnect(const Node& node) {
-    // use zmq to boostrap libfabric
-//    CHECK_NE(node.id, node.kEmpty);
-    CHECK_NE(node.port, node.kEmpty);
-    CHECK(node.hostname.size());
-    int id = node.id;
-    std::string key = node.hostname + ":" + std::to_string(node.port);
-    mu_.lock();
-    auto it = zmq_sockets_.find(key);
-    if (it != zmq_sockets_.end()) {
-      zmq_close(it->second);
-    }
-    mu_.unlock();
-    // worker doesn't need to connect to the other workers. same for server
-    if ((node.role == my_node_.role) /*&& (node.id != my_node_.id)*/) {
-      LOG(INFO) << "skip connecting to my peers";
-      return;
-    }
-    void* sender = zmq_socket(context_, ZMQ_DEALER);
-    CHECK(sender != NULL)
-        << zmq_strerror(errno)
-        << ". it often can be solved by \"sudo ulimit -n 65536\""
-        << " or edit /etc/security/limits.conf";
-    if (!key.empty()) {
-      std::string my_id = "ps" + std::to_string(my_node_.id);
-      zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
-      std::lock_guard<std::mutex> lk(mu_);
-      if (is_worker_ && (zmq_sockets_.find(key)==zmq_sockets_.end())) {
-        LOG(INFO) << "THIS IS A WORKER's bi-directional thread with server !";
-        auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) sender);
-        thread_list_.push_back(t);
-      }
-    }
-    // connect
-    std::string addr =
-        "tcp://" + node.hostname + ":" + std::to_string(node.port);
-
-    if (GetEnv("DMLC_LOCAL", 0)) {
-      addr = "ipc:///tmp/" + std::to_string(node.port);
-    }
-    if (zmq_connect(sender, addr.c_str()) != 0) {
-      LOG(FATAL) << "connect to " + addr + " failed: " + zmq_strerror(errno);
-    }
-    std::lock_guard<std::mutex> lk(mu_);
-    LOG(INFO) << "========KEY added to zmq_sockets_ = " << key;
-    zmq_sockets_[key] = sender;
-    if (my_node_.role != Node::SCHEDULER) {
-      CHECK_EQ(zmq_sockets_.size(), 1) << "Unexpected number of senders";
-    }
-    LOG(INFO) << "ZMQ sender " << id << " connected to " + addr;
-  }
 
   void OnConnectionRequest(Node node) {
     // prepare av_name and av_name_len;
@@ -988,66 +785,24 @@ class FabricRMAVan : public Van {
 
     std::string addr = node.hostname + ":" + std::to_string(node.port);
     LOG(INFO) << "ADDR_REQ received from " << addr;
-    auto iter = zmq_sockets_.find(addr);
-    if (iter == zmq_sockets_.end()) {
+    auto iter = hostport_id_map_.find(addr);
+    if (iter == hostport_id_map_.end()) {
       LOG(INFO) << "Calling ZmqConnect";
-      ZmqConnect(node);
+      zmq_->Connect(node);
     }
+
     Message req;
 //      req.meta.recver = Node::kEmpty;
     req.meta.control.cmd = Control::ADDR_RESOLVED;
     req.meta.control.node.push_back(node);
     req.meta.control.node.push_back(value);
     LOG(INFO) << "Sending ADDR_RESOLVED Request";
-    int bytes = ZmqSendMsg(req);
+    int bytes = zmq_->SendMsg(req);
   }
 
-  int ZmqSendMsg(Message& msg) {
-    //if (!is_worker_) return NonWorkerSendMsg(msg);
-
-    std::lock_guard<std::mutex> lk(mu_);
-
-//    int id = msg.meta.recver;
-//    CHECK_NE(id, Meta::kEmpty);
-
-    // find the socket
-    std::string key = msg.meta.control.node[0].hostname + ":" + std::to_string(msg.meta.control.node[0].port);
-    LOG(INFO) << "Printing all the values of zmq_sockets_ :";
-    for (auto it = zmq_sockets_.cbegin(); it != zmq_sockets_.cend(); ++it) {
-        std::cout << "{" << (*it).first << ": " << (*it).second << "}\n";
-    }
-    auto it = zmq_sockets_.find(key);
-    if (it == zmq_sockets_.end()) {
-      LOG(FATAL) << "there is no socket to node " << key;
-      return -1;
-    }
-
-    void* socket = it->second;
-    LOG(INFO) << "sending message to = " << key << ", control = " << msg.meta.control.cmd;
-    return ZmqSendMsg(socket, msg);
+  std::string host_port(const std::string& host, const int& port) {
+    return host + ":" + std::to_string(port);
   }
-
-  int ZmqSendMsg(void* socket, Message& msg) {
-    // send meta
-    int meta_size;
-    char* meta_buf = nullptr;
-    PackMeta(msg.meta, &meta_buf, &meta_size);
-    int tag = ZMQ_SNDMORE;
-    int n = msg.data.size();
-    if (n == 0) tag = 0;
-    zmq_msg_t meta_msg;
-    zmq_msg_init_data(&meta_msg, meta_buf, meta_size, FreeData2, NULL);
-    while (true) {
-      if (zmq_msg_send(&meta_msg, socket, tag) == meta_size) break;
-      if (errno == EINTR) continue;
-      CHECK(0) << zmq_strerror(errno);
-    }
-    zmq_msg_close(&meta_msg);
-    LOG(INFO) << "Message sent";
-    int send_bytes = meta_size;
-    return send_bytes;
-  }
-
 
   void OfiCreateEndpoint() {
     // TODO: use smart pointer
@@ -1135,46 +890,13 @@ class FabricRMAVan : public Van {
     // endpoint->cv.notify_all();
   }
 
-  int ZMQBind(const Node& node, int max_retry) /*override*/ {
-    receiver_ = zmq_socket(context_, ZMQ_ROUTER);
-    int option = 1;
-    CHECK(!zmq_setsockopt(receiver_, ZMQ_ROUTER_MANDATORY, &option, sizeof(option)))
-        << zmq_strerror(errno);
-    CHECK(receiver_ != NULL)
-        << "create receiver socket failed: " << zmq_strerror(errno);
-    int local = GetEnv("DMLC_LOCAL", 0);
-    std::string hostname = node.hostname.empty() ? "*" : node.hostname;
-    int use_kubernetes = GetEnv("DMLC_USE_KUBERNETES", 0);
-    if (use_kubernetes > 0 && node.role == Node::SCHEDULER) {
-      hostname = "0.0.0.0";
-    }
-    std::string addr = local ? "ipc:///tmp/" : "tcp://" + hostname + ":";
-    int port = node.port;
-    unsigned seed = static_cast<unsigned>(time(NULL) + port);
-    for (int i = 0; i < max_retry + 1; ++i) {
-      auto address = addr + std::to_string(port);
-      if (zmq_bind(receiver_, address.c_str()) == 0) break;
-      if (i == max_retry) {
-        port = -1;
-      } else {
-        port = 10000 + rand_r(&seed) % 40000;
-      }
-    }
-//    std::lock_guard<std::mutex> lk(mu_);
-//    is_worker_ = (node.role == Node::WORKER ? true : false);
-//    auto t = new std::thread(&FabricRMAVan::CallZmqRecvThread, this, (void*) receiver_);
-//    thread_list_.push_back(t);
-
-    return port;
-  }
-
   void Connect(const Node &node) override {
     LOG(INFO) << "Inside connect";
     LOG(INFO) << "node_role = " << node.role << " and my_node_role=" << my_node_.role;
     if ((node.role == my_node_.role) /*&& (node.id != my_node_.id)*/) {
       return;
     }
-    ZmqConnect(node);
+    zmq_->Connect(node);
 
     Message req;
     // Terminology as seen by receiver
@@ -1192,7 +914,7 @@ class FabricRMAVan : public Van {
     req.meta.control.node.push_back(key);
     req.meta.control.node.push_back(val);
     LOG(INFO) << "sending ADDR_REQUEST";
-    ZmqSendMsg(req);
+    zmq_->SendMsg(req);
     LOG(INFO) << "ADDR_REQUEST sent";
 //    PS_VLOG(1) << "Connecting to " << my_node_.ShortDebugString();
     PS_VLOG(1) << "Connecting to " << node.ShortDebugString();
@@ -1731,8 +1453,12 @@ class FabricRMAVan : public Van {
 
   std::mutex map_mu_;
 
+  std::unordered_map<std::string, int> hostport_id_map_;
+
+  Van* zmq_;
 
 //  FabricEndpoint* my_endpoint_ = nullptr;
+
 
 };  // namespace ps
 };  // namespace ps

@@ -45,10 +45,11 @@ class ZMQVan : public Van {
   ZMQVan() {}
   virtual ~ZMQVan() {}
 
- protected:
-  void Start(int customer_id) override {
+ public:
+  void Start(int customer_id, bool standalone) {
     // start zmq
     start_mu_.lock();
+    standalone_ = standalone;
     if (context_ == nullptr) {
       context_ = zmq_ctx_new();
       CHECK(context_ != NULL) << "create 0mq context failed";
@@ -64,8 +65,7 @@ class ZMQVan : public Van {
     int byteps_zmq_nthreads = val2 ? atoi(val2) : 4;
     zmq_ctx_set(context_, ZMQ_IO_THREADS, byteps_zmq_nthreads);
     PS_VLOG(1) << "BYTEPS_ZMQ_NTHREADS set to " << byteps_zmq_nthreads;
-
-    Van::Start(customer_id);
+    if (!standalone) Van::Start(customer_id, false);
   }
 
   void Stop() override {
@@ -415,6 +415,7 @@ class ZMQVan : public Van {
   std::atomic<bool> should_stop_{false};
 
   std::vector<std::thread*> thread_list_;
+  bool standalone_;
 
 };
 }  // namespace ps

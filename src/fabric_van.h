@@ -585,14 +585,14 @@ class FabricVan : public Van {
   virtual ~FabricVan() {}
 
  protected:
-  void Start(int customer_id) override {
+  void Start(int customer_id, bool standalone) override {
     // start zmq
     start_mu_.lock();
     OfiInit();
     start_mu_.unlock();
     customer_id_ = customer_id;
     ZmqStart();
-    Van::Start(customer_id);
+    Van::Start(customer_id, false);
   }
 
   void ZmqStart() {

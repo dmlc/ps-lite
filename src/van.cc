@@ -353,7 +353,7 @@ void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes)
   }
 }
 
-void Van::Start(int customer_id) {
+void Van::Start(int customer_id, bool standalone) {
   // get scheduler info
   start_mu_.lock();
   if (init_stage == 0) {

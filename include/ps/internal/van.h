@@ -47,7 +47,7 @@ class Van {
    * control message, give it to postoffice::manager, otherwise, give it to the
    * accoding app.
    */
-  virtual void Start(int customer_id);
+  virtual void Start(int customer_id, bool standalone);
 
   /**
    * \brief send a message, It is thread-safe
@@ -79,7 +79,6 @@ class Van {
    */
   inline bool IsReady() { return ready_; }
 
- protected:
   /**
    * \brief connect to a node
    */
@@ -104,6 +103,7 @@ class Van {
    * \return the number of bytes sent
    */
   virtual int SendMsg(Message &msg) = 0;
+ protected:
 
   /**
    * \brief get the length of pack meta
