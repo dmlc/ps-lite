@@ -127,8 +127,7 @@ struct Endpoint {
       CHECK(buf);
       struct ibv_mr *mr =
           ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-      CHECK(mr)<< "ibv_reg_mr Failed: " << strerror(errno)
-               << ", i=" << i <<", kMempoolChunkSize:"<< kMempoolChunkSize;
+      CHECK(mr);
 
       rx_ctx[i].type = kReceiveContext;
       rx_ctx[i].buffer = mr;
