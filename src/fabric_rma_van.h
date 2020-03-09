@@ -59,27 +59,16 @@ static const size_t kAlignment = 8;
 static const int kMaxResolveRetry = 50000;
 static const int kBasePort = 9010;
 
-#ifdef __GNUC__
-#define DMLC_PS_OFI_LIKELY(x)  __builtin_expect((x), 1)
-#define DMLC_PS_OFI_UNLIKELY(x)  __builtin_expect((x), 0)
-#else
-#define DMLC_PS_OFI_LIKELY(x)  (x)
-#define DMLC_PS_OFI_UNLIKELY(x)  (x)
-#endif
-
 // We have a limit of MAX_HANDLE_SIZE = 64 bytes. Therefore, we can only
 // support an endpoint name of maximum 56 bytes. We are using remaining
 // 8 bytes for tags.
-#define DMLC_PS_MAX_EP_ADDR (56)
+#define FABRIC_MAX_EP_ADDR (56)
 #define DMLC_PS_OFI_MAJOR_VERSION  (1)
 #define DMLC_PS_OFI_MINOR_VERSION  (6)
-#define dmlc_ps_ofi_version    FI_VERSION(DMLC_PS_OFI_MAJOR_VERSION, \
-                                          DMLC_PS_OFI_MINOR_VERSION)
-
 
 #define check_err(ret, msg) do {                          \
-        if (DMLC_PS_OFI_UNLIKELY(ret != 0)) {             \
-          LOG(FATAL) << msg << ". RC: " << ret            \
+        if (ret != 0) {                                   \
+          LOG(FATAL) << msg << ". Return Code: " << ret   \
                      << ". ERROR: " << fi_strerror(-ret); \
         }                                                 \
 } while (false)
@@ -484,50 +473,144 @@ struct Endpoint {
 struct FabricEndpoint {
   enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
   ConnectionStatus status;
-  int node_id;
-  struct fid_ep *ep; // the endpoint
-  struct fid_av *av; // address vector
-//  struct fid_cq *cq;
-  char* name; // required
-  size_t name_len; // required
+
+  // =============== local endpoint attr ==================
+  // fabric provider info
+  struct fi_info *info;
+  // fabric top-level object
+  struct fid_fabric *fabric;
+  // domains which maps to a specific local network interface adapter
+  struct fid_domain *domain;
+  // completion queue
+  struct fid_cq *cq;
+  // address vector
+  struct fid_av *av;
+  // the endpoint
+  struct fid_ep *ep;
+  // =============== local endpoint attr ==================
+
+
+  // =============== common endpoint attr ==================
+  // endpoint name
+  char name[FABRIC_MAX_EP_ADDR] = {};
+  // length of endpoint name
+  size_t name_len = sizeof(name);
+  // readable address
+  char readable_name[FABRIC_MAX_EP_ADDR] = {};
+  // length of readable address
+  size_t readable_name_len = sizeof(readable_name);
+
+  int node_id; // TODO: hostport?
   std::condition_variable cv;
   std::mutex connect_mu;
-//  std::shared_ptr<Transport> trans;
+  //std::shared_ptr<Transport> trans;
 
   // WRContext start_ctx[kStartDepth];
   // WRContext reply_ctx[kReplyDepth];
+  // =============== common endpoint attr ==================
+
+  void InitLocal() {
+    struct fi_info *hints = nullptr;
+    struct fi_cq_attr cq_attr = {};
+    struct fi_av_attr av_attr = {};
+    int fi_version, ret;
+
+    // set hints for capacity and modes, create fabric, domain and cq
+    hints = fi_allocinfo();
+    CHECK(hints != nullptr) << "Failed to allocate hints";
+
+    // hints to filter providers
+    hints->ep_attr->type = FI_EP_RDM;
+    hints->caps = FI_TAGGED | FI_MSG;
+    hints->mode = FI_CONTEXT;
+    hints->domain_attr->av_type = FI_AV_TABLE;
+    hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
+    hints->domain_attr->data_progress = FI_PROGRESS_AUTO;
+    hints->tx_attr->msg_order = FI_ORDER_SAS;
+    hints->rx_attr->msg_order = FI_ORDER_SAS;
+
+    // request for EFA as the provider
+    hints->fabric_attr->prov_name = strdup("efa");
+    fi_version = FI_VERSION(1, 8);
+
+    // Initialize tag and num_cqes
+//    my_endpoint_->tag = 1;
+//    my_endpoint_->num_cqes = DMLC_PS_OFI_MAX_REQUESTS;
+//    my_endpoint_->prov_name = ofi_provider_->fabric_attr->prov_name;
+
+    // Determine if any tag bits are used by provider
+//    int ofi_tag_leading_zeroes = 0, ofi_tag_bits_for_ring_id = 64;
+//    while (!((ofi_provider_->ep_attr->mem_tag_format << ofi_tag_leading_zeroes++) &
+//      (uint64_t) OFI_HIGHEST_TAG_BIT) &&
+//      (ofi_tag_bits_for_ring_id >= MIN_TAG_BITS_FOR_RING_ID)) {
+//      ofi_tag_bits_for_ring_id--;
+//    }
+//
+//    CHECK_GT(ofi_tag_bits_for_ring_id, MIN_TAG_BITS_FOR_RING_ID)
+//      << "Provider " << ofi_provider_->fabric_attr->prov_name
+//      << " does not provide enough tag bits " << ofi_tag_bits_for_ring_id
+//      << " for ring ID. Minimum required is " << MIN_TAG_BITS_FOR_RING_ID;
+//
+//    // Set maximum tag information; Reserving 1 bit for control information
+//    my_endpoint_->max_tag = (uint64_t)((1ULL << (ofi_tag_bits_for_ring_id - 1)) - 1);
+
+    // fi_getinfo
+    ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info);
+    if (ret == -FI_ENODATA) {
+      LOG(FATAL) << "Could not find any optimal provider";
+      return;
+    }
+    check_err(ret, "fi_getinfo failed");
+    fi_freeinfo(hints);
+
+    // fi_fabric: create fabric
+    ret = fi_fabric(info->fabric_attr, &fabric, nullptr);
+    check_err(ret, "Couldn't open a fabric provider");
+
+    // fi_domain: create domain
+    ret = fi_domain(fabric, info, &domain, nullptr);
+    check_err(ret, "Couldn't open a fabric access domain");
+
+    // fi_av_open: create address vector
+    av_attr.type = FI_AV_TABLE;
+    ret = fi_av_open(domain, &av_attr, &av, nullptr);
+    check_err(ret, "Couldn't open AV");
+
+    // fi_cq_open: open completion queue
+    cq_attr.format = FI_CQ_FORMAT_TAGGED;
+    ret = fi_cq_open(domain, &cq_attr, &cq, nullptr);
+    check_err(ret, "Couldn't open CQ");
+
+    // fi_endpoint: create transport level communication endpoint(s)
+    ret = fi_endpoint(domain, info, &ep, nullptr);
+    check_err(ret, "Couldn't allocate endpoint");
+
+    // fi_ep_bind: bind CQ and AV to the endpoint
+    ret = fi_ep_bind(ep, (fid_t) cq, FI_SEND | FI_RECV);
+    check_err(ret, "Couldn't bind EP-CQ");
+    ret = fi_ep_bind(ep, (fid_t) av, 0);
+    check_err(ret, "Couldn't bind EP-AV");
+
+    // fi_enable: enable endpoint for communication
+    ret = fi_enable(ep);
+    check_err(ret, "Couldn't enable endpoint");
+
+    // fi_getname: get endpoint name
+    ret = fi_getname((fid_t) ep, name, &name_len);
+    check_err(ret, "Call to fi_getname() failed");
+    std::string ep_name_val = "";
+    for (int i = 0; i < name_len; i++){
+      ep_name_val += std::to_string(name[i]) + ",";
+    }
+    // fi_av_straddr: human readable name
+    fi_av_straddr(av, name, readable_name, &readable_name_len);
+    LOG(INFO) << "Endpoint created."
+              << "\nvalue = " << ep_name_val
+              << "\nreadable address = "
+              << std::string(readable_name, readable_name_len);
+  }
 
   void Init(struct fid_domain *domain, struct fi_info *info, struct fid_cq *cq) {
-    // bind completion queue
-    LOG(INFO) << "inside init";
-    int ret;
-    if (cq != nullptr){
-      LOG(INFO) << "inside if calling fi_ep_bind";
-      // check for error code using 'ret' integer code
-      ret = fi_ep_bind(ep, (fid_t) cq, FI_SEND | FI_RECV);
-      check_err(ret, "Couldn't bind EP-CQ");
-      LOG(INFO) << "ret = " << ret;
-    }
-//    LOG(INFO) << "";
-    // create and bind addresss vector
-    struct fi_av_attr av_attr = {};
-    av_attr.type = FI_AV_TABLE;
-    LOG(INFO) << "opening av";
-    ret = fi_av_open(domain, &av_attr, &av, nullptr);
-    check_err(ret, "Couldn't bind EP-CQ");
-    LOG(INFO) << "binding ep";
-    ret = fi_ep_bind(ep, (fid_t) av, 0);
-    check_err(ret, "Couldn't bind EP-CQ");
-    // enable endpoint
-    LOG(INFO) << "enabling ep";
-    ret = fi_enable(ep);
-    check_err(ret, "Couldn't bind EP-CQ");
-    // query endpoint name
-    LOG(INFO) << "retrieving av name";
-    ret = fi_getname(&(ep->fid), (void *)&name, &name_len);
-    check_err(ret, "Couldn't bind EP-CQ");
-    // PostRecv for all WRContext
-
   }
 
   void PostRecv(WRContext *ctx) {
@@ -538,145 +621,45 @@ struct FabricEndpoint {
 
 
 class FabricRMAVan : public Van {
- private:
-  struct fi_info *info_; // fabric provider info
-  struct fid_fabric *fabric_; // fabric top-level object
-  struct fid_domain *domain; // domains, which maps to a specific local network interface adapter
-  struct fid_cq *cq; // completion queue
-  std::unique_ptr<FabricEndpoint> my_endpoint_;
-  void* context_ = nullptr;
-  struct fi_info* ofi_provider_ = nullptr;
-
-  // name of the endpoint
-  char av_name_[DMLC_PS_MAX_EP_ADDR] = {};
-  // length of the name
-  size_t av_name_len_ = sizeof(av_name_);
-  std::mutex mu_;
-  bool is_worker_;
-  std::vector<std::thread*> thread_list_;
-
-  void* receiver_ = nullptr; // for incoming connect queries
-  std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> endpoints_;
-  // str = "hostname:port"
-  // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
-  // std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
-  // std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
-
-  std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
-
-  // local IPC related
-  bool disable_ipc_ = false;
-  std::mutex local_mu_;
-  std::unordered_map<int, bool> is_local_;
  public:
-  FabricRMAVan() {
-  struct fi_info *hints = fi_allocinfo();
-  // set hints for capacity and modes, create fabric, domain and cq
-  fi_getinfo(FI_VERSION(1, 6), nullptr, 0, 0, hints, &info_);
-  fi_fabric(info_->fabric_attr, &fabric_, nullptr);
-  fi_domain(fabric_, info_, &domain, nullptr);
-  // Open CQ
-  struct fi_cq_attr cq_attr = {};
-  cq_attr.format = FI_CQ_FORMAT_TAGGED;
-  fi_cq_open(domain, &cq_attr, &cq, nullptr);
-//  fi_cq_open(domain, &cq_attr, &my_endpoint_->cq, nullptr);
-  }
+  FabricRMAVan() {}
   ~FabricRMAVan() {}
-
 
  protected:
   void Start(int customer_id, bool standalone) override {
     start_mu_.lock();
     should_stop_ = false;
 
-    OfiInit();
-
     auto val = Environment::Get()->find("DMLC_ROLE");
     std::string role(val);
-    is_server = role=="server";
-    if (is_server) LOG(INFO) << "This is server";
-    else LOG(INFO) << "This is " << ((role=="worker") ? "worker" : "scheduler");
+    LOG(INFO) << "This is a " << role;
 
-//    val = Environment::Get()->find("ENABLE_RDMA_LOG");
-//    enable_rdma_log_ = val? atoi(val) : false;
-//    if (enable_rdma_log_) LOG(INFO) << "Enable RDMA logging";
-//    else LOG(INFO) << "RDMA logging is disabled, you can enable it with ENABLE_RDMA_LOG=1";
-
-//    if (event_channel_ == nullptr) {
-//      event_channel_ = rdma_create_event_channel();
-//      CHECK(event_channel_) << "Create RDMA event channel failed";
-
-//      cm_event_polling_thread_.reset(
-//          new std::thread(&RDMAVan::PollEvents, this));
-//    }
+    val = Environment::Get()->find("ENABLE_RDMA_LOG");
+    enable_rdma_log_ = val? atoi(val) : false;
+    if (enable_rdma_log_) LOG(INFO) << "Enable RDMA logging";
+    else LOG(INFO) << "RDMA logging is disabled, you can enable it with ENABLE_RDMA_LOG=1";
 
     start_mu_.unlock();
     zmq_ = Van::Create("zmq");
     zmq_->Start(customer_id, true);
-  }
-
-  void OfiInit() {
-    // Get a list of fi_info structures for a single provider
-    struct fi_info *hints = fi_allocinfo();
-    CHECK(hints != nullptr) << "Unable to allocate fi_info";
-
-    // Hints to filter providers
-    hints->caps = FI_TAGGED | FI_MSG | FI_RMA;
-    hints->mode = FI_CONTEXT;
-
-    hints->ep_attr->type = FI_EP_RDM;
-
-    hints->domain_attr->av_type = FI_AV_TABLE;
-    hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
-    hints->domain_attr->data_progress = FI_PROGRESS_AUTO;
-
-    // Indicate that the application support local memory registration
-    hints->domain_attr->mr_mode = FI_MR_LOCAL;
-
-    // TODO figure out msg_order
-    hints->tx_attr->msg_order = FI_ORDER_SAS;
-    hints->rx_attr->msg_order = FI_ORDER_SAS;
-
-    std::lock_guard<std::mutex> lock(mu_);
-    int ret = fi_getinfo(dmlc_ps_ofi_version, nullptr, 0, 0, hints, &ofi_provider_);
-    if (ret == -FI_ENODATA) {
-      LOG(FATAL) << "Could not find any optimal provider.";
-    } else {
-      check_err(ret, "Could not complete fi_getinfo");
-    }
-    CHECK(ofi_provider_ != nullptr) << "Failed to get ofi provider";
-    // If we detect the Amazon EFA provider, emulate a NIC per GPU
-    // so that NCCL will build more rings and achieve better peak BW
-    if (strcmp(ofi_provider_->fabric_attr->prov_name, "efa") == 0) {
-      ofi_provider_->next = ofi_provider_;
-    }
-    fi_freeinfo(hints);
-    LOG(INFO) << "Selected fabric provider is "
-              << ofi_provider_->fabric_attr->prov_name;
-
-    // Check if provider requires local memory registration
-    if (ofi_provider_->domain_attr->mr_mode & FI_MR_LOCAL) {
-      LOG(FATAL) << "Provider " << ofi_provider_->fabric_attr->prov_name
-                 << " required registration of local memory buffers, which"
-                 << " is not implemented";
-    }
+    Van::Start(customer_id, false);
   }
 
   void Stop() override {
-//    PS_VLOG(1) << my_node_.ShortDebugString() << " is stopping";
-//    Van::Stop();
-//
-//    should_stop_ = true;
-//    CHECK(should_stop_);
-//
-//    PS_VLOG(1) << "Stopping cq_polling_thread_.";
-//    cq_polling_thread_->join();
-//    cq_polling_thread_.reset();
-//
-//    PS_VLOG(1) << "Stopping cm_event_polling_thread_.";
-//    cm_event_polling_thread_->join();
-//    cm_event_polling_thread_.reset();
-//
+    PS_VLOG(1) << my_node_.ShortDebugString() << " is stopping";
+    Van::Stop();
+
+    should_stop_ = true;
+    CHECK(should_stop_);
+
+    PS_VLOG(1) << "Stopping cq_polling_thread_.";
+    cq_polling_thread_->join();
+    cq_polling_thread_.reset();
+
+    PS_VLOG(1) << "Stopping cm_event_polling_thread_.";
+    event_polling_thread_->join();
+    event_polling_thread_.reset();
+
 //    PS_VLOG(1) << "Clearing mempool.";
 //    mempool_.reset();
 //
@@ -690,6 +673,7 @@ class FabricRMAVan : public Van {
 //    incoming_.clear();
 //    endpoints_.clear();
 //
+
 //    PS_VLOG(1) << "Destroying cq and pd.";
 //    CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
 //    CHECK(!ibv_destroy_comp_channel(comp_event_channel_))
@@ -705,21 +689,16 @@ class FabricRMAVan : public Van {
   }
 
   int Bind(const Node &node, int max_retry) override {
-    // create my endpoint
-    OfiCreateEndpoint();
-//    my_endpoint_->Init(domain, info_, cq);
-    // ZMQ for out-of-band communication
+    my_endpoint_ = std::unique_ptr<FabricEndpoint>(new FabricEndpoint());
+    if (enable_rdma_log_) LOG(INFO) << "Initializing a fabric endpoint";
+    CHECK(my_endpoint_ != nullptr) << "Failed to allocate Endpoint";
+    my_endpoint_->InitLocal();
 
+    // ZMQ for out-of-band communication
     // TODO: my node should have the right ID
     int my_port = zmq_->Bind(node, max_retry);
-    LOG(INFO) << "Starting zmq_recv_thread to receive and enqueue incoming threads";
-    //ZMQPollEvent();
-//    auto t = new std::thread(&FabricRMAVan::ZMQPollEvent, this);
-//    thread_list_.push_back(t);
-    LOG(INFO) << "starting polling process to poll incoming message queue";
-    auto t = new std::thread(&FabricRMAVan::ZMQProcessMsg, this);
-    thread_list_.push_back(t);
-    LOG(INFO) << "Bind complete!";
+    PS_VLOG(2) << "Done zmq->Bind. My port is " << my_port;
+    event_polling_thread_.reset(new std::thread(&FabricRMAVan::PollEvents, this));
     return my_port;
   }
 
@@ -748,31 +727,9 @@ class FabricRMAVan : public Van {
   ThreadsafeQueue<ZmqBufferContext> recv_buffers_;
 
 
-  void ZMQProcessMsg() {
-    LOG(INFO) << "Start processing incoming messages";
-    while (!should_stop_) {
-      Message* msg = (Message *)malloc(sizeof(Message));
-      LOG(INFO) << "calling recvMsg";
-      int len = zmq_->RecvMsg(msg);
-      Node sender_node = msg->meta.control.node[1];
-      switch (msg->meta.control.cmd) {
-        case Control::ADDR_REQUEST:
-          OnConnectionRequest(sender_node);
-          break;
-        case Control::ADDR_RESOLVED:
-          OnConnected(sender_node);
-          break;
-        // case: OnDisconnected();
-        // break;
-      }
-      // TODO: clean up msg memory
-    }
-  }
-
-
   void OnConnectionRequest(Node node) {
     // prepare av_name and av_name_len;
-//    OfiCreateEndpoint();
+    // PS_VLOG(1)k
 //    ret = fi_getname(&(my_endpoint_->ep->fid), (void *)&av_name_, &av_name_len_);
 //    check_err(ret, "Call to fi_getname() failed");
 
@@ -780,8 +737,8 @@ class FabricRMAVan : public Van {
     LOG(INFO) << "inside OnConnectionRequest";
     // value
     Node value;
-    value.hostname = av_name_; // My av_name
-    value.port = av_name_len_;
+    // value.hostname = av_name_; // My av_name
+    //value.port = av_name_len_;
 
     std::string addr = node.hostname + ":" + std::to_string(node.port);
     LOG(INFO) << "ADDR_REQ received from " << addr;
@@ -804,77 +761,6 @@ class FabricRMAVan : public Van {
     return host + ":" + std::to_string(port);
   }
 
-  void OfiCreateEndpoint() {
-    // TODO: use smart pointer
-    LOG(INFO) << "calling Create Endpoint";
-    my_endpoint_ = std::unique_ptr<FabricEndpoint>(new FabricEndpoint());
-    CHECK(my_endpoint_ != nullptr) << "Failed to allocate Endpoint";
-
-    // Initialize tag and num_cqes
-//    my_endpoint_->tag = 1;
-//    my_endpoint_->num_cqes = DMLC_PS_OFI_MAX_REQUESTS;
-//    my_endpoint_->prov_name = ofi_provider_->fabric_attr->prov_name;
-
-    // Determine if any tag bits are used by provider
-//    int ofi_tag_leading_zeroes = 0, ofi_tag_bits_for_ring_id = 64;
-//    while (!((ofi_provider_->ep_attr->mem_tag_format << ofi_tag_leading_zeroes++) &
-//      (uint64_t) OFI_HIGHEST_TAG_BIT) &&
-//      (ofi_tag_bits_for_ring_id >= MIN_TAG_BITS_FOR_RING_ID)) {
-//      ofi_tag_bits_for_ring_id--;
-//    }
-//
-//    CHECK_GT(ofi_tag_bits_for_ring_id, MIN_TAG_BITS_FOR_RING_ID)
-//      << "Provider " << ofi_provider_->fabric_attr->prov_name
-//      << " does not provide enough tag bits " << ofi_tag_bits_for_ring_id
-//      << " for ring ID. Minimum required is " << MIN_TAG_BITS_FOR_RING_ID;
-//
-//    // Set maximum tag information; Reserving 1 bit for control information
-//    my_endpoint_->max_tag = (uint64_t)((1ULL << (ofi_tag_bits_for_ring_id - 1)) - 1);
-
-    // Create fabric
-    int ret = fi_fabric(ofi_provider_->fabric_attr, &(fabric_), nullptr);
-    check_err(ret, "Couldn't open a fabric provider");
-
-    // Create domain
-    ret = fi_domain(fabric_, ofi_provider_,
-        &domain, nullptr);
-    check_err(ret, "Couldn't open a fabric access domain");
-
-//    // Create transport level communication endpoint(s)
-    ret = fi_endpoint(domain, ofi_provider_, &(my_endpoint_->ep), nullptr);
-    check_err(ret, "Couldn't allocate endpoint");
-
-
-    // DO WE NEED CQ attribute in FabricEndpoint ??
-
-    struct fi_cq_attr cq_attr = {};
-    cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    ret = fi_cq_open(domain, &cq_attr, &cq, nullptr);
-    check_err(ret, "Couldn't open CQ");
-
-
-
-    struct fi_av_attr av_attr = {};
-    av_attr.type = FI_AV_TABLE;
-    ret = fi_av_open(domain, &av_attr, &my_endpoint_->av, nullptr);
-    check_err(ret, "Couldn't open AV");
-//
-    // Bind CQ and AV to endpoint
-    ret = fi_ep_bind(my_endpoint_->ep, (fid_t)cq, FI_SEND | FI_RECV);
-    check_err(ret, "Couldn't bind EP-CQ");
-    ret = fi_ep_bind(my_endpoint_->ep, (fid_t)my_endpoint_->av, 0);
-    check_err(ret, "Couldn't bind EP-CQ");
-//
-    // Enable endpoint for communication
-    ret = fi_enable(my_endpoint_->ep);
-    check_err(ret, "Couldn't enable endpoint");
-
-    // Get endpoint name
-    ret = fi_getname(&(my_endpoint_->ep->fid), (void *)&av_name_, &av_name_len_);
-    check_err(ret, "Call to fi_getname() failed");
-    LOG(INFO) << "Endpoint created";
-  }
-
   void OnConnected(Node node) {
     // process and insert av_name and av_name_len;
     LOG(INFO) << "Inside OnConnected";
@@ -891,11 +777,14 @@ class FabricRMAVan : public Van {
   }
 
   void Connect(const Node &node) override {
-    LOG(INFO) << "Inside connect";
-    LOG(INFO) << "node_role = " << node.role << " and my_node_role=" << my_node_.role;
-    if ((node.role == my_node_.role) /*&& (node.id != my_node_.id)*/) {
+    PS_VLOG(1) << "Connect: " << node.ShortDebugString();
+    // worker doesn't need to connect to the other workers. same for server
+    LOG(INFO) << "CONNECTING";
+    while (true) ;
+    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
       return;
     }
+
     zmq_->Connect(node);
 
     Message req;
@@ -917,7 +806,6 @@ class FabricRMAVan : public Van {
     zmq_->SendMsg(req);
     LOG(INFO) << "ADDR_REQUEST sent";
 //    PS_VLOG(1) << "Connecting to " << my_node_.ShortDebugString();
-    PS_VLOG(1) << "Connecting to " << node.ShortDebugString();
 //    CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
@@ -1005,7 +893,7 @@ class FabricRMAVan : public Van {
       freeaddrinfo(remote_addr);
     }
 
-    std::thread(PollCQ());
+    cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
   }
 
   bool IsValidPushpull(const Message &msg) {
@@ -1238,51 +1126,26 @@ class FabricRMAVan : public Van {
   }
 
   void PollEvents() {
-//    int flags = fcntl(event_channel_->fd, F_GETFL);
-//    int rc = fcntl(event_channel_->fd, F_SETFL, flags | O_NONBLOCK);
-//    CHECK_GE(rc, 0);
-//    int error_flags = POLLERR | POLLHUP | POLLNVAL;
-//
-//    while (!should_stop_.load()) {
-//      struct pollfd pfd = {
-//          .fd = event_channel_->fd, .events = POLLIN, .revents = 0};
-//      int ret = poll(&pfd, 1, 10);
-//
-//      CHECK_GE(ret, 0) << strerror(errno);
-//      CHECK_EQ(pfd.revents & error_flags, 0);
-//
-//      if (!(pfd.revents & POLLIN)) {
-//        continue;
-//      }
-//
-//      struct rdma_cm_event *event;
-//      CHECK_EQ(rdma_get_cm_event(event_channel_, &event), 0);
-//      // TODO(clan): Reorder the list according to the event frequency
-//      switch (event->event) {
-//        case RDMA_CM_EVENT_CONNECT_REQUEST:
-//          OnConnectRequest(event);
-//          break;
-//        case RDMA_CM_EVENT_ADDR_RESOLVED:
-//          OnAddrResolved(event);
-//          break;
-//        case RDMA_CM_EVENT_ROUTE_RESOLVED:
-//          OnRouteResolved(event);
-//          break;
-//        case RDMA_CM_EVENT_ESTABLISHED:
-//          OnConnected(event);
-//          break;
-//        case RDMA_CM_EVENT_DISCONNECTED:
-//          OnDisconnected(event);
-//          break;
-//        case RDMA_CM_EVENT_REJECTED:
-//          OnRejected(event);
-//          break;
-//        default:
-//          CHECK(0) << "OnEvent: unknown event " << event->event << " ("
-//                   << rdma_event_str(event->event) << ")";
-//      }
-//      rdma_ack_cm_event(event);
-//    }
+    while (!should_stop_) {
+      Message msg;
+      int recv_bytes = RecvMsg(&msg);
+      // For debug, drop received message
+      CHECK_NE(recv_bytes, -1) << "unexpected message size " << recv_bytes;
+      PS_VLOG(2) << "received ZMQ message " << msg.DebugString();
+      CHECK(!msg.meta.control.empty()) << "msg.meta.control is empty";
+      auto &ctrl = msg.meta.control;
+      Node sender_node = msg.meta.control.node[1];
+      if (ctrl.cmd == Control::ADDR_REQUEST) {
+        // TODO fix API
+        OnConnectionRequest(sender_node);
+      } else if (ctrl.cmd == Control::ADDR_RESOLVED) {
+        // TODO fix API
+        OnConnected(sender_node);
+      } else {
+        // TODO support Reject and Disconnect
+        LOG(INFO) << "Drop unknown typed message " << msg.DebugString();
+      }
+    }
   }
 
   void OnRejected(struct rdma_cm_event *event) {
@@ -1301,7 +1164,7 @@ class FabricRMAVan : public Van {
 //    }
 //    endpoint->cv.notify_all();
 //  }
-//
+
 //  void OnConnectRequest(struct rdma_cm_event *event) {
 //    struct rdma_cm_id *id = event->id;
 //    CHECK_NOTNULL(id);
@@ -1397,20 +1260,20 @@ class FabricRMAVan : public Van {
 
 
   void OnDisconnected(struct rdma_cm_event *event) {
-    LOG(INFO) << "OnDisconnected from Node " << my_node_.id;
-    struct rdma_cm_id *id = event->id;
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-    {
-      std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-      endpoint->status = Endpoint::IDLE;
-    }
-    endpoint->cv.notify_all();
+  //  LOG(INFO) << "OnDisconnected from Node " << my_node_.id;
+  //  struct rdma_cm_id *id = event->id;
+  //  Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
+  //  {
+  //    std::lock_guard<std::mutex> lk(endpoint->connect_mu);
+  //    endpoint->status = Endpoint::IDLE;
+  //  }
+  //  endpoint->cv.notify_all();
   }
+
 
   AddressPool<BufferContext> addr_pool_;
   std::unique_ptr<SimpleMempool> mempool_;
 
-  struct rdma_cm_id *listener_ = nullptr;
   std::atomic<bool> should_stop_;
 
 //  std::unordered_map<int, std::unique_ptr<Endpoint>> endpoints_;
@@ -1427,10 +1290,12 @@ class FabricRMAVan : public Van {
   struct ibv_comp_channel *comp_event_channel_ = nullptr;
   // Completion queue, to poll on work completions
   struct ibv_cq *cq_ = nullptr;
+
   // cq thread
   std::unique_ptr<std::thread> cq_polling_thread_;
   // event thread
-  std::unique_ptr<std::thread> cm_event_polling_thread_;
+  std::unique_ptr<std::thread> event_polling_thread_;
+
   // Recv buffer queue
   // ThreadsafeQueue<std::tuple<Endpoint *, BufferContext *>> recv_buffers_;
 
@@ -1439,7 +1304,7 @@ class FabricRMAVan : public Van {
   // whether my role is server or not
   bool is_server;
   // RDMA logging info
-  bool enable_rdma_log_;
+  bool enable_rdma_log_ = false;
 
   // macros for key_meta_map
   using MetaInfo = std::tuple<int, uint64_t, int>; // len, addr, rkey
@@ -1465,10 +1330,31 @@ class FabricRMAVan : public Van {
   // we use hostport_id_map_ to map host:port to IDs. The ID can be arbtrary, as long
   // as the id is unique.
   std::unordered_map<std::string, int> hostport_id_map_;
-
   Van* zmq_;
 
-//  FabricEndpoint* my_endpoint_ = nullptr;
+  std::unique_ptr<FabricEndpoint> my_endpoint_;
+  void* context_ = nullptr;
+
+  // name of the endpoint
+  //char av_name_[DMLC_PS_MAX_EP_ADDR] = {};
+  // length of the name
+  //size_t av_name_len_ = sizeof(av_name_);
+  std::mutex mu_;
+  bool is_worker_;
+
+  void* receiver_ = nullptr; // for incoming connect queries
+  std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> endpoints_;
+  // str = "hostname:port"
+  // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
+  // std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
+  // std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
+
+  std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
+
+  // local IPC related
+  bool disable_ipc_ = false;
+  std::mutex local_mu_;
+  std::unordered_map<int, bool> is_local_;
 
 
 };  // namespace ps
