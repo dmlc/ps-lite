@@ -403,7 +403,6 @@ void Van::Start(int customer_id, bool standalone) {
     CHECK_NE(my_node_.port, -1) << "bind failed";
 
     // connect to the scheduler
-    LOG(INFO) << "connecting to scheduler";
     Connect(scheduler_);
     if (GetEnv("DMLC_EFA_DEBUG", 0)) {
       LOG(INFO) << "ABOUT TO SPIN";

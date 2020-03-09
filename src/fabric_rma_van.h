@@ -599,7 +599,7 @@ struct FabricEndpoint {
     ret = fi_getname((fid_t) ep, name, &name_len);
     check_err(ret, "Call to fi_getname() failed");
     std::string ep_name_val = "";
-    for (int i = 0; i < name_len; i++){
+    for (size_t i = 0; i < name_len; i++){
       ep_name_val += std::to_string(name[i]) + ",";
     }
     // fi_av_straddr: human readable name
@@ -697,7 +697,7 @@ class FabricRMAVan : public Van {
     // ZMQ for out-of-band communication
     // TODO: my node should have the right ID
     int my_port = zmq_->Bind(node, max_retry);
-    PS_VLOG(2) << "Done zmq->Bind. My port is " << my_port;
+    PS_VLOG(1) << "Done zmq->Bind. My port is " << my_port;
     event_polling_thread_.reset(new std::thread(&FabricRMAVan::PollEvents, this));
     return my_port;
   }
@@ -729,7 +729,6 @@ class FabricRMAVan : public Van {
 
   void OnConnectionRequest(Node node) {
     // prepare av_name and av_name_len;
-    // PS_VLOG(1)k
 //    ret = fi_getname(&(my_endpoint_->ep->fid), (void *)&av_name_, &av_name_len_);
 //    check_err(ret, "Call to fi_getname() failed");
 
@@ -778,9 +777,9 @@ class FabricRMAVan : public Van {
 
   void Connect(const Node &node) override {
     PS_VLOG(1) << "Connect: " << node.ShortDebugString();
-    // worker doesn't need to connect to the other workers. same for server
     LOG(INFO) << "CONNECTING";
     while (true) ;
+    // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
       return;
     }
@@ -1128,7 +1127,7 @@ class FabricRMAVan : public Van {
   void PollEvents() {
     while (!should_stop_) {
       Message msg;
-      int recv_bytes = RecvMsg(&msg);
+      int recv_bytes = zmq_->RecvMsg(&msg);
       // For debug, drop received message
       CHECK_NE(recv_bytes, -1) << "unexpected message size " << recv_bytes;
       PS_VLOG(2) << "received ZMQ message " << msg.DebugString();
