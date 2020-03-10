@@ -470,11 +470,7 @@ struct Endpoint {
   }
 };
 
-struct FabricEndpoint {
-  enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
-  ConnectionStatus status;
-
-  // =============== local endpoint attr ==================
+struct FabricContext {
   // fabric provider info
   struct fi_info *info;
   // fabric top-level object
@@ -487,29 +483,15 @@ struct FabricEndpoint {
   struct fid_av *av;
   // the endpoint
   struct fid_ep *ep;
-  // =============== local endpoint attr ==================
-
-
-  // =============== common endpoint attr ==================
-  // endpoint name
-  char name[FABRIC_MAX_EP_ADDR] = {};
-  // length of endpoint name
-  size_t name_len = sizeof(name);
   // readable address
   char readable_name[FABRIC_MAX_EP_ADDR] = {};
   // length of readable address
   size_t readable_name_len = sizeof(readable_name);
 
-  int node_id; // TODO: hostport?
-  std::condition_variable cv;
-  std::mutex connect_mu;
-  //std::shared_ptr<Transport> trans;
+  // endpoint name
+  std::string ep_name;
 
-  // WRContext start_ctx[kStartDepth];
-  // WRContext reply_ctx[kReplyDepth];
-  // =============== common endpoint attr ==================
-
-  void InitLocal() {
+  void Init() {
     struct fi_info *hints = nullptr;
     struct fi_cq_attr cq_attr = {};
     struct fi_av_attr av_attr = {};
@@ -534,9 +516,9 @@ struct FabricEndpoint {
     fi_version = FI_VERSION(1, 8);
 
     // Initialize tag and num_cqes
-//    my_endpoint_->tag = 1;
-//    my_endpoint_->num_cqes = DMLC_PS_OFI_MAX_REQUESTS;
-//    my_endpoint_->prov_name = ofi_provider_->fabric_attr->prov_name;
+//    fabric_context_->tag = 1;
+//    fabric_context_->num_cqes = DMLC_PS_OFI_MAX_REQUESTS;
+//    fabric_context_->prov_name = ofi_provider_->fabric_attr->prov_name;
 
     // Determine if any tag bits are used by provider
 //    int ofi_tag_leading_zeroes = 0, ofi_tag_bits_for_ring_id = 64;
@@ -552,7 +534,7 @@ struct FabricEndpoint {
 //      << " for ring ID. Minimum required is " << MIN_TAG_BITS_FOR_RING_ID;
 //
 //    // Set maximum tag information; Reserving 1 bit for control information
-//    my_endpoint_->max_tag = (uint64_t)((1ULL << (ofi_tag_bits_for_ring_id - 1)) - 1);
+//    fabric_context_->max_tag = (uint64_t)((1ULL << (ofi_tag_bits_for_ring_id - 1)) - 1);
 
     // fi_getinfo
     ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info);
@@ -596,27 +578,56 @@ struct FabricEndpoint {
     check_err(ret, "Couldn't enable endpoint");
 
     // fi_getname: get endpoint name
+    char name[FABRIC_MAX_EP_ADDR] = {};
+    // length of endpoint name
+    size_t name_len = sizeof(name);
     ret = fi_getname((fid_t) ep, name, &name_len);
     check_err(ret, "Call to fi_getname() failed");
-    std::string ep_name_val = "";
+    ep_name = std::string(name, name_len);
+    std::string pretty_ep_name = "";
     for (size_t i = 0; i < name_len; i++){
-      ep_name_val += std::to_string(name[i]) + ",";
+      pretty_ep_name += std::to_string(name[i]) + ",";
     }
     // fi_av_straddr: human readable name
     fi_av_straddr(av, name, readable_name, &readable_name_len);
     LOG(INFO) << "Endpoint created."
-              << "\nvalue = " << ep_name_val
+              << "\nvalue = " << pretty_ep_name
               << "\nreadable address = "
               << std::string(readable_name, readable_name_len);
   }
+};
 
-  void Init(struct fid_domain *domain, struct fi_info *info, struct fid_cq *cq) {
+struct FabricEndpoint {
+  enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
+  ConnectionStatus status;
+
+  int node_id = Node::kEmpty;
+  std::string hostport;
+  std::condition_variable cv;
+  std::mutex connect_mu;
+  //std::shared_ptr<Transport> trans;
+  fi_addr_t peer_addr;
+
+  // WRContext start_ctx[kStartDepth];
+  // WRContext reply_ctx[kReplyDepth];
+
+  void Init(const std::string& address_vector, struct fid_av *av) {
+    int ret = fi_av_insert(av, address_vector.c_str(), 1,
+                           &peer_addr, 0, nullptr);
+    if (ret != 1) {
+      LOG(FATAL) << "Call to fi_av_insert() failed. Return Code: "
+                 << ret << ". ERROR: " << fi_strerror(-ret);
+    }
   }
 
   void PostRecv(WRContext *ctx) {
     // fi_trecv(struct fid_ep *ep, void *buf, size_t len, void *desc,
     //          fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void *context);
   }
+
+  void SetNodeID(int id) { node_id = id; }
+
+  void SetHostPort(std::string hp) { hostport = hp; }
 };
 
 
@@ -689,13 +700,12 @@ class FabricRMAVan : public Van {
   }
 
   int Bind(const Node &node, int max_retry) override {
-    my_endpoint_ = std::unique_ptr<FabricEndpoint>(new FabricEndpoint());
+    std::lock_guard<std::mutex> lock(mu_);
+    fabric_context_ = std::unique_ptr<FabricContext>(new FabricContext());
     if (enable_rdma_log_) LOG(INFO) << "Initializing a fabric endpoint";
-    CHECK(my_endpoint_ != nullptr) << "Failed to allocate Endpoint";
-    my_endpoint_->InitLocal();
+    CHECK(fabric_context_ != nullptr) << "Failed to allocate Endpoint";
+    fabric_context_->Init();
 
-    // ZMQ for out-of-band communication
-    // TODO: my node should have the right ID
     int my_port = zmq_->Bind(node, max_retry);
     PS_VLOG(1) << "Done zmq->Bind. My port is " << my_port;
     event_polling_thread_.reset(new std::thread(&FabricRMAVan::PollEvents, this));
@@ -708,113 +718,23 @@ class FabricRMAVan : public Van {
     std::vector<zmq_msg_t*> data_zmsg;
   };
 
-  int GetNodeID(const char* buf, size_t size) {
-    if (size > 2 && buf[0] == 'p' && buf[1] == 's') {
-      int id = 0;
-      size_t i = 2;
-      for (; i < size; ++i) {
-        if (buf[i] >= '0' && buf[i] <= '9') {
-          id = id * 10 + buf[i] - '0';
-        } else {
-          break;
-        }
-      }
-      if (i == size) return id;
-    }
-    return Meta::kEmpty;
-  }
-
-  ThreadsafeQueue<ZmqBufferContext> recv_buffers_;
-
-
-  void OnConnectionRequest(Node node) {
-    // prepare av_name and av_name_len;
-//    ret = fi_getname(&(my_endpoint_->ep->fid), (void *)&av_name_, &av_name_len_);
-//    check_err(ret, "Call to fi_getname() failed");
-
-      // key
-    LOG(INFO) << "inside OnConnectionRequest";
-    // value
-    Node value;
-    // value.hostname = av_name_; // My av_name
-    //value.port = av_name_len_;
-
-    std::string addr = node.hostname + ":" + std::to_string(node.port);
-    LOG(INFO) << "ADDR_REQ received from " << addr;
-    auto iter = hostport_id_map_.find(addr);
-    if (iter == hostport_id_map_.end()) {
-      LOG(INFO) << "Calling ZmqConnect";
-      zmq_->Connect(node);
-    }
-
-    Message req;
-//      req.meta.recver = Node::kEmpty;
-    req.meta.control.cmd = Control::ADDR_RESOLVED;
-    req.meta.control.node.push_back(node);
-    req.meta.control.node.push_back(value);
-    LOG(INFO) << "Sending ADDR_RESOLVED Request";
-    int bytes = zmq_->SendMsg(req);
-  }
-
-  std::string host_port(const std::string& host, const int& port) {
-    return host + ":" + std::to_string(port);
-  }
-
-  void OnConnected(Node node) {
-    // process and insert av_name and av_name_len;
-    LOG(INFO) << "Inside OnConnected";
-    fi_addr_t remote_addr;
-    std::string remote_endpoint = node.hostname;
-    int ret = fi_av_insert(my_endpoint_->av, (void *) remote_endpoint.c_str(), 1,
-                             &remote_addr, 0, nullptr);
-//    fi_av_insert(struct fid_av *av, void *addr, size_t count
-//                 fi_addr_t *fi_addr, uint64_t flags, void *context);
-    my_endpoint_->status = FabricEndpoint::CONNECTED;
-    my_endpoint_->cv.notify_all();
-    // see how RDMA sets cv in Endpoint()
-    // endpoint->cv.notify_all();
-  }
-
   void Connect(const Node &node) override {
-    PS_VLOG(1) << "Connect: " << node.ShortDebugString();
-    LOG(INFO) << "CONNECTING";
-    while (true) ;
-    // worker doesn't need to connect to the other workers. same for server
-    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
-      return;
-    }
-
-    zmq_->Connect(node);
-
-    Message req;
-    // Terminology as seen by receiver
-    // Destination Node
-    Node key;
-    key.role = node.role;
-    key.hostname = node.hostname; // My IP Address
-    key.port = node.port; // My Port
-    // Origin Node
-    Node val;
-    val.role = my_node_.role;
-    val.hostname = my_node_.hostname; // My IP Address
-    val.port = my_node_.port; // My Port
-    req.meta.control.cmd = Control::ADDR_REQUEST;
-    req.meta.control.node.push_back(key);
-    req.meta.control.node.push_back(val);
-    LOG(INFO) << "sending ADDR_REQUEST";
-    zmq_->SendMsg(req);
-    LOG(INFO) << "ADDR_REQUEST sent";
-//    PS_VLOG(1) << "Connecting to " << my_node_.ShortDebugString();
-//    CHECK_NE(node.id, node.kEmpty);
+    CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
-
+    PS_VLOG(1) << "Connect: " << node.DebugString();
     // worker doesn't need to connect to the other workers. same for server
+    if ((node.role == my_node_.role)) {
+      return;
+    }
+    const std::string remote_hostport = host_port(node.hostname, node.port);
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      hostport_id_map_[remote_hostport] = node.id;
+    }
 
-    std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
-    if (!node_host_ip.empty()) {
-      LOG(INFO) << "dest IP not empty";
-      auto it = endpoints_.find(node_host_ip);
+    if (node.id != Node::kEmpty) {
+      auto it = endpoints_.find(node.id);
 
       // if there is an endpoint with pending connection
       if (it != endpoints_.end()) {
@@ -822,77 +742,51 @@ class FabricRMAVan : public Van {
       }
 
       FabricEndpoint *endpoint;
-      endpoints_[node_host_ip] = std::make_unique<FabricEndpoint>();
-      endpoint = endpoints_[node_host_ip].get();
+      endpoints_[node.id] = std::make_unique<FabricEndpoint>();
+      endpoint = endpoints_[node.id].get();
 
-//      endpoint->SetNodeID(node.id);
-
-      struct addrinfo *remote_addr;
-      CHECK_EQ(
-          getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(),
-                      nullptr, &remote_addr),
-          0);
+      endpoint->SetNodeID(node.id);
 
       while (endpoint->status != FabricEndpoint::CONNECTED) {
         std::unique_lock<std::mutex> lk(endpoint->connect_mu);
         endpoint->status = FabricEndpoint::CONNECTING;
-        LOG(INFO) << "waiting to get connected 1";
-//        if (endpoint->cm_id != nullptr) {
-//          rdma_destroy_qp(endpoint->cm_id);
-//          CHECK_EQ(rdma_destroy_id(endpoint->cm_id), 0) << strerror(errno);
-//          endpoint->cm_id = nullptr;
-//        }
 
-//        CHECK_EQ(rdma_create_id(event_channel_, &endpoint->cm_id, nullptr,
-//                                RDMA_PS_TCP),
-//                 0)
-//            << "Create RDMA connection identifier failed";
-//        endpoint->cm_id->context = endpoint;
+        // XXX: we re-use the req.meta.control.node to hold connection information:
+        Message req;
+        req.meta.recver = node.id;
+        req.meta.control.cmd = Control::ADDR_REQUEST;
+        Node req_info;
+        req_info.hostname = my_node_.hostname;
+        req_info.port = my_node_.port;
+        req_info.aux_id = node.id;
+        req.meta.control.node.push_back(req_info);
+        // connect zmq. node id is recorded in hostport_id_map_
+        zmq_->Connect(node);
+        zmq_->Send(req);
 
-//        int max_retry = kMaxResolveRetry;
-        int port = kBasePort;
-        unsigned seed = static_cast<unsigned>(time(NULL) + port);
-        auto val = Environment::Get()->find("DMLC_NODE_HOST");
-//        if (val) {
-//          struct sockaddr_in addr;
-//          memset(&addr, 0, sizeof(addr));
-//          addr.sin_addr.s_addr = inet_addr(val);
-//          addr.sin_family = AF_INET;
-//          for (int i = 0; i < max_retry + 1; ++i) {
-//            addr.sin_port = htons(port);
-//            if (rdma_resolve_addr(endpoint->cm_id,
-//                                  reinterpret_cast<struct sockaddr *>(&addr),
-//                                  remote_addr->ai_addr, kTimeoutms) == 0) {
-//              break;
-//            }
-//            if (i == max_retry) {
-//              port = -1;
-//            } else {
-//              port = 10000 + rand_r(&seed) % 40000;
-//            }
-//          }
-//        } else {
-//          CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, nullptr,
-//                                     remote_addr->ai_addr, kTimeoutms),
-//                   0)
-//              << "Resolve RDMA address failed with errno: " << strerror(errno);
-//        }
-        LOG(INFO) << "waiting to get connected 2";
         endpoint->cv.wait(lk, [endpoint] {
           return endpoint->status != FabricEndpoint::CONNECTING;
         });
-        LOG(INFO) << "Out of While";
-        if (endpoint->status == FabricEndpoint::CONNECTED) {
-          LOG(INFO) << "Connected to dest";
-          break;
-        }
+
+        if (endpoint->status == FabricEndpoint::CONNECTED) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
 
-      freeaddrinfo(remote_addr);
+      local_mu_.lock();
+      if (disable_ipc_) {
+        is_local_[node.id] = false;
+      } else {
+        is_local_[node.id] = (node.hostname == my_node_.hostname) ? true : false;
+      }
+      LOG(INFO) << "Connect to Node " << node.id
+                << " with Transport=" << (is_local_[node.id] ? "IPC" : "RDMA");
+      local_mu_.unlock();
+      // TODO: set transport
+      // std::shared_ptr<Transport> t = is_local_[node.id] ?
+      //     std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
+      //     std::make_shared<RDMATransport>(endpoint, mem_allocator_.get());
+      // endpoint->SetTransport(t);
     }
-
-    cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
   }
 
   bool IsValidPushpull(const Message &msg) {
@@ -922,23 +816,23 @@ class FabricRMAVan : public Van {
   }
 
  private:
-  void InitContext(struct ibv_context *context) {
-//    context_ = context;
-//    CHECK(context_) << "ibv_context* empty";
-//
-//    pd_ = ibv_alloc_pd(context_);
-//    CHECK(pd_) << "Failed to allocate protection domain";
-//
-//    mempool_.reset(new SimpleMempool(pd_));
-//
-//    comp_event_channel_ = ibv_create_comp_channel(context_);
-//
-//    // TODO(clan): Replace the rough estimate here
-//    cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest * 2, NULL,
-//                        comp_event_channel_, 0);
-//
-//    CHECK(cq_) << "Failed to create completion queue";
-//    CHECK(!ibv_req_notify_cq(cq_, 0)) << "Failed to request CQ notification";
+  void InitContext() {//struct ibv_context *context) {
+    //context_ = context;
+    //CHECK(context_) << "ibv_context* empty";
+
+    //pd_ = ibv_alloc_pd(context_);
+    //CHECK(pd_) << "Failed to allocate protection domain";
+
+    //mempool_.reset(new SimpleMempool(pd_));
+
+    //comp_event_channel_ = ibv_create_comp_channel(context_);
+
+    //// TODO(clan): Replace the rough estimate here
+    //cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest * 2, NULL,
+    //                    comp_event_channel_, 0);
+
+    //CHECK(cq_) << "Failed to create completion queue";
+    //CHECK(!ibv_req_notify_cq(cq_, 0)) << "Failed to request CQ notification";
   }
 
   void ReleaseWorkRequestContext(WRContext *context, Endpoint *endpoint) {
@@ -1133,21 +1027,56 @@ class FabricRMAVan : public Van {
       PS_VLOG(2) << "received ZMQ message " << msg.DebugString();
       CHECK(!msg.meta.control.empty()) << "msg.meta.control is empty";
       auto &ctrl = msg.meta.control;
-      Node sender_node = msg.meta.control.node[1];
       if (ctrl.cmd == Control::ADDR_REQUEST) {
-        // TODO fix API
-        OnConnectionRequest(sender_node);
+        OnConnectRequest(msg);
       } else if (ctrl.cmd == Control::ADDR_RESOLVED) {
-        // TODO fix API
-        OnConnected(sender_node);
+        OnConnected(msg);
       } else {
-        // TODO support Reject and Disconnect
-        LOG(INFO) << "Drop unknown typed message " << msg.DebugString();
+        LOG(FATAL) << "Drop unknown typed message " << msg.DebugString();
       }
     }
   }
 
-  void OnRejected(struct rdma_cm_event *event) {
+  std::string host_port(const std::string& host, const int port) {
+    return host + ":" + std::to_string(port);
+  }
+
+  std::string get_host(const std::string& host_port) {
+    return host_port.substr(0, host_port.find(":"));
+  }
+
+  int get_port(const std::string& host_port) {
+    std::string port = host_port.substr(host_port.find(":") + 1);
+    return std::stoi(port);
+  }
+
+  void OnConnected(const Message &msg) {
+    const auto& address_info = msg.meta.control.node[0];
+    const std::string sender_av = address_info.endpoint_name;
+    const int sender_id = address_info.aux_id;
+
+    PS_VLOG(2) << "handling connected request" << address_info.DebugString();
+    // retrieve endpoint
+    FabricEndpoint *endpoint = endpoints_[sender_id].get();
+    CHECK(endpoint) << "Endpoint not found.";
+    endpoint->Init(sender_av, fabric_context_->av);
+
+    if (cq_polling_thread_ == nullptr) {
+      cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
+    }
+
+    {
+      std::lock_guard<std::mutex> lk(endpoint->connect_mu);
+      endpoint->status = FabricEndpoint::CONNECTED;
+    }
+    endpoint->cv.notify_all();
+    if (endpoint->node_id != my_node_.id) {
+      PS_VLOG(1) << "OnConnected to Node " << endpoint->node_id;
+    }
+
+  }
+
+//  void OnRejected(struct rdma_cm_event *event) {
 //    struct rdma_cm_id *id = event->id;
 //    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
 //
@@ -1163,6 +1092,48 @@ class FabricRMAVan : public Van {
 //    }
 //    endpoint->cv.notify_all();
 //  }
+
+  void OnConnectRequest(const Message &msg) {
+    const auto& req_info = msg.meta.control.node[0];
+    Node address_info;
+    int sender_id;
+    // XXX: we reuse req.meta.control.node for connection info
+    const std::string req_hostport = host_port(req_info.hostname, req_info.port);
+    PS_VLOG(2) << "handling connection request " << req_info.DebugString() << ". " << req_hostport;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      // not connected before
+      if (hostport_id_map_.find(req_hostport) == hostport_id_map_.end()) {
+        sender_id = 30000 + hostport_id_map_.size();
+        // connect to the remote node
+        Node conn_node;
+        // XXX the sender_id is not consistent with the actual node id
+        conn_node.id = sender_id;
+        conn_node.hostname = req_info.hostname;
+        conn_node.port = req_info.port;
+        // XXX: make sure the node differs such that connection is not skipped
+        if (my_node_.role == Node::SCHEDULER) conn_node.role = Node::WORKER;
+        else conn_node.role = Node::SCHEDULER;
+        PS_VLOG(1) << "connect to unseen node " << req_hostport << " with id = " << sender_id;
+        zmq_->Connect(conn_node);
+        hostport_id_map_[req_hostport] = sender_id;
+      }
+      sender_id = hostport_id_map_[req_hostport];
+      address_info.endpoint_name = fabric_context_->ep_name;
+      address_info.aux_id = req_info.aux_id;
+    }
+
+    Message reply;
+    reply.meta.recver = sender_id;
+    reply.meta.control.cmd = Control::ADDR_RESOLVED;
+    reply.meta.control.node.push_back(address_info);
+    zmq_->Send(reply);
+
+    const auto r = incoming_.emplace(std::make_unique<FabricEndpoint>());
+    FabricEndpoint *endpoint = r.first->get();
+    endpoint->SetHostPort(req_hostport);
+  }
+
 
 //  void OnConnectRequest(struct rdma_cm_event *event) {
 //    struct rdma_cm_id *id = event->id;
@@ -1203,60 +1174,41 @@ class FabricRMAVan : public Van {
 //
 //    CHECK_EQ(rdma_accept(id, &cm_params), 0)
 //        << "Accept RDMA connection failed: " << strerror(errno);
-  }
+//  }
 
   // Resolve a route after address is resolved
   void OnAddrResolved(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
-    CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0)
-        << "Resolve RDMA route failed";
+    //struct rdma_cm_id *id = event->id;
+    //CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0)
+    //    << "Resolve RDMA route failed";
   }
 
   // Make a connection after route is resolved
   void OnRouteResolved(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
+    //struct rdma_cm_id *id = event->id;
+    //Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
 
-    if (context_ == nullptr) {
-      InitContext(id->verbs);
-    }
+    //if (context_ == nullptr) {
+    //  InitContext(id->verbs);
+    //}
 
-    endpoint->Init(cq_, pd_);
+    //endpoint->Init(cq_, pd_);
 
-    RequestContext ctx;
-    ctx.node = static_cast<uint32_t>(my_node_.id);
-    ctx.port = static_cast<uint16_t>(my_node_.port);
-    snprintf(ctx.hostname, kMaxHostnameLength, "%s", my_node_.hostname.c_str());
+    //RequestContext ctx;
+    //ctx.node = static_cast<uint32_t>(my_node_.id);
+    //ctx.port = static_cast<uint16_t>(my_node_.port);
+    //snprintf(ctx.hostname, kMaxHostnameLength, "%s", my_node_.hostname.c_str());
 
-    struct rdma_conn_param cm_params;
-    memset(&cm_params, 0, sizeof(cm_params));
-    cm_params.retry_count = 7;
-    cm_params.rnr_retry_count = 7;
-    cm_params.private_data = &ctx;
-    cm_params.private_data_len = sizeof(RequestContext);
+    //struct rdma_conn_param cm_params;
+    //memset(&cm_params, 0, sizeof(cm_params));
+    //cm_params.retry_count = 7;
+    //cm_params.rnr_retry_count = 7;
+    //cm_params.private_data = &ctx;
+    //cm_params.private_data_len = sizeof(RequestContext);
 
-    CHECK_EQ(rdma_connect(id, &cm_params), 0)
-        << "RDMA connect failed" << strerror(errno);
+    //CHECK_EQ(rdma_connect(id, &cm_params), 0)
+    //    << "RDMA connect failed" << strerror(errno);
   }
-
-  void OnConnected(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
-    CHECK(id) << "rdma_cm_id not found.";
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-    CHECK(endpoint) << "Endpoint not found.";
-
-    if (cq_polling_thread_ == nullptr) {
-      cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
-    }
-
-    CHECK_EQ(endpoint->cm_id, id);
-    {
-      std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-      endpoint->status = Endpoint::CONNECTED;
-    }
-    endpoint->cv.notify_all();
-  }
-
 
   void OnDisconnected(struct rdma_cm_event *event) {
   //  LOG(INFO) << "OnDisconnected from Node " << my_node_.id;
@@ -1275,8 +1227,8 @@ class FabricRMAVan : public Van {
 
   std::atomic<bool> should_stop_;
 
-//  std::unordered_map<int, std::unique_ptr<Endpoint>> endpoints_;
-  std::unordered_set<std::unique_ptr<Endpoint>> incoming_;
+  std::unordered_map<int, std::unique_ptr<FabricEndpoint>> endpoints_;
+  std::unordered_set<std::unique_ptr<FabricEndpoint>> incoming_;
 
   struct rdma_event_channel *event_channel_ = nullptr;
 //  struct ibv_context *context_ = nullptr;
@@ -1298,7 +1250,7 @@ class FabricRMAVan : public Van {
   // Recv buffer queue
   // ThreadsafeQueue<std::tuple<Endpoint *, BufferContext *>> recv_buffers_;
 
-  // JYM: the following are for push/pull buffer reuse
+  // JYM: the following are for push/pull Fabricbuffer reuse
 
   // whether my role is server or not
   bool is_server;
@@ -1323,7 +1275,7 @@ class FabricRMAVan : public Van {
   // such that when we unpack the message, we can still know where the message was sent
   // this requires that when calling these APIs:
   // - zmq_->Connect
-  // - zmq_->SendMsg
+  // - zmq_->Send
   // - zmq_->RecvMsg
   // we need to make sure req.meta.recver is set correctly.
   // we use hostport_id_map_ to map host:port to IDs. The ID can be arbtrary, as long
@@ -1331,8 +1283,7 @@ class FabricRMAVan : public Van {
   std::unordered_map<std::string, int> hostport_id_map_;
   Van* zmq_;
 
-  std::unique_ptr<FabricEndpoint> my_endpoint_;
-  void* context_ = nullptr;
+  std::unique_ptr<FabricContext> fabric_context_;
 
   // name of the endpoint
   //char av_name_[DMLC_PS_MAX_EP_ADDR] = {};
@@ -1342,7 +1293,7 @@ class FabricRMAVan : public Van {
   bool is_worker_;
 
   void* receiver_ = nullptr; // for incoming connect queries
-  std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> endpoints_;
+
   // str = "hostname:port"
   // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
   // std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;

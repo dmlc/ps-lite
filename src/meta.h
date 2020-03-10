@@ -22,6 +22,10 @@ struct RawNode {
   bool is_recovery;
   // the locally unique id of an customer
   int customer_id;
+  // endpoint name;
+  char endpoint_name[64];
+  // auxilary id
+  int aux_id;
 };
 
 // system control info

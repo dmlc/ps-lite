@@ -605,8 +605,11 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
       raw_node[node_count].port = n.port;
       bzero(raw_node[node_count].hostname, sizeof(raw_node[node_count].hostname));
       memcpy(raw_node[node_count].hostname, n.hostname.c_str(), n.hostname.size());
+      bzero(raw_node[node_count].endpoint_name, sizeof(raw_node[node_count].endpoint_name));
+      memcpy(raw_node[node_count].endpoint_name, n.endpoint_name.c_str(), n.endpoint_name.size());
       raw_node[node_count].is_recovery = n.is_recovery;
       raw_node[node_count].customer_id = n.customer_id;
+      raw_node[node_count].aux_id = n.aux_id;
       node_count++;
     }
   }
@@ -654,6 +657,8 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
     n.id = p.id;
     n.is_recovery = p.is_recovery;
     n.customer_id = p.customer_id;
+    n.aux_id = p.aux_id;
+    n.endpoint_name = p.endpoint_name;
     meta->control.node.push_back(n);
   }
 

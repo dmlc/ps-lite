@@ -24,7 +24,7 @@ if [ $DMLC_ROLE == 'scheduler' ]; then
 elif [ $DMLC_ROLE == 'server' ]; then
     for ((i=0; i<${DMLC_NUM_SERVER}; ++i)); do
         export HEAPPROFILE=./S${i}
-        (${bin} ${arg} 2>&1 | tee server.log &)
+        (${bin} ${arg} 2>&1 | tee server.log)
     done
 fi
 wait

@@ -64,15 +64,16 @@ struct Node {
   /** \brief the empty value */
   static const int kEmpty;
   /** \brief default constructor */
-  Node() : id(kEmpty), port(kEmpty), is_recovery(false) {}
+  Node() : id(kEmpty), port(kEmpty), is_recovery(false), aux_id(-1) {}
   /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
   /** \brief get debug string */
   std::string DebugString() const {
     std::stringstream ss;
-    ss << "role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
+    ss << "[role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
        << (id != kEmpty ? ", id=" + std::to_string(id) : "")
-       << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery;
+       << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery
+       << ", endpoint_name=" << endpoint_name << ", aux_id=" << aux_id << "]";
 
     return ss.str();
   }
@@ -94,6 +95,10 @@ struct Node {
   int port;
   /** \brief whether this node is created by failover */
   bool is_recovery;
+  /** \brief endpoint name */
+  std::string endpoint_name;
+  /** \brief the auxilary id */
+  int aux_id;
 };
 /**
  * \brief meta info of a system control message
