@@ -26,5 +26,10 @@ elif [ $DMLC_ROLE == 'server' ]; then
         export HEAPPROFILE=./S${i}
         (${bin} ${arg} 2>&1 | tee server.log)
     done
+elif [ $DMLC_ROLE == 'worker' ]; then
+    for ((i=0; i<${DMLC_NUM_WORKER}; ++i)); do
+        export HEAPPROFILE=./S${i}
+        (${bin} ${arg} 2>&1 | tee worker.log)
+    done
 fi
 wait
