@@ -31,6 +31,7 @@
 
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
+#include "rdma_common.h"
 
 
 #include <rdma/fi_errno.h>
@@ -94,55 +95,40 @@ static inline T align_ceil(T v, T align) {
   return align_floor(v + align - 1, align);
 }
 
-enum MessageTypes : uint32_t {
-  kRendezvousStart,
-  kRendezvousReply,
-};
-
-struct RendezvousStart {
+struct FabricRendezvousStart {
   uint64_t meta_len;
   uint64_t data_num;
   uint64_t data_len[kMaxDataFields];
-  uint64_t origin_addr;
+  // uint64_t origin_addr;
 };
 
-struct RendezvousReply {
-  uint64_t addr;
-  uint64_t origin_addr;
-  uint32_t rkey;
-  uint32_t idx;
+struct FabricRendezvousReply {
+  // uint64_t addr;
+  // uint64_t origin_addr;
+  // uint32_t rkey;
+  //uint32_t idx;
+  uint64_t key;
 };
 
-enum WRContextType {
-  kRendezvousStartContext,
-  kRendezvousReplyContext,
-  kWriteContext,
-  kReceiveContext
-};
-
-struct WRContext {
+struct FabricWRContext {
   WRContextType type;
-  struct ibv_mr *buffer;
-  void *private_data;
+  void *buffer;
 };
 
-struct BufferContext {
-  char *buffer;
-  size_t meta_len;
-  size_t data_num;
-  size_t data_len[kMaxDataFields];
-};
+// struct BufferContext {
+//   char *buffer;
+//   size_t meta_len;
+//   size_t data_num;
+//   // size_t data_len[kMaxDataFields];
+// };
 
-typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>>
-    MRPtr;
-
-struct MessageBuffer {
-  size_t inline_len;
-  char *inline_buf;
-  WRContext *reserved_context;
-  std::vector<SArray<char>> data;
-  std::vector<std::pair<MRPtr, size_t>> mrs;
-};
+// struct MessageBuffer {
+//   size_t inline_len;
+//   char *inline_buf;
+//   WRContext *reserved_context;
+//   std::vector<SArray<char>> data;
+//   // std::vector<std::pair<MRPtr, size_t>> mrs;
+// };
 
 struct RequestContext {
   uint32_t node;
@@ -150,15 +136,15 @@ struct RequestContext {
   char hostname[kMaxHostnameLength];
 };
 
-static_assert(std::is_pod<RendezvousStart>::value,
-              "RendezvousStart must be a POD type.");
-static_assert(std::is_pod<RendezvousReply>::value,
-              "RendezvousReply must be a POD type.");
+static_assert(std::is_pod<FabricRendezvousStart>::value,
+              "FabricRendezvousStart must be a POD type.");
+static_assert(std::is_pod<FabricRendezvousReply>::value,
+              "FabricRendezvousReply must be a POD type.");
 static_assert(std::is_pod<RequestContext>::value,
               "RequestContext must be a POD type.");
 
 static const size_t kMempoolChunkSize =
-    std::max(sizeof(RendezvousStart), sizeof(RendezvousReply));
+    std::max(sizeof(FabricRendezvousStart), sizeof(FabricRendezvousReply));
 
 template <typename T>
 class AddressPool {
@@ -199,20 +185,6 @@ class AddressPool {
 };
 
 
-#define DIVUP(x, y) (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
-
-static inline void fabric_malloc(void** ptr, size_t size) {
-  size_t page_size = sysconf(_SC_PAGESIZE);
-  void* p;
-  int size_aligned = ROUNDUP(size, page_size);
-  int ret = posix_memalign(&p, page_size, size_aligned);
-  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-  CHECK(p);
-  memset(p, 0, size);
-  *ptr = p;
-}
-
 class FabricMemoryAllocator {
  public:
   explicit FabricMemoryAllocator() {}
@@ -223,12 +195,12 @@ class FabricMemoryAllocator {
     if (size == 0) {
       return nullptr;
     }
-
+    // TODO(haibin) 8KB?
     // align to page size (usually 4KB)
     size = align_ceil(size, pagesize_);
 
     char *p;
-    fabric_malloc((void**) &p, size);
+    aligned_malloc((void**) &p, size);
     CHECK(p);
 
     std::lock_guard<std::mutex> lk(mu_);
@@ -257,6 +229,9 @@ struct FabricAddr {
   }
 };
 
+#define OFI_HIGHEST_TAG_BIT             (0x1UL << 63)
+#define MIN_TAG_BITS_FOR_KEYS           (32 + 1)
+
 struct FabricContext {
   // fabric provider info
   struct fi_info *info;
@@ -274,6 +249,8 @@ struct FabricContext {
   struct FabricAddr addr;
   // readable endpoint name
   struct FabricAddr readable_addr;
+  // maximum tag
+  uint64_t max_tag;
 
   void Init() {
     struct fi_info *hints = nullptr;
@@ -299,27 +276,6 @@ struct FabricContext {
     hints->fabric_attr->prov_name = strdup("efa");
     fi_version = FI_VERSION(1, 8);
 
-    // Initialize tag and num_cqes
-//    fabric_context_->tag = 1;
-//    fabric_context_->num_cqes = DMLC_PS_OFI_MAX_REQUESTS;
-//    fabric_context_->prov_name = ofi_provider_->fabric_attr->prov_name;
-
-    // Determine if any tag bits are used by provider
-//    int ofi_tag_leading_zeroes = 0, ofi_tag_bits_for_ring_id = 64;
-//    while (!((ofi_provider_->ep_attr->mem_tag_format << ofi_tag_leading_zeroes++) &
-//      (uint64_t) OFI_HIGHEST_TAG_BIT) &&
-//      (ofi_tag_bits_for_ring_id >= MIN_TAG_BITS_FOR_RING_ID)) {
-//      ofi_tag_bits_for_ring_id--;
-//    }
-//
-//    CHECK_GT(ofi_tag_bits_for_ring_id, MIN_TAG_BITS_FOR_RING_ID)
-//      << "Provider " << ofi_provider_->fabric_attr->prov_name
-//      << " does not provide enough tag bits " << ofi_tag_bits_for_ring_id
-//      << " for ring ID. Minimum required is " << MIN_TAG_BITS_FOR_RING_ID;
-//
-//    // Set maximum tag information; Reserving 1 bit for control information
-//    fabric_context_->max_tag = (uint64_t)((1ULL << (ofi_tag_bits_for_ring_id - 1)) - 1);
-
     // fi_getinfo
     ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info);
     if (ret == -FI_ENODATA) {
@@ -328,6 +284,22 @@ struct FabricContext {
     }
     check_err(ret, "fi_getinfo failed");
     fi_freeinfo(hints);
+
+    // determine if any tag bits are used by provider
+    int ofi_tag_leading_zeroes = 0, ofi_tag_bits_for_keys = 64;
+    while (!((info->ep_attr->mem_tag_format << ofi_tag_leading_zeroes++) &
+      (uint64_t) OFI_HIGHEST_TAG_BIT) &&
+      (ofi_tag_bits_for_keys >= MIN_TAG_BITS_FOR_KEYS)) {
+      ofi_tag_bits_for_keys--;
+    }
+
+    CHECK_GT(ofi_tag_bits_for_keys, MIN_TAG_BITS_FOR_KEYS)
+      << "Provider " << info->fabric_attr->prov_name
+      << " does not provide enough tag bits " << ofi_tag_bits_for_keys
+      << " for ring ID. Minimum required is " << MIN_TAG_BITS_FOR_KEYS;
+
+    // Set maximum tag information; reserving 1 bit for control information
+    max_tag = (uint64_t) ((1ULL << (ofi_tag_bits_for_keys - 1)) - 1);
 
     // fi_fabric: create fabric
     ret = fi_fabric(info->fabric_attr, &fabric, nullptr);
@@ -396,22 +368,52 @@ struct FabricEndpoint {
   std::mutex connect_mu;
   std::shared_ptr<FabricTransport> trans;
   fi_addr_t peer_addr;
+  struct fid_ep *endpoint;
+
+  FabricWRContext rx_ctx[kRxDepth];
 
   // WRContext start_ctx[kStartDepth];
   // WRContext reply_ctx[kReplyDepth];
 
-  void Init(const char* address_vector, struct fid_av *av) {
-    int ret = fi_av_insert(av, address_vector, 1, //address_vector.c_str(), 1,
-                           &peer_addr, 0, nullptr);
+  void Init(const char* address_vector, struct fid_av *av, struct fid_ep *ep) {
+    // fi_av_insert: insert address vector
+    int ret = fi_av_insert(av, address_vector, 1, &peer_addr, 0, nullptr);
     if (ret != 1) {
       LOG(FATAL) << "Call to fi_av_insert() failed. Return Code: "
                  << ret << ". ERROR: " << fi_strerror(-ret);
     }
+    endpoint = ep;
+
+    // InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
+    //                       kRendezvousStartContext);
+    // InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
+    //                       kRendezvousReplyContext);
+
+    for (size_t i = 0; i < kRxDepth; ++i) {
+      void *buf;
+      aligned_malloc((void**) &buf, kMempoolChunkSize);
+      CHECK(buf);
+
+      // TODO(haibin) release the buffer
+      rx_ctx[i].type = kReceiveContext;
+      rx_ctx[i].buffer = buf;
+
+      PostRecv(&rx_ctx[i]);
+    }
   }
 
-  void PostRecv(WRContext *ctx) {
+  void PostRecv(FabricWRContext *ctx) {
     // fi_trecv(struct fid_ep *ep, void *buf, size_t len, void *desc,
     //          fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void *context);
+    // TODO(haibin): use tagged receive? maybe include tag in the meta data
+    // TODO: provide the context
+    // TODO: handle -FI_EAGAIN
+    int ret = fi_recv(endpoint, ctx->buffer, kMempoolChunkSize, nullptr, 0, nullptr);
+    if (ret == -FI_EAGAIN) {
+      LOG(INFO) << "FI_EAGAIN";
+    } else if (ret != 0) {
+      check_err(ret, "Unable to do fi_recv message");
+    }
   }
 
   void SetNodeID(int id) { node_id = id; }
@@ -419,6 +421,23 @@ struct FabricEndpoint {
   void SetHostPort(std::string hp) { hostport = hp; }
 
   void SetTransport(std::shared_ptr<FabricTransport> t) { trans = t; }
+
+  // void InitSendContextHelper(struct ibv_pd *pd, WRContext *ctx,
+  //                            ThreadsafeQueue<WRContext *> *queue, size_t num,
+  //                            WRContextType type) {
+  //   for (size_t i = 0; i < num; ++i) {
+  //     void *buf;
+  //     ib_malloc((void**) &buf, kMempoolChunkSize);
+  //     CHECK(buf);
+  //     struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
+  //     CHECK(mr);
+
+  //     ctx[i].type = type;
+  //     ctx[i].buffer = mr;
+  //     ctx[i].private_data = this;
+  //     queue->Push(&ctx[i]);
+  //   }
+  // }
 };
 
 class FabricTransport {
@@ -436,8 +455,8 @@ class FabricTransport {
   ~FabricTransport() {};
 
   void Send(struct fid_ep *ep) {
-    char* large_buff = allocator_->Alloc(4096);
-    int ret = fi_send(ep, large_buff, 4096, nullptr, endpoint_->peer_addr, nullptr);
+    char* large_buff = allocator_->Alloc(kMempoolChunkSize);
+    int ret = fi_send(ep, large_buff, kMempoolChunkSize, nullptr, endpoint_->peer_addr, nullptr);
     if (ret == -FI_EAGAIN) {
       LOG(INFO) << "FI_EAGAIN";
     } else if (ret != 0) {
@@ -537,12 +556,6 @@ class FabricRMAVan : public Van {
     event_polling_thread_.reset(new std::thread(&FabricRMAVan::PollEvents, this));
     return my_port;
   }
-
-  struct ZmqBufferContext { // for clarity, don't merge meta and data
-    std::string sender;
-    zmq_msg_t* meta_zmsg;
-    std::vector<zmq_msg_t*> data_zmsg;
-  };
 
   void Connect(const Node &node) override {
     CHECK_NE(node.id, node.kEmpty);
@@ -743,7 +756,7 @@ class FabricRMAVan : public Van {
     // retrieve endpoint
     FabricEndpoint *endpoint = endpoints_[sender_id].get();
     CHECK(endpoint) << "Endpoint not found.";
-    endpoint->Init(sender_addr.name, fabric_context_->av);
+    endpoint->Init(sender_addr.name, fabric_context_->av, fabric_context_->ep);
 
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
@@ -823,17 +836,11 @@ class FabricRMAVan : public Van {
     reply.meta.control.node.push_back(addr_info);
     zmq_->Send(reply);
 
+    // TODO init endpoint
     const auto r = incoming_.emplace(std::make_unique<FabricEndpoint>());
     FabricEndpoint *endpoint = r.first->get();
     endpoint->SetHostPort(req_hostport);
 
-    char* large_buff[4096];
-    int ret = fi_recv(fabric_context_->ep, large_buff, 4096, nullptr, 0, nullptr);
-    if (ret == -FI_EAGAIN) {
-      LOG(INFO) << "FI_EAGAIN";
-    } else if (ret != 0) {
-      check_err(ret, "Unable to do fi_recv message");
-    }
   }
 
 
@@ -923,8 +930,7 @@ class FabricRMAVan : public Van {
   //  endpoint->cv.notify_all();
   }
 
-
-  AddressPool<BufferContext> addr_pool_;
+  // AddressPool<BufferContext> addr_pool_;
   std::unique_ptr<FabricMemoryAllocator> mem_allocator_;
 
   std::atomic<bool> should_stop_;

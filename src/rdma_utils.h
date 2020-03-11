@@ -46,13 +46,10 @@
 
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
+#include "rdma_common.h"
 
 
 namespace ps {
-
-
-#define DIVUP(x, y) (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
 
 static const int kStartDepth = 128;
 static const int kRxDepth = 2048; // should be larger than kStartDepth
@@ -82,16 +79,6 @@ static inline T align_ceil(T v, T align) {
   return align_floor(v + align - 1, align);
 }
 
-static inline void ib_malloc(void** ptr, size_t size) {
-  size_t page_size = sysconf(_SC_PAGESIZE);
-  void* p;
-  int size_aligned = ROUNDUP(size, page_size);
-  int ret = posix_memalign(&p, page_size, size_aligned);
-  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-  CHECK(p);
-  memset(p, 0, size);
-  *ptr = p;
-}
 
 class MemoryAllocator {
  public:
@@ -117,7 +104,7 @@ class MemoryAllocator {
     size = align_ceil(size, pagesize_);
 
     char *p;
-    ib_malloc((void**) &p, size);
+    aligned_malloc((void**) &p, size);
     CHECK(p);
 
     struct ibv_mr *mr;
@@ -160,9 +147,10 @@ class MemoryAllocator {
   std::unordered_map<char *, struct ibv_mr *> mr_;
 };
 
-enum MessageTypes : uint32_t {
-  kRendezvousStart,
-  kRendezvousReply,
+struct WRContext {
+  WRContextType type;
+  struct ibv_mr *buffer;
+  void *private_data;
 };
 
 struct RendezvousStart {
@@ -177,19 +165,6 @@ struct RendezvousReply {
   uint64_t origin_addr;
   uint32_t rkey;
   uint32_t idx;
-};
-
-enum WRContextType {
-  kRendezvousStartContext,
-  kRendezvousReplyContext,
-  kWriteContext,
-  kReceiveContext
-};
-
-struct WRContext {
-  WRContextType type;
-  struct ibv_mr *buffer;
-  void *private_data;
 };
 
 struct BufferContext {
@@ -313,4 +288,3 @@ int RoundUp(int x, int y) { return DivUp(x, y) * y; }
 
 #endif  // DMLC_USE_RDMA
 #endif  // PS_RDMA_VAN_H_
-
