@@ -73,8 +73,15 @@ struct Node {
     ss << "[role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
        << (id != kEmpty ? ", id=" + std::to_string(id) : "")
        << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery
-       << ", endpoint_name=" << endpoint_name << ", aux_id=" << aux_id << "]";
-
+       << ", aux_id=" << aux_id;
+    if (endpoint_name_len > 0) {
+      ss << ", endpoint_name_len=" << endpoint_name_len << ", endpoint_name={";
+      for (size_t i = 0; i < endpoint_name_len; i++) {
+        ss << std::to_string(endpoint_name[i]) + ",";
+      }
+      ss << "}";
+    }
+    ss << "]";
     return ss.str();
   }
   /** \brief get short debug string */
@@ -96,7 +103,9 @@ struct Node {
   /** \brief whether this node is created by failover */
   bool is_recovery;
   /** \brief endpoint name */
-  std::string endpoint_name;
+  char endpoint_name[64];
+  /** \brief the length of the endpoint name */
+  size_t endpoint_name_len = 0;
   /** \brief the auxilary id */
   int aux_id;
 };

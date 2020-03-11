@@ -94,143 +94,6 @@ static inline T align_ceil(T v, T align) {
   return align_floor(v + align - 1, align);
 }
 
-class SimpleMempool {
- public:
-  explicit SimpleMempool(struct ibv_pd *pd, size_t size = 0x10000000) {
-    std::lock_guard<std::mutex> lk(mu_);
-    pd_ = pd;
-    struct ibv_mr *mr;
-    char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, size));
-    total_allocated_size += size;
-    CHECK(p);
-//    CHECK(mr = ibv_reg_mr(pd, p, size,
-//                          IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-    mr_list.emplace(p+size, mr); // this mr is associated with memory address range [p, p+size]
-    free_list.emplace(size, p);
-  }
-
-  ~SimpleMempool() {
-    std::lock_guard<std::mutex> lk(mu_);
-    for(auto it = mr_list.begin(); it != mr_list.end(); it++){
-//      CHECK_EQ(ibv_dereg_mr(it->second), 0);
-      free(it->second->addr);
-    }
-  }
-
-  char *Alloc(size_t size) {
-    if (size == 0) {
-      return nullptr;
-    }
-
-    std::lock_guard<std::mutex> lk(mu_);
-
-    size_t proper_size = align_ceil(size, kAlignment);
-
-    auto it = free_list.lower_bound(proper_size);
-
-    if (it == free_list.end()) { // if there is no space left, need to allocate and register new memory
-      size_t new_mem_size = total_allocated_size;
-      while (proper_size > new_mem_size) {
-        new_mem_size *= 2;
-      }
-      char *p = reinterpret_cast<char *>(aligned_alloc(kAlignment, new_mem_size));
-      CHECK(p);
-      struct ibv_mr *mr;
-      CHECK(mr = ibv_reg_mr(pd_, p, new_mem_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-      mr_list.emplace(p+new_mem_size, mr);
-      free_list.emplace(new_mem_size, p);
-      it = free_list.lower_bound(proper_size);
-      PS_VLOG(1) << "Not enough memory in the pool, requested size " << proper_size << ", new allocated size " << new_mem_size;
-      total_allocated_size += new_mem_size;
-    }
-
-    CHECK_NE(free_list.end(), it) << "Not enough memory";
-    CHECK_GE(it->first, proper_size);
-
-    char *addr = it->second;
-    size_t space_left = it->first - proper_size;
-
-    free_list.erase(it);
-    CHECK_EQ(used_list.find(addr), used_list.end())
-        << "Address is already allocated";
-
-    used_list.emplace(addr, proper_size);
-
-    if (space_left) {
-      free_list.emplace(space_left, addr + proper_size);
-    }
-
-    return addr;
-  }
-
-  void Free(char *addr) {
-    if (!addr) {
-      return;
-    }
-
-    std::lock_guard<std::mutex> lk(mu_);
-
-    auto it = used_list.find(addr);
-    CHECK_NE(used_list.end(), it)
-        << "Cannot find info about address: " << (uintptr_t)addr;
-
-    size_t size = it->second;
-    used_list.erase(it);
-    free_list.emplace(size, addr);
-  }
-
-  uint32_t LocalKey(char *addr) {
-    struct ibv_mr *mr = Addr2MR(addr);
-    return mr->lkey;
-  }
-  uint32_t RemoteKey(char *addr) {
-    struct ibv_mr *mr = Addr2MR(addr);
-    return mr->rkey;
-  }
-
- private:
-  std::mutex mu_;
-  std::multimap<size_t, char *> free_list;
-  std::unordered_map<char *, size_t> used_list;
-  struct ibv_pd *pd_;
-  size_t total_allocated_size = 0;
-
-  // first: `end` of this mr address (e.g., for mr with [addr, addr+size], point to `addr+size`)
-  std::map<char *, struct ibv_mr*> mr_list;
-
-  // convert the memory address to its associated RDMA memory region
-  inline struct ibv_mr* Addr2MR(char *addr) {
-    std::lock_guard<std::mutex> lk(mu_);
-    auto it = mr_list.lower_bound(addr);
-    CHECK_NE(it, mr_list.end()) << "cannot find the associated memory region";
-    return it->second;
-  }
-
-};
-
-class Block {
- public:
-  explicit Block(SimpleMempool *pool, char *addr, int count)
-      : pool(pool), addr(addr), counter(count) {}
-
-  ~Block() {
-    CHECK_EQ(counter, 0);
-    pool->Free(addr);
-  }
-
-  void Release() {
-    int v = counter.fetch_sub(1);
-    if (v == 1) {
-      delete this;
-    }
-  }
-
- private:
-  SimpleMempool *pool;
-  char *addr;
-  std::atomic<int> counter;
-};
-
 enum MessageTypes : uint32_t {
   kRendezvousStart,
   kRendezvousReply,
@@ -335,138 +198,62 @@ class AddressPool {
   T *table_[kMaxEntries];
 };
 
-struct Endpoint {
-  enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
 
-  ConnectionStatus status;
-  int node_id;
-  std::condition_variable cv;
-  std::mutex connect_mu;
-  struct rdma_cm_id *cm_id;
+#define DIVUP(x, y) (((x)+(y)-1)/(y))
+#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
 
-  WRContext rx_ctx[kRxDepth];
+static inline void fabric_malloc(void** ptr, size_t size) {
+  size_t page_size = sysconf(_SC_PAGESIZE);
+  void* p;
+  int size_aligned = ROUNDUP(size, page_size);
+  int ret = posix_memalign(&p, page_size, size_aligned);
+  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
+  CHECK(p);
+  memset(p, 0, size);
+  *ptr = p;
+}
 
-  WRContext start_ctx[kStartDepth];
-  WRContext reply_ctx[kReplyDepth];
-  WRContext write_ctx[kWriteDepth];
+class FabricMemoryAllocator {
+ public:
+  explicit FabricMemoryAllocator() {}
 
-  ThreadsafeQueue<WRContext *> free_start_ctx;
-  ThreadsafeQueue<WRContext *> free_reply_ctx;
-  ThreadsafeQueue<WRContext *> free_write_ctx;
+  ~FabricMemoryAllocator() {}
 
-  Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {}
-
-  ~Endpoint() {
-//    for (int i = 0; i < kRxDepth; ++i) {
-//      if (!(rx_ctx[i].buffer)) {
-//        continue;
-//      }
-//      free(rx_ctx[i].buffer->addr);
-//      CHECK_EQ(ibv_dereg_mr(rx_ctx[i].buffer), 0);
-//    }
-//
-//    for (int i = 0; i < kStartDepth; ++i) {
-//      if (start_ctx[i].buffer) {
-//        free(start_ctx[i].buffer->addr);
-//        CHECK_EQ(ibv_dereg_mr(start_ctx[i].buffer), 0);
-//      }
-//    }
-//
-//    for (int i = 0; i < kReplyDepth; ++i) {
-//      if (reply_ctx[i].buffer) {
-//        free(reply_ctx[i].buffer->addr);
-//        CHECK_EQ(ibv_dereg_mr(reply_ctx[i].buffer), 0);
-//      }
-//    }
-//
-//    for (int i = 0; i < kWriteDepth; ++i) {
-//      if (write_ctx[i].buffer) {
-//        free(write_ctx[i].buffer->addr);
-//        CHECK_EQ(ibv_dereg_mr(write_ctx[i].buffer), 0);
-//      }
-//    }
-//
-//    rdma_destroy_qp(cm_id);
-//    CHECK_EQ(rdma_destroy_id(cm_id), 0) << strerror(errno);
-  }
-
-  void Disconnect() {
-    std::unique_lock<std::mutex> lk(connect_mu);
-    CHECK_EQ(rdma_disconnect(cm_id), 0) << strerror(errno);
-    cv.wait(lk, [this] { return status == IDLE; });
-  }
-
-  void SetNodeID(int id) { node_id = id; }
-
-  void InitSendContextHelper(struct ibv_pd *pd, WRContext *ctx,
-                             ThreadsafeQueue<WRContext *> *queue, size_t num,
-                             WRContextType type) {
-    for (size_t i = 0; i < num; ++i) {
-      void *buf = aligned_alloc(kAlignment, kMempoolChunkSize);
-      CHECK(buf);
-      struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      CHECK(mr);
-
-      ctx[i].type = type;
-      ctx[i].buffer = mr;
-      ctx[i].private_data = this;
-      queue->Push(&ctx[i]);
+  char *Alloc(size_t size) {
+    if (size == 0) {
+      return nullptr;
     }
+
+    // align to page size (usually 4KB)
+    size = align_ceil(size, pagesize_);
+
+    char *p;
+    fabric_malloc((void**) &p, size);
+    CHECK(p);
+
+    std::lock_guard<std::mutex> lk(mu_);
+    used_list.emplace(p, size);
+    return p;
   }
 
-  void Init(struct ibv_cq *cq, struct ibv_pd *pd) {
-    struct ibv_qp_init_attr attr;
-    memset(&attr, 0, sizeof(ibv_qp_init_attr));
-    attr.send_cq = cq;
-    attr.recv_cq = cq;
-    attr.cap.max_send_wr = kStartDepth + kReplyDepth + kWriteDepth;
-    attr.cap.max_recv_wr = kRxDepth;
-    attr.cap.max_send_sge = kSGEntry;
-    attr.cap.max_recv_sge = kSGEntry;
-    attr.qp_type = IBV_QPT_RC;
-    attr.sq_sig_all = 0;
+  std::mutex mu_;
+  size_t pagesize_ = sysconf(_SC_PAGESIZE);
+  std::unordered_map<char *, size_t> used_list;
+};
 
-    CHECK_EQ(rdma_create_qp(cm_id, pd, &attr), 0)
-        << "Create RDMA queue pair failed";
 
-    InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
-                          kRendezvousStartContext);
-    InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
-                          kRendezvousReplyContext);
-    InitSendContextHelper(pd, write_ctx, &free_write_ctx, kWriteDepth,
-                          kWriteContext);
+struct FabricAddr {
+  // endpoint name
+  char name[FABRIC_MAX_EP_ADDR] = {};
+  // length of endpoint name
+  size_t len = sizeof(name);
 
-    for (size_t i = 0; i < kRxDepth; ++i) {
-      void *buf = aligned_alloc(kAlignment, kMempoolChunkSize);
-      CHECK(buf);
-      struct ibv_mr *mr =
-          ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-      CHECK(mr);
-
-      rx_ctx[i].type = kReceiveContext;
-      rx_ctx[i].buffer = mr;
-      rx_ctx[i].private_data = this;
-
-      PostRecv(&rx_ctx[i]);
+  std::string DebugStr() const {
+    std::string debug_str = "";
+    for (size_t i = 0; i < len; i++) {
+      debug_str += std::to_string(name[i]) + ",";
     }
-  }
-
-  void PostRecv(WRContext *ctx) {
-    struct ibv_recv_wr wr, *bad_wr = nullptr;
-    memset(&wr, 0, sizeof(wr));
-
-    struct ibv_sge sge;
-    sge.addr = reinterpret_cast<uint64_t>(ctx->buffer->addr);
-    sge.length = kMempoolChunkSize;
-    sge.lkey = ctx->buffer->lkey;
-
-    wr.wr_id = reinterpret_cast<uint64_t>(ctx);
-    wr.next = nullptr;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-
-    CHECK_EQ(ibv_post_recv(cm_id->qp, &wr, &bad_wr), 0)
-        << "ibv_post_recv failed.";
+    return debug_str;
   }
 };
 
@@ -483,13 +270,10 @@ struct FabricContext {
   struct fid_av *av;
   // the endpoint
   struct fid_ep *ep;
-  // readable address
-  char readable_name[FABRIC_MAX_EP_ADDR] = {};
-  // length of readable address
-  size_t readable_name_len = sizeof(readable_name);
-
   // endpoint name
-  std::string ep_name;
+  struct FabricAddr addr;
+  // readable endpoint name
+  struct FabricAddr readable_addr;
 
   void Init() {
     struct fi_info *hints = nullptr;
@@ -578,24 +362,29 @@ struct FabricContext {
     check_err(ret, "Couldn't enable endpoint");
 
     // fi_getname: get endpoint name
-    char name[FABRIC_MAX_EP_ADDR] = {};
-    // length of endpoint name
-    size_t name_len = sizeof(name);
-    ret = fi_getname((fid_t) ep, name, &name_len);
+    ret = fi_getname((fid_t) ep, addr.name, &addr.len);
     check_err(ret, "Call to fi_getname() failed");
-    ep_name = std::string(name, name_len);
-    std::string pretty_ep_name = "";
-    for (size_t i = 0; i < name_len; i++){
-      pretty_ep_name += std::to_string(name[i]) + ",";
-    }
     // fi_av_straddr: human readable name
-    fi_av_straddr(av, name, readable_name, &readable_name_len);
+    fi_av_straddr(av, addr.name, readable_addr.name, &readable_addr.len);
     LOG(INFO) << "Endpoint created."
-              << "\nvalue = " << pretty_ep_name
-              << "\nreadable address = "
-              << std::string(readable_name, readable_name_len);
+              << "\nendpoint = " << addr.DebugStr()
+              << "\nreadable endpoint = "
+              << std::string(readable_addr.name, readable_addr.len);
+  }
+
+  void Close() {
+    // fi_close((fid_t)ep);
+    // fi_close((fid_t)cq);
+    // fi_close((fid_t)av);
+    // fi_close((fid_t)domain);
+    // fi_close((fid_t)fabric);
+    // fi_freeinfo(fi);
   }
 };
+
+class FabricTransport;
+struct FabricMemoryAllocator;
+
 
 struct FabricEndpoint {
   enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
@@ -605,14 +394,14 @@ struct FabricEndpoint {
   std::string hostport;
   std::condition_variable cv;
   std::mutex connect_mu;
-  //std::shared_ptr<Transport> trans;
+  std::shared_ptr<FabricTransport> trans;
   fi_addr_t peer_addr;
 
   // WRContext start_ctx[kStartDepth];
   // WRContext reply_ctx[kReplyDepth];
 
-  void Init(const std::string& address_vector, struct fid_av *av) {
-    int ret = fi_av_insert(av, address_vector.c_str(), 1,
+  void Init(const char* address_vector, struct fid_av *av) {
+    int ret = fi_av_insert(av, address_vector, 1, //address_vector.c_str(), 1,
                            &peer_addr, 0, nullptr);
     if (ret != 1) {
       LOG(FATAL) << "Call to fi_av_insert() failed. Return Code: "
@@ -628,9 +417,44 @@ struct FabricEndpoint {
   void SetNodeID(int id) { node_id = id; }
 
   void SetHostPort(std::string hp) { hostport = hp; }
+
+  void SetTransport(std::shared_ptr<FabricTransport> t) { trans = t; }
 };
 
+class FabricTransport {
+ public:
+  explicit FabricTransport(FabricEndpoint *endpoint, FabricMemoryAllocator *allocator) {
+    endpoint_ = CHECK_NOTNULL(endpoint);
+    allocator_ = CHECK_NOTNULL(allocator);
+    pagesize_ = sysconf(_SC_PAGESIZE);
 
+    auto val = Environment::Get()->find("DMLC_ROLE");
+    std::string role(val);
+    is_server_ = (role=="server");
+  };
+
+  ~FabricTransport() {};
+
+  void Send(struct fid_ep *ep) {
+    char* large_buff = allocator_->Alloc(4096);
+    int ret = fi_send(ep, large_buff, 4096, nullptr, endpoint_->peer_addr, nullptr);
+    if (ret == -FI_EAGAIN) {
+      LOG(INFO) << "FI_EAGAIN";
+    } else if (ret != 0) {
+      check_err(ret, "Unable to do fi_send message");
+    } else {
+      LOG(INFO) << "Sent one buff";
+    }
+    return;
+  }
+
+ protected:
+  size_t pagesize_ = 8192;
+  FabricEndpoint *endpoint_;
+  FabricMemoryAllocator *allocator_;
+  bool is_server_;
+
+}; // class Transport
 class FabricRMAVan : public Van {
  public:
   FabricRMAVan() {}
@@ -671,9 +495,10 @@ class FabricRMAVan : public Van {
     event_polling_thread_->join();
     event_polling_thread_.reset();
 
-//    PS_VLOG(1) << "Clearing mempool.";
-//    mempool_.reset();
-//
+    PS_VLOG(1) << "Clearing mempool.";
+    mem_allocator_.reset();
+
+
 //    auto map_iter = memory_mr_map.begin();
 //    while (map_iter != memory_mr_map.end()) {
 //      ibv_dereg_mr(map_iter->second);
@@ -687,8 +512,8 @@ class FabricRMAVan : public Van {
 
 //    PS_VLOG(1) << "Destroying cq and pd.";
 //    CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
-//    CHECK(!ibv_destroy_comp_channel(comp_event_channel_))
-//        << "Failed to destroy channel";
+
+    zmq_->Stop();
 //
 //    // TODO: ibv_dealloc_pd sometimes complains resource busy, need to fix this
 //    // CHECK(!ibv_dealloc_pd(pd_)) << "Failed to deallocate PD: " <<
@@ -704,7 +529,8 @@ class FabricRMAVan : public Van {
     fabric_context_ = std::unique_ptr<FabricContext>(new FabricContext());
     if (enable_rdma_log_) LOG(INFO) << "Initializing a fabric endpoint";
     CHECK(fabric_context_ != nullptr) << "Failed to allocate Endpoint";
-    fabric_context_->Init();
+
+    InitContext();
 
     int my_port = zmq_->Bind(node, max_retry);
     PS_VLOG(1) << "Done zmq->Bind. My port is " << my_port;
@@ -771,21 +597,10 @@ class FabricRMAVan : public Van {
         if (endpoint->status == FabricEndpoint::CONNECTED) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
-
-      local_mu_.lock();
-      if (disable_ipc_) {
-        is_local_[node.id] = false;
-      } else {
-        is_local_[node.id] = (node.hostname == my_node_.hostname) ? true : false;
-      }
-      LOG(INFO) << "Connect to Node " << node.id
-                << " with Transport=" << (is_local_[node.id] ? "IPC" : "RDMA");
-      local_mu_.unlock();
-      // TODO: set transport
-      // std::shared_ptr<Transport> t = is_local_[node.id] ?
-      //     std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
-      //     std::make_shared<RDMATransport>(endpoint, mem_allocator_.get());
-      // endpoint->SetTransport(t);
+      std::shared_ptr<FabricTransport> t =
+          std::make_shared<FabricTransport>(endpoint, mem_allocator_.get());
+      endpoint->SetTransport(t);
+      t->Send(fabric_context_->ep);
     }
   }
 
@@ -806,7 +621,6 @@ class FabricRMAVan : public Van {
   }
 
 
-
   int SendMsg(Message &msg) override {
     return 0;
   }
@@ -816,206 +630,74 @@ class FabricRMAVan : public Van {
   }
 
  private:
-  void InitContext() {//struct ibv_context *context) {
-    //context_ = context;
-    //CHECK(context_) << "ibv_context* empty";
-
-    //pd_ = ibv_alloc_pd(context_);
-    //CHECK(pd_) << "Failed to allocate protection domain";
-
-    //mempool_.reset(new SimpleMempool(pd_));
-
-    //comp_event_channel_ = ibv_create_comp_channel(context_);
-
-    //// TODO(clan): Replace the rough estimate here
-    //cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest * 2, NULL,
-    //                    comp_event_channel_, 0);
-
-    //CHECK(cq_) << "Failed to create completion queue";
-    //CHECK(!ibv_req_notify_cq(cq_, 0)) << "Failed to request CQ notification";
+  void InitContext() {
+    fabric_context_->Init();
+    mem_allocator_.reset(new FabricMemoryAllocator());
   }
 
-  void ReleaseWorkRequestContext(WRContext *context, Endpoint *endpoint) {
-    switch (context->type) {
-      case kRendezvousStartContext:
-        endpoint->free_start_ctx.Push(context);
-        break;
-      case kRendezvousReplyContext:
-        endpoint->free_reply_ctx.Push(context);
-        break;
-      case kWriteContext:
-        endpoint->free_write_ctx.Push(context);
-        break;
-      case kReceiveContext:
-        endpoint->PostRecv(context);
-        break;
-      default:
-        CHECK(0);
-    }
-  }
+  //void ReleaseWorkRequestContext(WRContext *context, FabricEndpoint *endpoint) {
+  //  switch (context->type) {
+  //    case kRendezvousStartContext:
+  //      endpoint->free_start_ctx.Push(context);
+  //      break;
+  //    case kRendezvousReplyContext:
+  //      endpoint->free_reply_ctx.Push(context);
+  //      break;
+  //    case kWriteContext:
+  //      endpoint->free_write_ctx.Push(context);
+  //      break;
+  //    case kReceiveContext:
+  //      endpoint->PostRecv(context);
+  //      break;
+  //    default:
+  //      CHECK(0);
+  //  }
+  //}
 
   void PollCQ() {
     // Pre-allocated work completions array used for polling
-//    struct ibv_wc wc[kMaxConcurrentWorkRequest];
-//    while (!should_stop_.load()) {
-//      int ne = ibv_poll_cq(cq_, kMaxConcurrentWorkRequest, wc);
-//      CHECK_GE(ne, 0);
-//      for (int i = 0; i < ne; ++i) {
-//        CHECK(wc[i].status == IBV_WC_SUCCESS)
-//            << "Failed status \n"
-//            << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
-//            << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err;
-//
-//        WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
-//        Endpoint *endpoint =
-//            reinterpret_cast<Endpoint *>(context->private_data);
-//
-//        CHECK(endpoint);
-//
-//        switch (wc[i].opcode) {
-//          case IBV_WC_SEND:
-//            // LOG(INFO) << "opcode: IBV_WC_SEND";
-//            ReleaseWorkRequestContext(context, endpoint);
-//            break;
-//          case IBV_WC_RDMA_WRITE: {
-//            // LOG(INFO) << "opcode: IBV_WC_RDMA_WRITE";
-//            // Note: This is not a struct ibv_mr*
-//            MessageBuffer *msg_buf =
-//                *reinterpret_cast<MessageBuffer **>(context->buffer->addr);
-//            mempool_->Free(msg_buf->inline_buf);
-//            delete msg_buf;
-//            ReleaseWorkRequestContext(context, endpoint);
-//          } break;
-//          case IBV_WC_RECV_RDMA_WITH_IMM: {
-//            // LOG(INFO) << "opcode: IBV_WC_RECV_RDMA_WITH_IMM";
-//            uint32_t addr_idx = wc[i].imm_data;
-//            BufferContext *buf_ctx = addr_pool_.GetAddressAndRelease(addr_idx);
-//            recv_buffers_.Push(std::make_tuple(endpoint, buf_ctx));
-//            ReleaseWorkRequestContext(context, endpoint);
-//          } break;
-//          case IBV_WC_RECV: {
-//            CHECK(wc[i].wc_flags & IBV_WC_WITH_IMM);
-//            uint32_t imm = wc[i].imm_data;
-//            struct ibv_mr *mr = context->buffer;
-//
-//            if (imm == kRendezvousStart) {
-//              // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousStart";
-//              RendezvousStart *req =
-//                  reinterpret_cast<RendezvousStart *>(mr->addr);
-//              BufferContext *buf_ctx = new BufferContext();
-//
-//              uint64_t len = req->meta_len;
-//              buf_ctx->meta_len = req->meta_len;
-//              buf_ctx->data_num = req->data_num;
-//              for (size_t i = 0; i < req->data_num; ++i) {
-//                buf_ctx->data_len[i] = req->data_len[i];
-//                len += req->data_len[i];
-//              }
-//
-//              char *buffer = mempool_->Alloc(is_server ? len : req->meta_len);
-//              CHECK(buffer) << "Alloc for " << len
-//                            << " bytes, data_num: " << req->data_num;
-//
-//              buf_ctx->buffer = buffer;
-//
-//              uint64_t origin_addr = req->origin_addr;
-//
-//              WRContext *reply_ctx = nullptr;
-//              endpoint->free_reply_ctx.WaitAndPop(&reply_ctx);
-//              RendezvousReply *resp =
-//                  reinterpret_cast<RendezvousReply *>(reply_ctx->buffer->addr);
-//
-//              resp->addr = reinterpret_cast<uint64_t>(buffer);
-//              resp->rkey = mempool_->RemoteKey(buffer);
-//              resp->origin_addr = origin_addr;
-//              resp->idx = addr_pool_.StoreAddress(buf_ctx);
-//
-//              struct ibv_sge sge;
-//              sge.addr = reinterpret_cast<uint64_t>(resp);
-//              sge.length = sizeof(RendezvousReply);
-//              sge.lkey = reply_ctx->buffer->lkey;
-//
-//              struct ibv_send_wr wr, *bad_wr = nullptr;
-//              memset(&wr, 0, sizeof(wr));
-//
-//              wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx);
-//              wr.opcode = IBV_WR_SEND_WITH_IMM;
-//              wr.next = nullptr;
-//
-//              wr.imm_data = kRendezvousReply;
-//
-//              wr.send_flags = IBV_SEND_SIGNALED;
-//              wr.sg_list = &sge;
-//              wr.num_sge = 1;
-//
-//              CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0)
-//                  << "ibv_post_send failed.";
-//
-//            } else if (imm == kRendezvousReply) {
-//              // LOG(INFO) << "opcode: IBV_WC_RECV kRendezvousReply";
-//              RendezvousReply *resp =
-//                  reinterpret_cast<RendezvousReply *>(mr->addr);
-//              uint64_t remote_addr = resp->addr;
-//              uint64_t origin_addr = resp->origin_addr;
-//              uint32_t rkey = resp->rkey;
-//              uint32_t idx = resp->idx;
-//
-//              MessageBuffer *msg_buf =
-//                  reinterpret_cast<MessageBuffer *>(origin_addr);
-//
-//              struct ibv_sge sge[1 + msg_buf->mrs.size()];
-//
-//              sge[0].addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
-//              sge[0].length = msg_buf->inline_len;
-//              sge[0].lkey = mempool_->LocalKey(msg_buf->inline_buf);
-//
-//              size_t num_sge = 1;
-//              for (auto &pair : msg_buf->mrs) {
-//                size_t length = pair.second;
-//                CHECK(length);
-//                sge[num_sge].addr =
-//                    reinterpret_cast<uint64_t>(pair.first->addr);
-//                sge[num_sge].length = length;
-//                sge[num_sge].lkey = pair.first->lkey;
-//                ++num_sge;
-//              }
-//              if (is_server) CHECK_EQ(num_sge, 1) << num_sge;
-//
-//              WRContext *write_ctx = msg_buf->reserved_context;
-//
-//              MessageBuffer **tmp =
-//                  reinterpret_cast<MessageBuffer **>(write_ctx->buffer->addr);
-//              *tmp = msg_buf;  // write the addr of msg_buf into the mr buffer
-//
-//              struct ibv_send_wr wr, *bad_wr = nullptr;
-//              memset(&wr, 0, sizeof(wr));
-//
-//              wr.wr_id = reinterpret_cast<uint64_t>(write_ctx);
-//              wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-//              wr.next = nullptr;
-//
-//              wr.imm_data = idx;
-//
-//              wr.send_flags = IBV_SEND_SIGNALED;
-//              wr.sg_list = sge;
-//              wr.num_sge = num_sge;
-//
-//              wr.wr.rdma.remote_addr = remote_addr;
-//              wr.wr.rdma.rkey = rkey;
-//
-//              CHECK_EQ(ibv_post_send(endpoint->cm_id->qp, &wr, &bad_wr), 0)
-//                  << "ibv_post_send failed.";
-//
-//            } else {
-//              CHECK(0);
-//            }
-//            ReleaseWorkRequestContext(context, endpoint);
-//          } break;
-//          default:
-//            CHECK(0) << "Unexpected opcode: " << wc[i].opcode;
-//        }
-//      }
-//    }
+    // TODO: use kMaxConcurrentWorkRequest
+    struct fi_cq_err_entry entries[1];
+    while (!should_stop_.load()) {
+      int ret = fi_cq_read(fabric_context_->cq, entries, 1);
+      if (ret == -FI_EAGAIN) {
+        continue;
+      } else if (ret == -FI_EAVAIL) {
+        // TODO: how many errors to read from?
+        ret = fi_cq_readerr(fabric_context_->cq, entries, 1);
+        if (ret < 0) {
+          LOG(FATAL) << "Completion with error";
+          //LOG(FATAL) << msg << ". Return Code: " << ret
+          //           << ". ERROR: " << fi_strerror(-ret);
+        } else {
+          LOG(INFO) << "no error?";
+        }
+      } else {
+        if (ret < 0) check_err(ret, "fi_cq_sread failed");
+        else {
+          LOG(INFO) << ret << " completions";
+        }
+        //CHK_ERR("fi_cq_read", (ret<0), ret);
+        //for (int i = 0; i < ne; ++i) {
+        //  CHECK(wc[i].status == IBV_WC_SUCCESS)
+        //      << "Failed status \n"
+        //      << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
+        //      << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err;
+
+        //  WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
+        //  Endpoint *endpoint =
+        //      reinterpret_cast<Endpoint *>(context->private_data);
+
+        //  CHECK(endpoint);
+
+        //  switch (wc[i].opcode) {
+        //    default:
+        //      CHECK(0) << "Unexpected opcode: " << wc[i].opcode;
+        //  }
+        //}
+      }
+    }
+
   }
 
   void PollEvents() {
@@ -1051,15 +733,17 @@ class FabricRMAVan : public Van {
   }
 
   void OnConnected(const Message &msg) {
-    const auto& address_info = msg.meta.control.node[0];
-    const std::string sender_av = address_info.endpoint_name;
-    const int sender_id = address_info.aux_id;
+    const auto& addr_info = msg.meta.control.node[0];
+    struct FabricAddr sender_addr;
+    sender_addr.len = addr_info.endpoint_name_len;
+    memcpy(sender_addr.name, addr_info.endpoint_name, sizeof(sender_addr.name));
+    const int sender_id = addr_info.aux_id;
 
-    PS_VLOG(2) << "handling connected request" << address_info.DebugString();
+    PS_VLOG(2) << "handling connected reply" << addr_info.DebugString();
     // retrieve endpoint
     FabricEndpoint *endpoint = endpoints_[sender_id].get();
     CHECK(endpoint) << "Endpoint not found.";
-    endpoint->Init(sender_av, fabric_context_->av);
+    endpoint->Init(sender_addr.name, fabric_context_->av);
 
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
@@ -1072,8 +756,17 @@ class FabricRMAVan : public Van {
     endpoint->cv.notify_all();
     if (endpoint->node_id != my_node_.id) {
       PS_VLOG(1) << "OnConnected to Node " << endpoint->node_id;
+      if (enable_rdma_log_) {
+        // fi_av_straddr: human readable name
+        // readable address
+        struct FabricAddr readable_addr;
+        fi_av_straddr(fabric_context_->av, addr_info.endpoint_name,
+                      readable_addr.name, &readable_addr.len);
+        LOG(INFO) << "Endpoint connected to:" << sender_addr.DebugStr()
+                  << "\nreadable addr = "
+                  << std::string(readable_addr.name, readable_addr.len);
+      }
     }
-
   }
 
 //  void OnRejected(struct rdma_cm_event *event) {
@@ -1095,7 +788,7 @@ class FabricRMAVan : public Van {
 
   void OnConnectRequest(const Message &msg) {
     const auto& req_info = msg.meta.control.node[0];
-    Node address_info;
+    Node addr_info;
     int sender_id;
     // XXX: we reuse req.meta.control.node for connection info
     const std::string req_hostport = host_port(req_info.hostname, req_info.port);
@@ -1119,19 +812,28 @@ class FabricRMAVan : public Van {
         hostport_id_map_[req_hostport] = sender_id;
       }
       sender_id = hostport_id_map_[req_hostport];
-      address_info.endpoint_name = fabric_context_->ep_name;
-      address_info.aux_id = req_info.aux_id;
+      addr_info.endpoint_name_len = fabric_context_->addr.len;
+      memcpy(addr_info.endpoint_name, fabric_context_->addr.name, sizeof(addr_info.endpoint_name));
+      addr_info.aux_id = req_info.aux_id;
     }
 
     Message reply;
     reply.meta.recver = sender_id;
     reply.meta.control.cmd = Control::ADDR_RESOLVED;
-    reply.meta.control.node.push_back(address_info);
+    reply.meta.control.node.push_back(addr_info);
     zmq_->Send(reply);
 
     const auto r = incoming_.emplace(std::make_unique<FabricEndpoint>());
     FabricEndpoint *endpoint = r.first->get();
     endpoint->SetHostPort(req_hostport);
+
+    char* large_buff[4096];
+    int ret = fi_recv(fabric_context_->ep, large_buff, 4096, nullptr, 0, nullptr);
+    if (ret == -FI_EAGAIN) {
+      LOG(INFO) << "FI_EAGAIN";
+    } else if (ret != 0) {
+      check_err(ret, "Unable to do fi_recv message");
+    }
   }
 
 
@@ -1223,7 +925,7 @@ class FabricRMAVan : public Van {
 
 
   AddressPool<BufferContext> addr_pool_;
-  std::unique_ptr<SimpleMempool> mempool_;
+  std::unique_ptr<FabricMemoryAllocator> mem_allocator_;
 
   std::atomic<bool> should_stop_;
 
@@ -1233,14 +935,10 @@ class FabricRMAVan : public Van {
   struct rdma_event_channel *event_channel_ = nullptr;
 //  struct ibv_context *context_ = nullptr;
 
-  std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
+  //std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
 
   // ibverbs protection domain
   struct ibv_pd *pd_ = nullptr;
-  // Completion event channel, to wait for work completions
-  struct ibv_comp_channel *comp_event_channel_ = nullptr;
-  // Completion queue, to poll on work completions
-  struct ibv_cq *cq_ = nullptr;
 
   // cq thread
   std::unique_ptr<std::thread> cq_polling_thread_;
@@ -1285,10 +983,6 @@ class FabricRMAVan : public Van {
 
   std::unique_ptr<FabricContext> fabric_context_;
 
-  // name of the endpoint
-  //char av_name_[DMLC_PS_MAX_EP_ADDR] = {};
-  // length of the name
-  //size_t av_name_len_ = sizeof(av_name_);
   std::mutex mu_;
   bool is_worker_;
 
@@ -1300,13 +994,6 @@ class FabricRMAVan : public Van {
   // std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
 
   std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
-
-  // local IPC related
-  bool disable_ipc_ = false;
-  std::mutex local_mu_;
-  std::unordered_map<int, bool> is_local_;
-
-
 };  // namespace ps
 };  // namespace ps
 
