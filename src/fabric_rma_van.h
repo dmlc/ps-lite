@@ -67,6 +67,9 @@ static const int kBasePort = 9010;
         }                                                 \
 } while (false)
 
+#define OFI_HIGHEST_TAG_BIT             (0x1UL << 63)
+#define MIN_TAG_BITS_FOR_KEYS           (32 + 1)
+
 /**
  * \brief be smart on freeing recved data
  */
@@ -233,9 +236,6 @@ struct FabricAddr {
   }
 
 };
-
-#define OFI_HIGHEST_TAG_BIT             (0x1UL << 63)
-#define MIN_TAG_BITS_FOR_KEYS           (32 + 1)
 
 struct FabricContext {
   // fabric provider info
@@ -546,23 +546,15 @@ class FabricRMAVan : public Van {
 
 //    PS_VLOG(1) << "Destroying cq and pd.";
 //    CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
-
+//    TODO destructor for FabricContext
     zmq_->Stop();
-//
-//    // TODO: ibv_dealloc_pd sometimes complains resource busy, need to fix this
-//    // CHECK(!ibv_dealloc_pd(pd_)) << "Failed to deallocate PD: " <<
-//    // strerror(errno);
-//
-//    PS_VLOG(1) << "Destroying listener.";
-//    rdma_destroy_id(listener_);
-//    rdma_destroy_event_channel(event_channel_);
   }
 
   int Bind(const Node &node, int max_retry) override {
     std::lock_guard<std::mutex> lock(mu_);
-    fabric_context_ = std::unique_ptr<FabricContext>(new FabricContext());
+    context_ = std::unique_ptr<FabricContext>(new FabricContext());
     if (enable_rdma_log_) LOG(INFO) << "Initializing a fabric endpoint";
-    CHECK(fabric_context_ != nullptr) << "Failed to allocate Endpoint";
+    CHECK(context_ != nullptr) << "Failed to allocate Endpoint";
 
     InitContext();
 
@@ -612,7 +604,7 @@ class FabricRMAVan : public Van {
         req_info.hostname = my_node_.hostname;
         req_info.port = my_node_.port;
         req_info.aux_id = node.id;
-        fabric_context_->addr.CopyTo(req_info.endpoint_name, &req_info.endpoint_name_len);
+        context_->addr.CopyTo(req_info.endpoint_name, &req_info.endpoint_name_len);
         req.meta.control.node.push_back(req_info);
         // connect zmq. node id is recorded in hostport_id_map_
         zmq_->Connect(node);
@@ -628,7 +620,7 @@ class FabricRMAVan : public Van {
       std::shared_ptr<FabricTransport> t =
           std::make_shared<FabricTransport>(endpoint, mem_allocator_.get());
       endpoint->SetTransport(t);
-      t->Send(fabric_context_->ep);
+      t->Send(context_->ep);
     }
   }
 
@@ -659,7 +651,7 @@ class FabricRMAVan : public Van {
 
  private:
   void InitContext() {
-    fabric_context_->Init();
+    context_->Init();
     mem_allocator_.reset(new FabricMemoryAllocator());
   }
 
@@ -685,17 +677,17 @@ class FabricRMAVan : public Van {
     struct fi_cq_err_entry err_entry;
     struct fi_cq_tagged_entry cq_entries[kMaxConcurrentWorkRequest];
     while (!should_stop_.load()) {
-      int ret = fi_cq_read(fabric_context_->cq, cq_entries, kMaxConcurrentWorkRequest);
+      int ret = fi_cq_read(context_->cq, cq_entries, kMaxConcurrentWorkRequest);
       if (ret == -FI_EAGAIN) {
         continue;
       } else if (ret == -FI_EAVAIL) {
-        ret = fi_cq_readerr(fabric_context_->cq, &err_entry, 1);
+        ret = fi_cq_readerr(context_->cq, &err_entry, 1);
         if (ret == FI_EADDRNOTAVAIL) {
           LOG(INFO) << "FI_EADDRNOTAVAIL";
         } else if (ret < 0) {
           LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret
                      << ". ERROR: "
-                     << fi_cq_strerror(fabric_context_->cq, err_entry.prov_errno,
+                     << fi_cq_strerror(context_->cq, err_entry.prov_errno,
                                        err_entry.err_data, nullptr,
                                        err_entry.err_data_size);
         } else {
@@ -720,16 +712,6 @@ class FabricRMAVan : public Van {
           } else {
             LOG(FATAL) << "unknown completion entry" << comp_flags;
           }
-          //WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
-          //Endpoint *endpoint =
-          //    reinterpret_cast<Endpoint *>(context->private_data);
-
-          //CHECK(endpoint);
-
-          //switch (wc[i].opcode) {
-          //  default:
-          //    CHECK(0) << "Unexpected opcode: " << wc[i].opcode;
-          //}
         }
       }
     }
@@ -780,7 +762,7 @@ class FabricRMAVan : public Van {
     FabricEndpoint *endpoint = endpoints_[sender_id].get();
     CHECK(endpoint) << "Endpoint not found.";
     endpoint->SetHostPort(hostport);
-    endpoint->Init(sender_addr.name, fabric_context_->av, fabric_context_->ep);
+    endpoint->Init(sender_addr.name, context_->av, context_->ep);
 
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
@@ -797,7 +779,7 @@ class FabricRMAVan : public Van {
         // fi_av_straddr: human readable name
         // readable address
         struct FabricAddr readable_addr;
-        fi_av_straddr(fabric_context_->av, addr_info.endpoint_name,
+        fi_av_straddr(context_->av, addr_info.endpoint_name,
                       readable_addr.name, &readable_addr.len);
         LOG(INFO) << "Endpoint connected to:" << sender_addr.DebugStr()
                   << "\nreadable addr = "
@@ -806,22 +788,9 @@ class FabricRMAVan : public Van {
     }
   }
 
-//  void OnRejected(struct rdma_cm_event *event) {
-//    struct rdma_cm_id *id = event->id;
-//    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-//
-//    auto it = endpoints_.find(endpoint->node_id);
-//    CHECK(it != endpoints_.end()) << "Connection not ready.";
-//    CHECK_EQ(endpoint->status, Endpoint::CONNECTING);
-//    CHECK_EQ(endpoint->cm_id, id);
-//
-//    PS_VLOG(1) << "Connection rejected, retrying...";
-//    {
-//      std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-//      endpoint->status = Endpoint::REJECTED;
-//    }
-//    endpoint->cv.notify_all();
-//  }
+  void OnRejected(const Message &msg) {
+    LOG(FATAL) << "NOT IMPLEMENTED";
+  }
 
   void OnConnectRequest(const Message &msg) {
     const auto& req_info = msg.meta.control.node[0];
@@ -852,7 +821,7 @@ class FabricRMAVan : public Van {
       }
       sender_id = hostport_id_map_[req_hostport];
     }
-    fabric_context_->addr.CopyTo(addr_info.endpoint_name, &addr_info.endpoint_name_len);
+    context_->addr.CopyTo(addr_info.endpoint_name, &addr_info.endpoint_name_len);
     addr_info.hostname = my_node_.hostname;
     addr_info.port = my_node_.port;
     addr_info.aux_id = req_info.aux_id;
@@ -866,7 +835,7 @@ class FabricRMAVan : public Van {
     const auto r = incoming_.emplace(std::make_unique<FabricEndpoint>());
     FabricEndpoint *endpoint = r.first->get();
     endpoint->SetHostPort(req_hostport);
-    endpoint->Init(src_addr.name, fabric_context_->av, fabric_context_->ep);
+    endpoint->Init(src_addr.name, context_->av, context_->ep);
 
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
@@ -874,92 +843,10 @@ class FabricRMAVan : public Van {
 
   }
 
-
-//  void OnConnectRequest(struct rdma_cm_event *event) {
-//    struct rdma_cm_id *id = event->id;
-//    CHECK_NOTNULL(id);
-//
-//    CHECK_LE(sizeof(RequestContext), event->param.conn.private_data_len)
-//        << "RequestContext size mismatch. Actual: "
-//        << (size_t)event->param.conn.private_data_len
-//        << ", Expected: " << sizeof(RequestContext);
-//    CHECK_NOTNULL(event->param.conn.private_data);
-//
-//    const RequestContext *remote_ctx = reinterpret_cast<const RequestContext *>(
-//        event->param.conn.private_data);
-//
-//    const auto r = incoming_.emplace(std::make_unique<Endpoint>());
-//    Endpoint *endpoint = r.first->get();
-//    endpoint->SetNodeID(remote_ctx->node);
-//    endpoint->cm_id = id;
-//    id->context = endpoint;
-//
-//    if (context_ == nullptr) {
-//      InitContext(id->verbs);
-//    }
-//
-//    endpoint->Init(cq_, pd_);
-//
-//    RequestContext ctx;
-//    ctx.node = static_cast<uint32_t>(my_node_.id);
-//    ctx.port = static_cast<uint16_t>(my_node_.port);
-//    snprintf(ctx.hostname, kMaxHostnameLength, "%s", my_node_.hostname.c_str());
-//
-//    struct rdma_conn_param cm_params;
-//    memset(&cm_params, 0, sizeof(cm_params));
-//    cm_params.retry_count = 7;
-//    cm_params.rnr_retry_count = 7;
-//    cm_params.private_data = &ctx;
-//    cm_params.private_data_len = sizeof(RequestContext);
-//
-//    CHECK_EQ(rdma_accept(id, &cm_params), 0)
-//        << "Accept RDMA connection failed: " << strerror(errno);
-//  }
-
-  // Resolve a route after address is resolved
-  void OnAddrResolved(struct rdma_cm_event *event) {
-    //struct rdma_cm_id *id = event->id;
-    //CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0)
-    //    << "Resolve RDMA route failed";
+  void OnDisconnected(const Message &msg) {
+    LOG(FATAL) << "NOT REACHED";
   }
 
-  // Make a connection after route is resolved
-  void OnRouteResolved(struct rdma_cm_event *event) {
-    //struct rdma_cm_id *id = event->id;
-    //Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-
-    //if (context_ == nullptr) {
-    //  InitContext(id->verbs);
-    //}
-
-    //endpoint->Init(cq_, pd_);
-
-    //RequestContext ctx;
-    //ctx.node = static_cast<uint32_t>(my_node_.id);
-    //ctx.port = static_cast<uint16_t>(my_node_.port);
-    //snprintf(ctx.hostname, kMaxHostnameLength, "%s", my_node_.hostname.c_str());
-
-    //struct rdma_conn_param cm_params;
-    //memset(&cm_params, 0, sizeof(cm_params));
-    //cm_params.retry_count = 7;
-    //cm_params.rnr_retry_count = 7;
-    //cm_params.private_data = &ctx;
-    //cm_params.private_data_len = sizeof(RequestContext);
-
-    //CHECK_EQ(rdma_connect(id, &cm_params), 0)
-    //    << "RDMA connect failed" << strerror(errno);
-  }
-
-  void OnDisconnected(struct rdma_cm_event *event) {
-  //  LOG(INFO) << "OnDisconnected from Node " << my_node_.id;
-  //  struct rdma_cm_id *id = event->id;
-  //  Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-  //  {
-  //    std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-  //    endpoint->status = Endpoint::IDLE;
-  //  }
-  //  endpoint->cv.notify_all();
-  }
 
   // AddressPool<BufferContext> addr_pool_;
   std::unique_ptr<FabricMemoryAllocator> mem_allocator_;
@@ -968,9 +855,6 @@ class FabricRMAVan : public Van {
 
   std::unordered_map<int, std::unique_ptr<FabricEndpoint>> endpoints_;
   std::unordered_set<std::unique_ptr<FabricEndpoint>> incoming_;
-
-  struct rdma_event_channel *event_channel_ = nullptr;
-//  struct ibv_context *context_ = nullptr;
 
   //std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
 
@@ -1018,7 +902,7 @@ class FabricRMAVan : public Van {
   std::unordered_map<std::string, int> hostport_id_map_;
   Van* zmq_;
 
-  std::unique_ptr<FabricContext> fabric_context_;
+  std::unique_ptr<FabricContext> context_;
 
   std::mutex mu_;
   bool is_worker_;
