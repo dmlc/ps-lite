@@ -76,7 +76,11 @@ class RDMAVan : public Van {
 
     PS_VLOG(1) << "Clearing endpoints.";
     incoming_.clear();
-    endpoints_.clear();
+    { 
+      std::lock_guard<std::mutex> lk(endpoints_mu_);
+      endpoints_.clear();
+    }
+
 
     PS_VLOG(1) << "Destroying cq and pd.";
     CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
@@ -139,6 +143,7 @@ class RDMAVan : public Van {
     }
 
     if (node.id != Node::kEmpty) {
+      endpoints_mu_.lock();
       auto it = endpoints_.find(node.id);
 
       // if there is an endpoint with pending connection
@@ -149,6 +154,7 @@ class RDMAVan : public Van {
       Endpoint *endpoint;
       endpoints_[node.id] = std::make_unique<Endpoint>();
       endpoint = endpoints_[node.id].get();
+      endpoints_mu_.unlock();
 
       endpoint->SetNodeID(node.id);
 
@@ -174,28 +180,15 @@ class RDMAVan : public Van {
             << "Create RDMA connection identifier failed";
         endpoint->cm_id->context = endpoint;
 
-        int max_retry = kMaxResolveRetry;
-        int port = kBasePort;
-        unsigned seed = static_cast<unsigned>(time(NULL) + port);
         auto val = Environment::Get()->find("DMLC_NODE_HOST");
         if (val) {
-          struct sockaddr_in addr;
-          memset(&addr, 0, sizeof(addr)); 
-          addr.sin_addr.s_addr = inet_addr(val);
-          addr.sin_family = AF_INET;
-          for (int i = 0; i < max_retry + 1; ++i) {
-            addr.sin_port = htons(port);
-            if (rdma_resolve_addr(endpoint->cm_id, 
-                                  reinterpret_cast<struct sockaddr *>(&addr),
-                                  remote_addr->ai_addr, kTimeoutms) == 0) {
-              break;
-            }
-            if (i == max_retry) {
-              port = -1;
-            } else {
-              port = 10000 + rand_r(&seed) % 40000;
-            }
-          }
+          struct addrinfo *addr;
+          auto rc = getaddrinfo(val, "", NULL, &addr);
+          CHECK_EQ(rc, 0) << "getaddrinfo failed: " << gai_strerror(rc);
+
+          CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, addr->ai_addr,
+                              remote_addr->ai_addr, kTimeoutms), 0)
+              << "Resolve RDMA address failed with errno: " << strerror(errno);
         } else {
           CHECK_EQ(rdma_resolve_addr(endpoint->cm_id, nullptr,
                                      remote_addr->ai_addr, kTimeoutms),
@@ -210,18 +203,18 @@ class RDMAVan : public Van {
         if (endpoint->status == Endpoint::CONNECTED) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
-
-      local_mu_.lock();
-      if (disable_ipc_) {
-        is_local_[node.id] = false;
-      } else {
-        is_local_[node.id] = (node.hostname == my_node_.hostname) ? true : false;
+      
+      bool is_local_node = disable_ipc_ ? false :
+                               (node.hostname == my_node_.hostname ? true : false);
+      {
+          std::lock_guard<std::mutex> lk(local_mu_);
+          is_local_[node.id] = is_local_node;
       }
-      LOG(INFO) << "Connect to Node " << node.id
-                << " with Transport=" << (is_local_[node.id]?"IPC" : "RDMA");
-      local_mu_.unlock();
 
-      std::shared_ptr<Transport> t = is_local_[node.id] ?
+      LOG(INFO) << "Connect to Node " << node.id
+                << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
+
+      std::shared_ptr<Transport> t = is_local_node ?
           std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
           std::make_shared<RDMATransport>(endpoint, mem_allocator_.get());
       endpoint->SetTransport(t);
@@ -233,8 +226,11 @@ class RDMAVan : public Van {
   int SendMsg(Message &msg) override {
     int remote_id = msg.meta.recver;
     CHECK_NE(remote_id, Meta::kEmpty);
+
+    endpoints_mu_.lock();
     CHECK_NE(endpoints_.find(remote_id), endpoints_.end());
     Endpoint *endpoint = endpoints_[remote_id].get();
+    endpoints_mu_.unlock();
 
     int meta_len = GetPackMetaLen(msg.meta);
     size_t data_len = msg.meta.data_size;
@@ -766,9 +762,12 @@ class RDMAVan : public Van {
   void OnRejected(struct rdma_cm_event *event) {
     struct rdma_cm_id *id = event->id;
     Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
-
+    
+    endpoints_mu_.lock();
     auto it = endpoints_.find(endpoint->node_id);
     CHECK(it != endpoints_.end()) << "Connection not ready.";
+    endpoints_mu_.unlock();
+
     CHECK_EQ(endpoint->status, Endpoint::CONNECTING);
     CHECK_EQ(endpoint->cm_id, id);
 
@@ -805,17 +804,17 @@ class RDMAVan : public Van {
 
     endpoint->Init(cq_, pd_);
 
-    local_mu_.lock();
-    if (disable_ipc_) {
-      is_local_[remote_ctx->node] = false;
-    } else {
-      is_local_[remote_ctx->node] = (std::string(remote_ctx->hostname) == my_node_.hostname) ? true : false;
+
+    bool is_local_node = disable_ipc_ ? false :
+                             (std::string(remote_ctx->hostname) == my_node_.hostname ? true : false);
+    {
+        std::lock_guard<std::mutex> lk(local_mu_);
+        is_local_[remote_ctx->node] = is_local_node;
     }
     LOG(INFO) << "OnConnect to Node " << remote_ctx->node
-              << " with Transport=" << (is_local_[remote_ctx->node]?"IPC" : "RDMA");
-    local_mu_.unlock();
+              << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
 
-    std::shared_ptr<Transport> t = is_local_[remote_ctx->node] ?
+    std::shared_ptr<Transport> t = is_local_node ?
         std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
         std::make_shared<RDMATransport>(endpoint, mem_allocator_.get());
     endpoint->SetTransport(t);
@@ -911,6 +910,7 @@ class RDMAVan : public Van {
   struct rdma_cm_id *listener_ = nullptr;
   std::atomic<bool> should_stop_;
 
+  std::mutex endpoints_mu_;
   std::unordered_map<int, std::unique_ptr<Endpoint>> endpoints_;
   std::unordered_set<std::unique_ptr<Endpoint>> incoming_;
 

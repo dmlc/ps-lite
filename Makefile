@@ -66,7 +66,7 @@ build/libps.a: $(OBJS)
 
 build/%.o: src/%.cc ${ZMQ}
 	@mkdir -p $(@D)
-	$(CXX) $(INCPATH) -std=c++0x -MM -MT build/$*.o $< >build/$*.d
+	$(CXX) $(CFLAGS) $(INCPATH) -MM -MT build/$*.o $< >build/$*.d
 	$(CXX) $(CFLAGS) $(LIBS) -c $< -o $@
 
 -include build/*.d
