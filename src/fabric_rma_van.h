@@ -60,13 +60,6 @@ static const size_t kAlignment = 8;
 static const int kMaxResolveRetry = 50000;
 static const int kBasePort = 9010;
 
-// We have a limit of MAX_HANDLE_SIZE = 64 bytes. Therefore, we can only
-// support an endpoint name of maximum 56 bytes. We are using remaining
-// 8 bytes for tags.
-#define FABRIC_MAX_EP_ADDR (56)
-#define DMLC_PS_OFI_MAJOR_VERSION  (1)
-#define DMLC_PS_OFI_MINOR_VERSION  (6)
-
 #define check_err(ret, msg) do {                          \
         if (ret != 0) {                                   \
           LOG(FATAL) << msg << ". Return Code: " << ret   \
@@ -216,7 +209,7 @@ class FabricMemoryAllocator {
 
 struct FabricAddr {
   // endpoint name
-  char name[FABRIC_MAX_EP_ADDR] = {};
+  char name[64] = {};
   // length of endpoint name
   size_t len = sizeof(name);
 
@@ -227,6 +220,17 @@ struct FabricAddr {
     }
     return debug_str;
   }
+
+  void CopyFrom(const char* ep_name, const size_t ep_name_len) {
+    len = ep_name_len;
+    memcpy(name, ep_name, sizeof(name));
+  }
+
+  void CopyTo(char* ep_name, size_t* ep_name_len) {
+    *(ep_name_len) = len;
+    memcpy(ep_name, name, sizeof(name));
+  }
+
 };
 
 #define OFI_HIGHEST_TAG_BIT             (0x1UL << 63)
@@ -375,9 +379,9 @@ struct FabricEndpoint {
   // WRContext start_ctx[kStartDepth];
   // WRContext reply_ctx[kReplyDepth];
 
-  void Init(const char* address_vector, struct fid_av *av, struct fid_ep *ep) {
+  void Init(const char* ep_name, struct fid_av *av, struct fid_ep *ep) {
     // fi_av_insert: insert address vector
-    int ret = fi_av_insert(av, address_vector, 1, &peer_addr, 0, nullptr);
+    int ret = fi_av_insert(av, ep_name, 1, &peer_addr, 0, nullptr);
     if (ret != 1) {
       LOG(FATAL) << "Call to fi_av_insert() failed. Return Code: "
                  << ret << ". ERROR: " << fi_strerror(-ret);
@@ -403,17 +407,22 @@ struct FabricEndpoint {
   }
 
   void PostRecv(FabricWRContext *ctx) {
-    // fi_trecv(struct fid_ep *ep, void *buf, size_t len, void *desc,
-    //          fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void *context);
-    // TODO(haibin): use tagged receive? maybe include tag in the meta data
-    // TODO: provide the context
-    // TODO: handle -FI_EAGAIN
-    int ret = fi_recv(endpoint, ctx->buffer, kMempoolChunkSize, nullptr, 0, nullptr);
-    if (ret == -FI_EAGAIN) {
-      LOG(INFO) << "FI_EAGAIN";
-    } else if (ret != 0) {
-      check_err(ret, "Unable to do fi_recv message");
-    }
+    do {
+      // fi_trecv(struct fid_ep *ep, void *buf, size_t len, void *desc,
+      //          fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void *context);
+      // TODO: provide the context.
+      // TODO(haibin): use tagged receive?
+      int ret = fi_recv(endpoint, ctx->buffer, kMempoolChunkSize,
+                        nullptr, 0, nullptr);
+      if (ret == -FI_EAGAIN) {
+        // no resources
+        // TODO(haibin): handle -FI_EAGAIN
+        continue;
+      } else if (ret != 0) {
+        check_err(ret, "Unable to do fi_recv message");
+      }
+      break;
+    } while (true);
   }
 
   void SetNodeID(int id) { node_id = id; }
@@ -524,10 +533,9 @@ class FabricRMAVan : public Van {
 //      map_iter++;
 //    }
 //
-//    PS_VLOG(1) << "Clearing endpoints.";
-//    incoming_.clear();
-//    endpoints_.clear();
-//
+    PS_VLOG(1) << "Clearing endpoints.";
+    incoming_.clear();
+    endpoints_.clear();
 
 //    PS_VLOG(1) << "Destroying cq and pd.";
 //    CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
@@ -590,7 +598,6 @@ class FabricRMAVan : public Van {
         std::unique_lock<std::mutex> lk(endpoint->connect_mu);
         endpoint->status = FabricEndpoint::CONNECTING;
 
-        // XXX: we re-use the req.meta.control.node to hold connection information:
         Message req;
         req.meta.recver = node.id;
         req.meta.control.cmd = Control::ADDR_REQUEST;
@@ -598,6 +605,7 @@ class FabricRMAVan : public Van {
         req_info.hostname = my_node_.hostname;
         req_info.port = my_node_.port;
         req_info.aux_id = node.id;
+        fabric_context_->addr.CopyTo(req_info.endpoint_name, &req_info.endpoint_name_len);
         req.meta.control.node.push_back(req_info);
         // connect zmq. node id is recorded in hostport_id_map_
         zmq_->Connect(node);
@@ -748,14 +756,15 @@ class FabricRMAVan : public Van {
   void OnConnected(const Message &msg) {
     const auto& addr_info = msg.meta.control.node[0];
     struct FabricAddr sender_addr;
-    sender_addr.len = addr_info.endpoint_name_len;
-    memcpy(sender_addr.name, addr_info.endpoint_name, sizeof(sender_addr.name));
+    sender_addr.CopyFrom(addr_info.endpoint_name, addr_info.endpoint_name_len);
     const int sender_id = addr_info.aux_id;
+    const std::string hostport = host_port(addr_info.hostname, addr_info.port);
 
     PS_VLOG(2) << "handling connected reply" << addr_info.DebugString();
-    // retrieve endpoint
+    // retrieve and init endpoint
     FabricEndpoint *endpoint = endpoints_[sender_id].get();
     CHECK(endpoint) << "Endpoint not found.";
+    endpoint->SetHostPort(hostport);
     endpoint->Init(sender_addr.name, fabric_context_->av, fabric_context_->ep);
 
     if (cq_polling_thread_ == nullptr) {
@@ -802,8 +811,10 @@ class FabricRMAVan : public Van {
   void OnConnectRequest(const Message &msg) {
     const auto& req_info = msg.meta.control.node[0];
     Node addr_info;
+    FabricAddr src_addr;
+    src_addr.CopyFrom(req_info.endpoint_name, req_info.endpoint_name_len);
+
     int sender_id;
-    // XXX: we reuse req.meta.control.node for connection info
     const std::string req_hostport = host_port(req_info.hostname, req_info.port);
     PS_VLOG(2) << "handling connection request " << req_info.DebugString() << ". " << req_hostport;
     {
@@ -825,10 +836,11 @@ class FabricRMAVan : public Van {
         hostport_id_map_[req_hostport] = sender_id;
       }
       sender_id = hostport_id_map_[req_hostport];
-      addr_info.endpoint_name_len = fabric_context_->addr.len;
-      memcpy(addr_info.endpoint_name, fabric_context_->addr.name, sizeof(addr_info.endpoint_name));
-      addr_info.aux_id = req_info.aux_id;
     }
+    fabric_context_->addr.CopyTo(addr_info.endpoint_name, &addr_info.endpoint_name_len);
+    addr_info.hostname = my_node_.hostname;
+    addr_info.port = my_node_.port;
+    addr_info.aux_id = req_info.aux_id;
 
     Message reply;
     reply.meta.recver = sender_id;
@@ -836,10 +848,14 @@ class FabricRMAVan : public Van {
     reply.meta.control.node.push_back(addr_info);
     zmq_->Send(reply);
 
-    // TODO init endpoint
     const auto r = incoming_.emplace(std::make_unique<FabricEndpoint>());
     FabricEndpoint *endpoint = r.first->get();
     endpoint->SetHostPort(req_hostport);
+    endpoint->Init(src_addr.name, fabric_context_->av, fabric_context_->ep);
+
+    if (cq_polling_thread_ == nullptr) {
+      cq_polling_thread_.reset(new std::thread(&FabricRMAVan::PollCQ, this));
+    }
 
   }
 
