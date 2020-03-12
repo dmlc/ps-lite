@@ -17,11 +17,7 @@
 #include "./meta.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
-#if DMLC_FABRIC_TYPE == 1
 #include "./fabric_van.h"
-#elif DMLC_FABRIC_TYPE == 2
-#include "./fabric_rma_van.h"
-#endif
 #include "./resender.h"
 #include "./zmq_van.h"
 #define USE_PROFILING
@@ -83,11 +79,7 @@ Van *Van::Create(const std::string &type) {
 #endif
 #ifdef DMLC_USE_FABRIC
   } else if (type == "fabric") {
-#if DMLC_FABRIC_TYPE == 1
     return new FabricVan();
-#elif DMLC_FABRIC_TYPE == 2
-    return new FabricRMAVan();
-#endif
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
