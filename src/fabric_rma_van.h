@@ -465,14 +465,18 @@ class FabricTransport {
 
   void Send(struct fid_ep *ep) {
     char* large_buff = allocator_->Alloc(kMempoolChunkSize);
-    int ret = fi_send(ep, large_buff, kMempoolChunkSize, nullptr, endpoint_->peer_addr, nullptr);
-    if (ret == -FI_EAGAIN) {
-      LOG(INFO) << "FI_EAGAIN";
-    } else if (ret != 0) {
-      check_err(ret, "Unable to do fi_send message");
-    } else {
-      LOG(INFO) << "Sent one buff";
-    }
+    do {
+      int ret = fi_send(ep, large_buff, kMempoolChunkSize, nullptr, endpoint_->peer_addr, nullptr);
+      if (ret == -FI_EAGAIN) {
+        LOG(INFO) << "FI_EAGAIN";
+      } else if (ret != 0) {
+        check_err(ret, "Unable to do fi_send message");
+      } else {
+        LOG(INFO) << "Sent one buff";
+        break;
+      }
+    } while (true);
+
     return;
   }
 
@@ -677,45 +681,52 @@ class FabricRMAVan : public Van {
 
   void PollCQ() {
     // Pre-allocated work completions array used for polling
-    // TODO: use kMaxConcurrentWorkRequest
-    struct fi_cq_err_entry entries[1];
+    struct fi_cq_err_entry err_entry;
+    struct fi_cq_tagged_entry cq_entries[kMaxConcurrentWorkRequest];
     while (!should_stop_.load()) {
-      int ret = fi_cq_read(fabric_context_->cq, entries, 1);
+      int ret = fi_cq_read(fabric_context_->cq, cq_entries, kMaxConcurrentWorkRequest);
       if (ret == -FI_EAGAIN) {
         continue;
       } else if (ret == -FI_EAVAIL) {
-        // TODO: how many errors to read from?
-        ret = fi_cq_readerr(fabric_context_->cq, entries, 1);
-        if (ret < 0) {
-          LOG(FATAL) << "Completion with error";
-          //LOG(FATAL) << msg << ". Return Code: " << ret
-          //           << ". ERROR: " << fi_strerror(-ret);
+        ret = fi_cq_readerr(fabric_context_->cq, &err_entry, 1);
+        if (ret == FI_EADDRNOTAVAIL) {
+          LOG(INFO) << "FI_EADDRNOTAVAIL";
+        } else if (ret < 0) {
+          LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret
+                     << ". ERROR: "
+                     << fi_cq_strerror(fabric_context_->cq, err_entry.prov_errno,
+                                       err_entry.err_data, nullptr,
+                                       err_entry.err_data_size);
         } else {
-          LOG(INFO) << "no error?";
+          check_err(-err_entry.err, "fi_cq_read failed. retrieved error: ");
         }
+      } else if (ret < 0) {
+        check_err(ret, "fi_cq_read failed");
       } else {
-        if (ret < 0) check_err(ret, "fi_cq_sread failed");
-        else {
-          LOG(INFO) << ret << " completions";
+        CHECK_NE(ret, 0) << "at least one completion event is expected";
+        for (int i = 0; i < ret; ++i) {
+          uint64_t comp_flags = cq_entries[i].flags;
+          void *op_context = cq_entries[i].op_context;
+          // tag = cq_entries[i].tag;
+          if (comp_flags & FI_SEND) {
+            // ReleaseWorkRequestContext(context, endpoint);
+            LOG(INFO) << "DONE FI_SEND";
+          } else if (comp_flags & FI_RECV) {
+            LOG(INFO) << "DONE FI_RECV";
+          } else {
+            LOG(FATAL) << "unknown completion entry" << comp_flags;
+          }
+          //WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
+          //Endpoint *endpoint =
+          //    reinterpret_cast<Endpoint *>(context->private_data);
+
+          //CHECK(endpoint);
+
+          //switch (wc[i].opcode) {
+          //  default:
+          //    CHECK(0) << "Unexpected opcode: " << wc[i].opcode;
+          //}
         }
-        //CHK_ERR("fi_cq_read", (ret<0), ret);
-        //for (int i = 0; i < ne; ++i) {
-        //  CHECK(wc[i].status == IBV_WC_SUCCESS)
-        //      << "Failed status \n"
-        //      << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
-        //      << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err;
-
-        //  WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
-        //  Endpoint *endpoint =
-        //      reinterpret_cast<Endpoint *>(context->private_data);
-
-        //  CHECK(endpoint);
-
-        //  switch (wc[i].opcode) {
-        //    default:
-        //      CHECK(0) << "Unexpected opcode: " << wc[i].opcode;
-        //  }
-        //}
       }
     }
 
