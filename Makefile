@@ -36,13 +36,6 @@ CFLAGS += -DDMLC_USE_FABRIC
 INCPATH += -I$(FABRIC_PATH)/include
 endif
 
-
-## FARIC_TYPE = 1 fabric_rma_van.h
-## FARIC_TYPE = 2 fabric_van.h
-ifdef FABRIC_TYPE
-CFLAGS += -DDMLC_FABRIC_TYPE=$(FABRIC_TYPE)
-endif
-
 ifdef ASAN
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls
 endif
