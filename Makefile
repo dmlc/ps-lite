@@ -31,7 +31,7 @@ CFLAGS += -DDMLC_USE_RDMA
 endif
 
 ifeq ($(USE_FABRIC), 1)
-LIBS += -lrdmacm -lfabric -L$(FABRIC_PATH)/lib64 -L$(FABRIC_PATH)/lib
+LIBS += -lfabric -L$(FABRIC_PATH)/lib64 -L$(FABRIC_PATH)/lib
 CFLAGS += -DDMLC_USE_FABRIC
 INCPATH += -I$(FABRIC_PATH)/include
 endif
