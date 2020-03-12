@@ -105,7 +105,8 @@ struct FabricRendezvousReply {
 
 struct FabricWRContext {
   WRContextType type;
-  void *buffer;
+  void *buffer = nullptr;
+  void *private_data = nullptr;
 };
 
 // struct BufferContext {
@@ -375,9 +376,11 @@ struct FabricEndpoint {
   struct fid_ep *endpoint;
 
   FabricWRContext rx_ctx[kRxDepth];
+  FabricWRContext start_ctx[kStartDepth];
+  FabricWRContext reply_ctx[kReplyDepth];
 
-  // WRContext start_ctx[kStartDepth];
-  // WRContext reply_ctx[kReplyDepth];
+  ThreadsafeQueue<FabricWRContext *> free_start_ctx;
+  ThreadsafeQueue<FabricWRContext *> free_reply_ctx;
 
   void Init(const char* ep_name, struct fid_av *av, struct fid_ep *ep) {
     // fi_av_insert: insert address vector
@@ -388,19 +391,20 @@ struct FabricEndpoint {
     }
     endpoint = ep;
 
-    // InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
-    //                       kRendezvousStartContext);
-    // InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
-    //                       kRendezvousReplyContext);
+    InitSendContextHelper(start_ctx, &free_start_ctx, kStartDepth,
+                          kRendezvousStartContext);
+    InitSendContextHelper(reply_ctx, &free_reply_ctx, kReplyDepth,
+                          kRendezvousReplyContext);
 
     for (size_t i = 0; i < kRxDepth; ++i) {
       void *buf;
       aligned_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
 
-      // TODO(haibin) release the buffer
+      // TODO(haibin) when to release the buffer
       rx_ctx[i].type = kReceiveContext;
       rx_ctx[i].buffer = buf;
+      rx_ctx[i].private_data = this;
 
       PostRecv(&rx_ctx[i]);
     }
@@ -410,13 +414,11 @@ struct FabricEndpoint {
     do {
       // fi_trecv(struct fid_ep *ep, void *buf, size_t len, void *desc,
       //          fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void *context);
-      // TODO: provide the context.
       // TODO(haibin): use tagged receive?
       int ret = fi_recv(endpoint, ctx->buffer, kMempoolChunkSize,
-                        nullptr, 0, nullptr);
+                        nullptr, peer_addr, ctx);
       if (ret == -FI_EAGAIN) {
         // no resources
-        // TODO(haibin): handle -FI_EAGAIN
         continue;
       } else if (ret != 0) {
         check_err(ret, "Unable to do fi_recv message");
@@ -431,22 +433,21 @@ struct FabricEndpoint {
 
   void SetTransport(std::shared_ptr<FabricTransport> t) { trans = t; }
 
-  // void InitSendContextHelper(struct ibv_pd *pd, WRContext *ctx,
-  //                            ThreadsafeQueue<WRContext *> *queue, size_t num,
-  //                            WRContextType type) {
-  //   for (size_t i = 0; i < num; ++i) {
-  //     void *buf;
-  //     ib_malloc((void**) &buf, kMempoolChunkSize);
-  //     CHECK(buf);
-  //     struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-  //     CHECK(mr);
+  void InitSendContextHelper(FabricWRContext *ctx,
+                             ThreadsafeQueue<FabricWRContext *> *queue, size_t num,
+                             WRContextType type) {
+    for (size_t i = 0; i < num; ++i) {
+      void *buf;
+      // TODO(haibin) when to release the buffer
+      aligned_malloc((void**) &buf, kMempoolChunkSize);
+      CHECK(buf);
 
-  //     ctx[i].type = type;
-  //     ctx[i].buffer = mr;
-  //     ctx[i].private_data = this;
-  //     queue->Push(&ctx[i]);
-  //   }
-  // }
+      ctx[i].type = type;
+      ctx[i].buffer = buf;
+      ctx[i].private_data = this;
+      queue->Push(&ctx[i]);
+    }
+  }
 };
 
 class FabricTransport {
@@ -465,18 +466,20 @@ class FabricTransport {
 
   void Send(struct fid_ep *ep) {
     char* large_buff = allocator_->Alloc(kMempoolChunkSize);
+    FabricWRContext *context = nullptr;
+    endpoint_->free_start_ctx.WaitAndPop(&context);
+
     do {
-      int ret = fi_send(ep, large_buff, kMempoolChunkSize, nullptr, endpoint_->peer_addr, nullptr);
+      int ret = fi_send(ep, large_buff, kMempoolChunkSize, nullptr,
+                        endpoint_->peer_addr, context);
       if (ret == -FI_EAGAIN) {
-        LOG(INFO) << "FI_EAGAIN";
+        continue;
       } else if (ret != 0) {
         check_err(ret, "Unable to do fi_send message");
       } else {
-        LOG(INFO) << "Sent one buff";
         break;
       }
     } while (true);
-
     return;
   }
 
@@ -660,24 +663,22 @@ class FabricRMAVan : public Van {
     mem_allocator_.reset(new FabricMemoryAllocator());
   }
 
-  //void ReleaseWorkRequestContext(WRContext *context, FabricEndpoint *endpoint) {
-  //  switch (context->type) {
-  //    case kRendezvousStartContext:
-  //      endpoint->free_start_ctx.Push(context);
-  //      break;
-  //    case kRendezvousReplyContext:
-  //      endpoint->free_reply_ctx.Push(context);
-  //      break;
-  //    case kWriteContext:
-  //      endpoint->free_write_ctx.Push(context);
-  //      break;
-  //    case kReceiveContext:
-  //      endpoint->PostRecv(context);
-  //      break;
-  //    default:
-  //      CHECK(0);
-  //  }
-  //}
+  void ReleaseWRContext(FabricWRContext *context, FabricEndpoint *endpoint) {
+    switch (context->type) {
+      case kRendezvousStartContext:
+        endpoint->free_start_ctx.Push(context);
+        break;
+      case kRendezvousReplyContext:
+        endpoint->free_reply_ctx.Push(context);
+        break;
+      //case kWriteContext:
+      case kReceiveContext:
+        endpoint->PostRecv(context);
+        break;
+      default:
+        CHECK(0);
+    }
+  }
 
   void PollCQ() {
     // Pre-allocated work completions array used for polling
@@ -706,13 +707,16 @@ class FabricRMAVan : public Van {
         CHECK_NE(ret, 0) << "at least one completion event is expected";
         for (int i = 0; i < ret; ++i) {
           uint64_t comp_flags = cq_entries[i].flags;
-          void *op_context = cq_entries[i].op_context;
+          FabricWRContext *context = static_cast<FabricWRContext *>(cq_entries[i].op_context);
+          FabricEndpoint *endpoint = static_cast<FabricEndpoint *>(context->private_data);
+          CHECK_NE(endpoint, nullptr) << "FabricEndpoint should not be null";
           // tag = cq_entries[i].tag;
           if (comp_flags & FI_SEND) {
-            // ReleaseWorkRequestContext(context, endpoint);
-            LOG(INFO) << "DONE FI_SEND";
+            ReleaseWRContext(context, endpoint);
+            PS_VLOG(2) << "DONE FI_SEND";
           } else if (comp_flags & FI_RECV) {
-            LOG(INFO) << "DONE FI_RECV";
+            ReleaseWRContext(context, endpoint);
+            PS_VLOG(2) << "DONE FI_RECV";
           } else {
             LOG(FATAL) << "unknown completion entry" << comp_flags;
           }
