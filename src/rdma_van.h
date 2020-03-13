@@ -76,7 +76,7 @@ class RDMAVan : public Van {
 
     PS_VLOG(1) << "Clearing endpoints.";
     incoming_.clear();
-    { 
+    {
       std::lock_guard<std::mutex> lk(endpoints_mu_);
       endpoints_.clear();
     }
@@ -312,7 +312,7 @@ class RDMAVan : public Van {
     msg->meta.recver = my_node_.id;
     msg->meta.sender = endpoint->node_id;
 
-    // the second argument is actually deprecated, 
+    // the second argument is actually deprecated,
     // we keep it as is in order to be compatible    
     UnpackMeta(buffer_ctx->buffer, buffer_ctx->meta_len, &msg->meta); 
     int meta_len = GetPackMetaLen(msg->meta);
@@ -664,8 +664,8 @@ class RDMAVan : public Van {
               MessageBuffer *msg_buf =
                   reinterpret_cast<MessageBuffer *>(origin_addr);
 
-              // Before RDMA write, store the remote info so that 
-              // subsequent write does not need repeated rendezvous 
+              // Before RDMA write, store the remote info so that
+              // subsequent write does not need repeated rendezvous
               StoreRemoteAndLocalInfo(msg_buf, remote_addr, rkey, idx);
 
               Message *msg = GetFirstMsg(msg_buf);
