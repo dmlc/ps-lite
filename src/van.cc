@@ -396,10 +396,6 @@ void Van::Start(int customer_id, bool standalone) {
 
     // connect to the scheduler
     Connect(scheduler_);
-    if (is_scheduler_ && GetEnv("DMLC_EFA_DEBUG", 0)) {
-      LOG(INFO) << "SCHEDULER ABOUT TO SPIN";
-      while (true) ;
-    }
 
     // for debug use
     if (Environment::Get()->find("PS_DROP_MSG")) {

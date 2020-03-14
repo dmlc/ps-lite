@@ -103,6 +103,11 @@ class Van {
    * \return the number of bytes sent
    */
   virtual int SendMsg(Message &msg) = 0;
+
+  inline void SetNode(const Node& node) {
+    my_node_ = node;
+  }
+
  protected:
 
   /**

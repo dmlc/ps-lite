@@ -366,8 +366,7 @@ struct FabricEndpoint {
       break;
     }
     PS_VLOG(2) << "Posted recv buffer for " << readable_peer_addr
-               << ". context = " << ctx << ". peer = "
-               << readable_peer_addr;
+               << ". context = " << ctx;
   }
 
   void PostRecvTagged(void *buffer, uint64_t tag, size_t size) {
@@ -590,6 +589,9 @@ class FabricVan : public Van {
     int my_port = zmq_->Bind(node, max_retry);
     PS_VLOG(1) << "Done zmq->Bind. My port is " << my_port;
     event_polling_thread_.reset(new std::thread(&FabricVan::PollEvents, this));
+
+    // update zmq node info
+    zmq_->SetNode(my_node_);
     return my_port;
   }
 
@@ -605,7 +607,9 @@ class FabricVan : public Van {
     const std::string remote_hostport = host_port(node.hostname, node.port);
     {
       std::lock_guard<std::mutex> lk(mu_);
-      hostport_id_map_[remote_hostport] = node.id;
+      if (hostport_id_map_.find(remote_hostport) == hostport_id_map_.end()) {
+        hostport_id_map_[remote_hostport] = node.id;
+      }
     }
 
     if (node.id != Node::kEmpty) {
@@ -629,9 +633,10 @@ class FabricVan : public Van {
         endpoint->status = FabricEndpoint::CONNECTING;
 
         Message req;
-        req.meta.recver = node.id;
+        req.meta.recver = hostport_id_map_[remote_hostport];
         req.meta.control.cmd = Control::ADDR_REQUEST;
         Node req_info;
+        req_info.role = my_node_.role;
         req_info.hostname = my_node_.hostname;
         req_info.port = my_node_.port;
         req_info.aux_id = node.id;
@@ -889,7 +894,7 @@ class FabricVan : public Van {
         check_err(ret, "fi_cq_read failed");
       } else {
         CHECK_NE(ret, 0) << "at least one completion event is expected";
-        PS_VLOG(2) << ret << " completions ... ";
+        PS_VLOG(2) << ret << " completion events ... ";
         for (int i = 0; i < ret; ++i) {
           uint64_t flags = cq_entries[i].flags;
           bool is_tagged = flags & FI_TAGGED;

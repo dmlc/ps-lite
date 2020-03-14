@@ -137,6 +137,8 @@ class ZMQVan : public Van {
     mu_.unlock();
     // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
+      PS_VLOG(1) << "Zmq skipped connection to node " << node.DebugString()
+                 << ". My node is " << my_node_.DebugString();
       return;
     }
     void* sender = zmq_socket(context_, ZMQ_DEALER);
@@ -164,6 +166,7 @@ class ZMQVan : public Van {
     }
     std::lock_guard<std::mutex> lk(mu_);
     senders_[id] = sender;
+    PS_VLOG(1) << "Zmq Connected to: " << node.DebugString();
   }
 
   int SendMsg(Message& msg) override {
