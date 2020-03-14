@@ -206,7 +206,7 @@ struct FabricContext {
 
     // hints to filter providers
     hints->ep_attr->type = FI_EP_RDM;
-    hints->caps = FI_TAGGED | FI_MSG;
+    hints->caps = FI_TAGGED | FI_MSG | FI_DIRECTED_RECV;
     hints->mode = FI_CONTEXT;
     hints->domain_attr->av_type = FI_AV_TABLE;
     hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
@@ -301,6 +301,7 @@ struct FabricEndpoint {
   std::mutex connect_mu;
   std::shared_ptr<FabricTransport> trans;
   fi_addr_t peer_addr;
+  std::string readable_peer_addr;
   struct fid_ep *endpoint;
 
   FabricWRContext rx_ctx[kRxDepth];
@@ -317,6 +318,13 @@ struct FabricEndpoint {
       LOG(FATAL) << "Call to fi_av_insert() failed. Return Code: "
                  << ret << ". ERROR: " << fi_strerror(-ret);
     }
+
+    // fi_av_straddr: human readable name
+    FabricAddr readable_addr;
+    fi_av_straddr(av, ep_name, readable_addr.name, &readable_addr.len);
+    readable_peer_addr = std::string(readable_addr.name, readable_addr.len);
+    PS_VLOG(1) << "Peer endpoint connected: " << readable_peer_addr;
+
     endpoint = ep;
 
     InitSendContextHelper(start_ctx, &free_start_ctx, kStartDepth,
@@ -353,6 +361,9 @@ struct FabricEndpoint {
       }
       break;
     } while (true);
+    PS_VLOG(2) << "Posted recv buffer for " << readable_peer_addr
+               << " with context = " << ctx << " for peer "
+               << readable_peer_addr;
   }
 
   void SetNodeID(int id) { node_id = id; }
@@ -411,6 +422,7 @@ class FabricTransport {
         break;
       }
     } while (true);
+    PS_VLOG(2) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
     return;
   }
 
@@ -865,7 +877,8 @@ class FabricVan : public Van {
             // Rendezvous messages
             // TODO haibin why the buffer content is incorrect?
             RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffer);
-            PS_VLOG(2) << "req->type " << req->type;
+            CHECK_EQ(context->buffer, cq_entries[i].buf) << "buffer address does not match";
+            PS_VLOG(2) << "req->type = " << req->type << " context = " << context;
             bool rendezvous_start = req->type == 0;
             if (is_send) {
               PS_VLOG(2) << "DONE FI_SEND " << RendezvousDebugStr(*req);
@@ -981,19 +994,6 @@ class FabricVan : public Van {
       endpoint->status = FabricEndpoint::CONNECTED;
     }
     endpoint->cv.notify_all();
-    if (endpoint->node_id != my_node_.id) {
-      PS_VLOG(1) << "OnConnected to Node " << endpoint->node_id;
-      if (enable_rdma_log_) {
-        // fi_av_straddr: human readable name
-        // readable address
-        struct FabricAddr readable_addr;
-        fi_av_straddr(context_->av, addr_info.endpoint_name,
-                      readable_addr.name, &readable_addr.len);
-        LOG(INFO) << "Endpoint connected to:" << sender_addr.DebugStr()
-                  << "\nreadable addr = "
-                  << std::string(readable_addr.name, readable_addr.len);
-      }
-    }
   }
 
   void OnRejected(const Message &msg) {
