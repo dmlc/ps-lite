@@ -71,13 +71,17 @@ static const int kBasePort = 9010;
 #define MASK_START (0x8000000000000000ULL)
 #define MASK_REPLY (0x4000000000000000ULL)
 
+class FabricTransport;
+struct FabricMemoryAllocator;
+struct FabricEndpoint;
+
 // TODO: make an union
 struct RendezvousMsg {
   uint64_t meta_len;
   uint64_t data_num;
   uint64_t data_len[kMaxDataFields];
   uint64_t origin_addr; // the original address of the message buffer
-  uint64_t tag; // the tag for tsend/trecv
+  uint64_t idx; // the tag for tsend / trecv
   MessageTypes type;
 };
 
@@ -87,10 +91,20 @@ std::string RendezvousDebugStr(const RendezvousMsg& msg) {
      << ", data_num = " << msg.data_num
      << ", data_len = " << msg.data_len[0]
      << ", origin_addr = " << msg.origin_addr
-     << ", tag = " << msg.tag
+     << ", idx = " << msg.idx
      << ", type = " << (msg.type == 0 ? "start" : "reply");
   return ss.str();
 }
+
+struct BufferContext {
+  char *buffer;
+  size_t meta_len;
+  size_t data_num;
+  size_t data_len[kMaxDataFields];
+  FabricEndpoint *endpoint;
+  size_t buf_size;
+};
+
 
 struct FabricWRContext {
   WRContextType type;
@@ -271,10 +285,9 @@ struct FabricContext {
     check_err(ret, "Call to fi_getname() failed");
     // fi_av_straddr: human readable name
     fi_av_straddr(av, addr.name, readable_addr.name, &readable_addr.len);
-    LOG(INFO) << "Endpoint created."
-              << "\nendpoint = " << addr.DebugStr()
-              << "\nreadable endpoint = "
-              << std::string(readable_addr.name, readable_addr.len);
+    PS_VLOG(1) << "Endpoint created: " << addr.DebugStr()
+               << "readable endpoint = "
+               << std::string(readable_addr.name, readable_addr.len);
   }
 
   void Close() {
@@ -286,10 +299,6 @@ struct FabricContext {
     // fi_freeinfo(fi);
   }
 };
-
-class FabricTransport;
-struct FabricMemoryAllocator;
-
 
 struct FabricEndpoint {
   enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
@@ -314,10 +323,8 @@ struct FabricEndpoint {
   void Init(const char* ep_name, struct fid_av *av, struct fid_ep *ep) {
     // fi_av_insert: insert address vector
     int ret = fi_av_insert(av, ep_name, 1, &peer_addr, 0, nullptr);
-    if (ret != 1) {
-      LOG(FATAL) << "Call to fi_av_insert() failed. Return Code: "
-                 << ret << ". ERROR: " << fi_strerror(-ret);
-    }
+    CHECK_EQ(ret, 1) << "Call to fi_av_insert() failed. Return Code: "
+                     << ret << ". ERROR: " << fi_strerror(-ret);
 
     // fi_av_straddr: human readable name
     FabricAddr readable_addr;
@@ -347,10 +354,7 @@ struct FabricEndpoint {
   }
 
   void PostRecv(FabricWRContext *ctx) {
-    do {
-      // fi_trecv(struct fid_ep *ep, void *buf, size_t len, void *desc,
-      //          fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void *context);
-      // TODO(haibin): use tagged receive in a separate queue?
+    while (true) {
       int ret = fi_recv(endpoint, ctx->buffer, kMempoolChunkSize,
                         nullptr, peer_addr, ctx);
       if (ret == -FI_EAGAIN) {
@@ -360,19 +364,27 @@ struct FabricEndpoint {
         check_err(ret, "Unable to do fi_recv message");
       }
       break;
-    } while (true);
+    }
     PS_VLOG(2) << "Posted recv buffer for " << readable_peer_addr
-               << " with context = " << ctx << " for peer "
+               << ". context = " << ctx << ". peer = "
                << readable_peer_addr;
   }
 
-  void SetNodeID(int id) { node_id = id; }
-
-  void SetHostPort(std::string hp) { hostport = hp; }
-
-  void SetTransport(std::shared_ptr<FabricTransport> t) { trans = t; }
-
-  std::shared_ptr<FabricTransport> GetTransport() { return trans; }
+  void PostRecvTagged(void *buffer, uint64_t tag, size_t size) {
+    while (true) {
+      int ret = fi_trecv(endpoint, buffer, size, nullptr,
+                         peer_addr, tag, 0, nullptr);
+      if (ret == -FI_EAGAIN) {
+        // no resources
+        continue;
+      } else if (ret != 0) {
+        check_err(ret, "Unable to do fi_recv message");
+      }
+      break;
+    }
+    PS_VLOG(2) << "Posted tagged recv buffer " << buffer << " for " << readable_peer_addr
+               << ". size = " << size;
+  }
 
   void InitSendContextHelper(FabricWRContext *ctx,
                              ThreadsafeQueue<FabricWRContext *> *queue, size_t num,
@@ -389,6 +401,15 @@ struct FabricEndpoint {
       queue->Push(&ctx[i]);
     }
   }
+
+  void SetNodeID(int id) { node_id = id; }
+
+  void SetHostPort(std::string hp) { hostport = hp; }
+
+  void SetTransport(std::shared_ptr<FabricTransport> t) { trans = t; }
+
+  std::shared_ptr<FabricTransport> GetTransport() { return trans; }
+
 };
 
 class FabricTransport {
@@ -406,12 +427,7 @@ class FabricTransport {
   ~FabricTransport() {};
 
   void Send(FabricWRContext *context) {
-    // char* buff = allocator_->Alloc(kMempoolChunkSize);
-    // FabricWRContext *context = nullptr;
-    // endpoint_->free_start_ctx.WaitAndPop(&context);
-    // kMempoolChunkSize
-    do {
-      // TODO: size should be dynamic?
+    while (true) {
       int ret = fi_send(endpoint_->endpoint, context->buffer, kMempoolChunkSize,
                         nullptr, endpoint_->peer_addr, context);
       if (ret == -FI_EAGAIN) {
@@ -421,29 +437,23 @@ class FabricTransport {
       } else {
         break;
       }
-    } while (true);
+    }
     PS_VLOG(2) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
-    return;
   }
 
-  // void Send(uint64_t tag, void *buf, size_t len, FabricWRContext *context) {
-  void TSend(uint64_t tag) {// uint64_t tag, void *buf, size_t len, FabricWRContext *context) {
-    char* buff = allocator_->Alloc(kMempoolChunkSize);
-    FabricWRContext *context = nullptr;
-    endpoint_->free_start_ctx.WaitAndPop(&context);
-
-    do {
-      int ret = fi_tsend(endpoint_->endpoint, buff, kMempoolChunkSize, nullptr,
-                         endpoint_->peer_addr, tag, context);
+  void TaggedSend(MessageBuffer* msg_buf, uint32_t idx) {
+    while (true) {
+      int ret = fi_tsend(endpoint_->endpoint, msg_buf->inline_buf, msg_buf->inline_len,
+                         nullptr, endpoint_->peer_addr, idx, nullptr);
       if (ret == -FI_EAGAIN) {
-        continue;
+        LOG(WARNING) << "fi_tsend: FI_EAGAIN";
       } else if (ret != 0) {
         check_err(ret, "Unable to do fi_send message");
       } else {
         break;
       }
-    } while (true);
-    return;
+    }
+    PS_VLOG(2) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
   }
 
   void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) {
@@ -459,7 +469,7 @@ class FabricTransport {
     for (size_t i = 0; i < req->data_num; ++i) {
       req->data_len[i] = msg.data[i].size();
     }
-    LOG(INFO) << "SendRendezvousBegin " << RendezvousDebugStr(*req);
+    PS_VLOG(2) << "SendRendezvousBegin " << RendezvousDebugStr(*req);
     Send(context);
   }
 
@@ -467,6 +477,7 @@ class FabricTransport {
     BufferContext *buf_ctx = new BufferContext();
     buf_ctx->meta_len = req->meta_len;
     buf_ctx->data_num = req->data_num;
+    buf_ctx->endpoint = endpoint_;
 
     size_t data_len = 0;
     for (size_t i = 0; i < req->data_num; ++i) {
@@ -476,8 +487,8 @@ class FabricTransport {
 
     // worker only needs a buffer for receving meta
     size_t alloc_size = is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len) : req->meta_len;
+    buf_ctx->buf_size = alloc_size;
     char *buffer = allocator_->Alloc(alloc_size);
-    LOG(INFO) << "alloc_size = " << alloc_size;
     CHECK(buffer);
     buf_ctx->buffer = buffer;
 
@@ -487,13 +498,11 @@ class FabricTransport {
     RendezvousMsg *resp =
         reinterpret_cast<RendezvousMsg *>(reply_ctx->buffer);
 
-    // resp->addr = reinterpret_cast<uint64_t>(buffer);
-    // resp->rkey = allocator_->RemoteKey(buffer);
-
     resp->origin_addr = req->origin_addr;
     resp->type = kRendezvousReply;
-    // TODO: no need to tag a control message?
-    // resp->tag = addrpool.StoreAddress(buf_ctx);
+    resp->idx = addrpool.StoreAddress(buf_ctx);
+
+    endpoint_->PostRecvTagged(buffer, resp->idx, alloc_size);
 
     LOG(INFO) << "SendRendezvousReply " << RendezvousDebugStr(*resp);
     Send(reply_ctx);
@@ -759,11 +768,10 @@ class FabricVan : public Van {
 
   int RecvMsg(Message *msg) override {
     msg->data.clear();
-    std::tuple<FabricEndpoint *, BufferContext *> notification;
-    recv_buffers_.WaitAndPop(&notification);
-
-    FabricEndpoint *endpoint = std::get<FabricEndpoint *>(notification);
-    BufferContext *buffer_ctx = std::get<BufferContext *>(notification);
+    // recv the meta first
+    BufferContext* buffer_ctx;
+    recv_buffers_.WaitAndPop(&buffer_ctx);
+    FabricEndpoint *endpoint = buffer_ctx->endpoint;
 
     msg->meta.recver = my_node_.id;
     msg->meta.sender = endpoint->node_id;
@@ -808,6 +816,26 @@ class FabricVan : public Van {
   }
 
  private:
+  void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, uint64_t remote_addr, uint32_t idx) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+
+    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
+
+    auto& msg = msgbuf_cache_[msg_buf];
+
+    auto key = msg.meta.key;
+    auto is_push = msg.meta.push;
+    auto recver = msg.meta.recver;
+
+    // TODO: how is push and pull addr used later?
+    // auto t = std::make_tuple(remote_addr, rkey, idx, msg_buf);
+    // if (is_push) {
+    //   push_addr_[key][recver] = t;
+    // } else {
+    //   pull_addr_[key][recver] = t;
+    // }
+  }
+
   void InitContext() {
     context_->Init();
     mem_allocator_.reset(new FabricMemoryAllocator());
@@ -828,6 +856,12 @@ class FabricVan : public Van {
       default:
         CHECK(0);
     }
+  }
+
+  Message* GetFirstMsg(MessageBuffer *msg_buf) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
+    return &msgbuf_cache_[msg_buf];
   }
 
   void PollCQ() {
@@ -855,73 +889,76 @@ class FabricVan : public Van {
         check_err(ret, "fi_cq_read failed");
       } else {
         CHECK_NE(ret, 0) << "at least one completion event is expected";
+        PS_VLOG(2) << ret << " completions ... ";
         for (int i = 0; i < ret; ++i) {
           uint64_t flags = cq_entries[i].flags;
-          // op_context is the local context
-          FabricWRContext *context = static_cast<FabricWRContext *>(cq_entries[i].op_context);
-          FabricEndpoint *endpoint = static_cast<FabricEndpoint *>(context->private_data);
-          CHECK_NE(endpoint, nullptr) << "FabricEndpoint should not be null";
           bool is_tagged = flags & FI_TAGGED;
           bool is_send = flags & FI_SEND;
           bool is_recv = flags & FI_RECV;
           if (is_tagged) {
             uint64_t tag = cq_entries[i].tag;
             if (is_send) {
-              PS_VLOG(2) << "DONE FI_SEND tagged";
+              PS_VLOG(2) << "DONE FI_SEND tagged: " << tag;
+
             } else if (is_recv) {
-              PS_VLOG(2) << "DONE FI_RECV tagged";
+              // the tag is the address of the buffer context posted for recving
+              BufferContext *buf_ctx = addr_pool_.GetAddress(tag);
+              recv_buffers_.Push(buf_ctx);
+              buf_ctx->endpoint->PostRecvTagged(buf_ctx->buffer, tag,
+                                                buf_ctx->buf_size);
+              PS_VLOG(2) << "DONE FI_RECV tagged: " << tag;
+
             } else {
               LOG(FATAL) << "unknown completion entry" << flags;
             }
           } else {
+
+            // op_context is the local context
+            FabricWRContext *context = static_cast<FabricWRContext *>(cq_entries[i].op_context);
+            FabricEndpoint *endpoint = static_cast<FabricEndpoint *>(context->private_data);
+            CHECK_NE(endpoint, nullptr) << "FabricEndpoint should not be null";
             // Rendezvous messages
-            // TODO haibin why the buffer content is incorrect?
-            RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffer);
             CHECK_EQ(context->buffer, cq_entries[i].buf) << "buffer address does not match";
-            PS_VLOG(2) << "req->type = " << req->type << " context = " << context;
+            RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffer);
             bool rendezvous_start = req->type == 0;
             if (is_send) {
               PS_VLOG(2) << "DONE FI_SEND " << RendezvousDebugStr(*req);
               ReleaseWRContext(context, endpoint);
             } else if (is_recv) {
-
               if (rendezvous_start) {
                 // kRendezvousStart
                 auto trans = CHECK_NOTNULL(endpoint->GetTransport());
 
                 PS_VLOG(2) << "DONE FI_RECV " << RendezvousDebugStr(*req);
                 trans->SendRendezvousReply(req, addr_pool_);
-                // ReleaseWRContext(context, endpoint);
+                ReleaseWRContext(context, endpoint);
               } else {
                 // kRendezvousReply
+                uint64_t origin_addr = req->origin_addr;
+                uint32_t idx = req->idx;
 
-                // RendezvousMsg *resp =
-                //     reinterpret_cast<RendezvousMsg*>(mr->addr);
-                // uint64_t remote_addr = resp->addr;
-                // uint64_t origin_addr = resp->origin_addr;
-                // uint32_t rkey = resp->rkey;
-                // uint32_t idx = resp->idx;
+                MessageBuffer *msg_buf =
+                    reinterpret_cast<MessageBuffer *>(origin_addr);
 
-                // MessageBuffer *msg_buf =
-                //     reinterpret_cast<MessageBuffer *>(origin_addr);
+                // Before RDMA write, store the remote info so that
+                // subsequent write does not need repeated rendezvous
+                // TODO: how to use the cached value?
+                // no need for "remote_addr"? We may need to cache which endpoint it is
+                // StoreRemoteAndLocalInfo(msg_buf, remote_addr, idx);
 
-                // // Before RDMA write, store the remote info so that
-                // // subsequent write does not need repeated rendezvous
-                // StoreRemoteAndLocalInfo(msg_buf, remote_addr, rkey, idx);
-
-                // Message *msg = GetFirstMsg(msg_buf);
+                Message *msg = GetFirstMsg(msg_buf);
 
                 // auto addr_tuple = GetRemoteAndLocalInfo(msg->meta.key, msg->meta.push, msg->meta.recver);
 
                 // PrintSendLog(*msg, msg_buf, addr_tuple);
 
-                // auto trans = CHECK_NOTNULL(endpoint->GetTransport());
-                // if (!IsValidPushpull(*msg)) {
-                //   // control message
-                //   // trans->RDMAWriteWithImm(msg_buf, remote_addr, rkey, idx);
-                // } else {
-                //   LOG(FATAL) << "NOT IMPLEMENTED";
-                // }
+                auto trans = CHECK_NOTNULL(endpoint->GetTransport());
+                if (!IsValidPushpull(*msg)) {
+                  // control message
+                  trans->TaggedSend(msg_buf, idx);
+                } else {
+                  LOG(FATAL) << "NOT IMPLEMENTED";
+                }
 
                 // release the msg_buf from msgbuf_cache_
                 // ReleaseFirstMsg(msg_buf);
@@ -1059,6 +1096,7 @@ class FabricVan : public Van {
   }
 
 
+  // TODO: a shared address pool may not have sufficient address
   AddressPool<BufferContext> addr_pool_;
   std::unique_ptr<FabricMemoryAllocator> mem_allocator_;
 
@@ -1079,7 +1117,7 @@ class FabricVan : public Van {
   std::unique_ptr<std::thread> event_polling_thread_;
 
   // Recv buffer queue
-  ThreadsafeQueue<std::tuple<FabricEndpoint *, BufferContext *>> recv_buffers_;
+  ThreadsafeQueue<BufferContext *> recv_buffers_;
 
   // JYM: the following are for push/pull Fabricbuffer reuse
 

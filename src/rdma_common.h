@@ -23,6 +23,7 @@
 namespace ps {
 
 static const int kMaxDataFields = 4;
+static const int kMaxAddressEntries = 10240;
 
 template <typename T>
 static inline T align_floor(T v, T align) {
@@ -57,13 +58,6 @@ static inline void aligned_malloc(void** ptr, size_t size) {
   memset(p, 0, size);
   *ptr = p;
 }
-
-struct BufferContext {
-  char *buffer;
-  size_t meta_len;
-  size_t data_num;
-  size_t data_len[kMaxDataFields];
-};
 
 
 bool IsValidPushpull(const Message &msg) {
@@ -118,7 +112,7 @@ class AddressPool {
   }
 
  private:
-  int kMaxEntries = 10240;
+  int kMaxEntries = kMaxAddressEntries;
 
   std::mutex mu_;
   std::queue<uint32_t> indices_;

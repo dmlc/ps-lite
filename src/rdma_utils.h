@@ -156,6 +156,13 @@ struct RendezvousReply {
   uint32_t idx;
 };
 
+struct BufferContext {
+  char *buffer;
+  size_t meta_len;
+  size_t data_num;
+  size_t data_len[kMaxDataFields];
+};
+
 typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>>
     MRPtr;
 
