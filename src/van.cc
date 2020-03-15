@@ -230,7 +230,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
     const auto &node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
       if (getenv("DMLC_RANK") == nullptr || my_node_.id == Meta::kEmpty) {
-        my_node_ = node;
+        SetNode(node);
         std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
         _putenv_s("DMLC_RANK", rank.c_str());
@@ -358,7 +358,7 @@ void Van::Start(int customer_id, bool standalone) {
 
     // get my node info
     if (is_scheduler_) {
-      my_node_ = scheduler_;
+      SetNode(scheduler_);
     } else {
       auto role = Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER;
       const char *nhost = Environment::Get()->find("DMLC_NODE_HOST");
@@ -380,13 +380,16 @@ void Van::Start(int customer_id, bool standalone) {
       if (pstr) port = atoi(pstr);
       CHECK(!ip.empty()) << "failed to get ip";
       CHECK(port) << "failed to get a port";
-      my_node_.hostname = ip;
-      my_node_.role = role;
-      my_node_.port = port;
+      Node node = my_node_;
+
+      node.hostname = ip;
+      node.role = role;
+      node.port = port;
       // cannot determine my id now, the scheduler will assign it later
       // set it explicitly to make re-register within a same process possible
-      my_node_.id = Node::kEmpty;
-      my_node_.customer_id = customer_id;
+      node.id = Node::kEmpty;
+      node.customer_id = customer_id;
+      SetNode(node);
     }
 
     // bind.

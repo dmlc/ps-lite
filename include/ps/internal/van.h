@@ -104,7 +104,7 @@ class Van {
    */
   virtual int SendMsg(Message &msg) = 0;
 
-  inline void SetNode(const Node& node) {
+  virtual void SetNode(const Node& node) {
     my_node_ = node;
   }
 

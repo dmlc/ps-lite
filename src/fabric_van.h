@@ -591,7 +591,6 @@ class FabricVan : public Van {
     event_polling_thread_.reset(new std::thread(&FabricVan::PollEvents, this));
 
     // update zmq node info
-    zmq_->SetNode(my_node_);
     return my_port;
   }
 
@@ -599,9 +598,11 @@ class FabricVan : public Van {
     CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
-    PS_VLOG(3) << "Connect: " << node.DebugString();
+    PS_VLOG(1) << "Connect: " << node.DebugString() << " from " << my_node_.DebugString();
     // worker doesn't need to connect to the other workers. same for server
-    if ((node.role == my_node_.role)) {
+    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
+      PS_VLOG(1) << "Fabric skipped connection to node " << node.DebugString()
+                 << ". My node is " << my_node_.DebugString();
       return;
     }
     const std::string remote_hostport = host_port(node.hostname, node.port);
@@ -831,6 +832,11 @@ class FabricVan : public Van {
     return total_len;
   }
 
+  inline void SetNode(const Node& node) {
+    my_node_ = node;
+    zmq_->SetNode(node);
+  }
+
  private:
   void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, uint64_t remote_addr, uint32_t idx) {
     std::lock_guard<std::mutex> lk(addr_mu_);
@@ -1031,7 +1037,7 @@ class FabricVan : public Van {
     const int sender_id = addr_info.aux_id;
     const std::string hostport = host_port(addr_info.hostname, addr_info.port);
 
-    PS_VLOG(2) << "handling connected reply" << addr_info.DebugString();
+    PS_VLOG(3) << "handling connected reply" << addr_info.DebugString();
     // retrieve and init endpoint
     FabricEndpoint *endpoint = endpoints_[sender_id].get();
     CHECK(endpoint) << "Endpoint not found.";
@@ -1073,10 +1079,6 @@ class FabricVan : public Van {
         conn_node.id = sender_id;
         conn_node.hostname = req_info.hostname;
         conn_node.port = req_info.port;
-        // XXX: make sure the node differs such that connection is not skipped
-        if (my_node_.role == Node::SCHEDULER) conn_node.role = Node::WORKER;
-        else conn_node.role = Node::SCHEDULER;
-        PS_VLOG(3) << "connect to unseen node " << req_hostport << " with id = " << sender_id;
         zmq_->Connect(conn_node);
         hostport_id_map_[req_hostport] = sender_id;
       }
