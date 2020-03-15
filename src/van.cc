@@ -485,7 +485,7 @@ int Van::Send(Message &msg) {
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
   if (Postoffice::Get()->verbose() >= 2) {
-    PS_VLOG(2) << msg.DebugString();
+    PS_VLOG(2) << this->GetType() << "\tsent: " << msg.DebugString();
   }
   return send_bytes;
 }
@@ -510,7 +510,7 @@ void Van::Receiving() {
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
     if (Postoffice::Get()->verbose() >= 2) {
-      PS_VLOG(2) << msg.DebugString();
+      PS_VLOG(2) << this->GetType() << "\treceived: " << msg.DebugString();
     }
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;

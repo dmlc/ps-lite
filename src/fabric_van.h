@@ -520,6 +520,11 @@ class FabricVan : public Van {
   FabricVan() {}
   ~FabricVan() {}
 
+  virtual std::string GetType() const {
+    return std::string("fabric");
+  }
+
+
  protected:
   void Start(int customer_id, bool standalone) override {
     start_mu_.lock();

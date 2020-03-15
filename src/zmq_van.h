@@ -45,6 +45,10 @@ class ZMQVan : public Van {
   ZMQVan() {}
   virtual ~ZMQVan() {}
 
+  virtual std::string GetType() const {
+    return std::string("zeromq");
+  }
+
  public:
   void Start(int customer_id, bool standalone) {
     // start zmq

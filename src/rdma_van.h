@@ -30,6 +30,10 @@ class RDMAVan : public Van {
   }
   ~RDMAVan() {}
 
+  virtual std::string GetType() const {
+    return std::string("rdma");
+  }
+
  protected:  
   void Start(int customer_id) override {
     start_mu_.lock();

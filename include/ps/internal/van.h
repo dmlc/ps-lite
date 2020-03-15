@@ -108,6 +108,8 @@ class Van {
     my_node_ = node;
   }
 
+  virtual std::string GetType() const = 0;
+
  protected:
 
   /**
