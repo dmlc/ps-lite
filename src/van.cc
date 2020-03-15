@@ -420,10 +420,6 @@ void Van::Start(int customer_id, bool standalone) {
     msg.meta.timestamp = timestamp_++;
     Send(msg);
   }
-  if (GetEnv("DMLC_EFA_DEBUG", 0)) {
-    LOG(INFO) << "ABOUT TO SPIN";
-    while (true) ;
-  }
 
   // wait until ready
   while (!ready_.load()) {

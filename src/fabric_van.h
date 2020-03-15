@@ -330,7 +330,7 @@ struct FabricEndpoint {
     FabricAddr readable_addr;
     fi_av_straddr(av, ep_name, readable_addr.name, &readable_addr.len);
     readable_peer_addr = std::string(readable_addr.name, readable_addr.len);
-    PS_VLOG(1) << "Peer endpoint connected: " << readable_peer_addr;
+    PS_VLOG(3) << "Peer endpoint connected: " << readable_peer_addr;
 
     endpoint = ep;
 
@@ -365,7 +365,7 @@ struct FabricEndpoint {
       }
       break;
     }
-    PS_VLOG(2) << "Posted recv buffer for " << readable_peer_addr
+    PS_VLOG(3) << "Posted recv buffer for " << readable_peer_addr
                << ". context = " << ctx;
   }
 
@@ -381,7 +381,7 @@ struct FabricEndpoint {
       }
       break;
     }
-    PS_VLOG(2) << "Posted tagged recv buffer " << buffer << " for " << readable_peer_addr
+    PS_VLOG(3) << "Posted tagged recv buffer " << buffer << " for " << readable_peer_addr
                << ". size = " << size;
   }
 
@@ -437,7 +437,7 @@ class FabricTransport {
         break;
       }
     }
-    PS_VLOG(2) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
+    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
   }
 
   void TaggedSend(MessageBuffer* msg_buf, uint32_t idx) {
@@ -452,7 +452,7 @@ class FabricTransport {
         break;
       }
     }
-    PS_VLOG(2) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
+    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
   }
 
   void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) {
@@ -468,7 +468,7 @@ class FabricTransport {
     for (size_t i = 0; i < req->data_num; ++i) {
       req->data_len[i] = msg.data[i].size();
     }
-    PS_VLOG(2) << "SendRendezvousBegin " << RendezvousDebugStr(*req);
+    PS_VLOG(3) << "SendRendezvousBegin " << RendezvousDebugStr(*req);
     Send(context);
   }
 
@@ -503,7 +503,7 @@ class FabricTransport {
 
     endpoint_->PostRecvTagged(buffer, resp->idx, alloc_size);
 
-    LOG(INFO) << "SendRendezvousReply " << RendezvousDebugStr(*resp);
+    PS_VLOG(3) << "SendRendezvousReply " << RendezvousDebugStr(*resp);
     Send(reply_ctx);
   }
 
@@ -599,7 +599,7 @@ class FabricVan : public Van {
     CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
-    PS_VLOG(1) << "Connect: " << node.DebugString();
+    PS_VLOG(3) << "Connect: " << node.DebugString();
     // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role)) {
       return;
@@ -685,13 +685,24 @@ class FabricVan : public Van {
     return msg_buf;
   }
 
+  std::string AvailableEndpoints() {
+    std::stringstream ss;
+    ss << "{";
+    for (auto it = endpoints_.begin(); it != endpoints_.end(); it++) {
+      ss << std::to_string(it->first) << ",";
+    }
+    ss << "}";
+    return ss.str();
+
+  }
+
   int SendMsg(Message &msg) override {
-    PS_VLOG(2) << "SendMsg: " << msg.DebugString();
     int remote_id = msg.meta.recver;
+    PS_VLOG(3) << "SendMsg: " << msg.DebugString() << " to node " << remote_id;
     CHECK_NE(remote_id, Meta::kEmpty);
 
     endpoints_mu_.lock();
-    CHECK_NE(endpoints_.find(remote_id), endpoints_.end());
+    CHECK_NE(endpoints_.find(remote_id), endpoints_.end()) << AvailableEndpoints();
     FabricEndpoint *endpoint = endpoints_[remote_id].get();
     endpoints_mu_.unlock();
 
@@ -794,7 +805,7 @@ class FabricVan : public Van {
     // PrintRecvLog(msg, buffer_ctx, meta_len);
 
     if (!IsValidPushpull(*msg)) {
-      LOG(INFO) << "Recved " << total_len << " bytes";
+      // PS_VLOG(3) << "Recved " << total_len << " bytes";
       return total_len;
     }
     LOG(FATAL) << "NOT IMPLEMENTED";
@@ -880,7 +891,7 @@ class FabricVan : public Van {
       } else if (ret == -FI_EAVAIL) {
         ret = fi_cq_readerr(context_->cq, &err_entry, 1);
         if (ret == FI_EADDRNOTAVAIL) {
-          LOG(INFO) << "FI_EADDRNOTAVAIL";
+          LOG(WARNING) << "FI_EADDRNOTAVAIL";
         } else if (ret < 0) {
           LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret
                      << ". ERROR: "
@@ -894,7 +905,7 @@ class FabricVan : public Van {
         check_err(ret, "fi_cq_read failed");
       } else {
         CHECK_NE(ret, 0) << "at least one completion event is expected";
-        PS_VLOG(2) << ret << " completion events ... ";
+        if (enable_rdma_log_) PS_VLOG(3) << ret << " completion events ... ";
         for (int i = 0; i < ret; ++i) {
           uint64_t flags = cq_entries[i].flags;
           bool is_tagged = flags & FI_TAGGED;
@@ -903,7 +914,7 @@ class FabricVan : public Van {
           if (is_tagged) {
             uint64_t tag = cq_entries[i].tag;
             if (is_send) {
-              PS_VLOG(2) << "DONE FI_SEND tagged: " << tag;
+              if (enable_rdma_log_) PS_VLOG(3) << "DONE FI_SEND tagged: " << tag;
 
             } else if (is_recv) {
               // the tag is the address of the buffer context posted for recving
@@ -911,7 +922,7 @@ class FabricVan : public Van {
               recv_buffers_.Push(buf_ctx);
               buf_ctx->endpoint->PostRecvTagged(buf_ctx->buffer, tag,
                                                 buf_ctx->buf_size);
-              PS_VLOG(2) << "DONE FI_RECV tagged: " << tag;
+              if (enable_rdma_log_) PS_VLOG(3) << "DONE FI_RECV tagged: " << tag;
 
             } else {
               LOG(FATAL) << "unknown completion entry" << flags;
@@ -927,14 +938,14 @@ class FabricVan : public Van {
             RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffer);
             bool rendezvous_start = req->type == 0;
             if (is_send) {
-              PS_VLOG(2) << "DONE FI_SEND " << RendezvousDebugStr(*req);
+              if (enable_rdma_log_) PS_VLOG(3) << "DONE FI_SEND " << RendezvousDebugStr(*req);
               ReleaseWRContext(context, endpoint);
             } else if (is_recv) {
               if (rendezvous_start) {
                 // kRendezvousStart
                 auto trans = CHECK_NOTNULL(endpoint->GetTransport());
 
-                PS_VLOG(2) << "DONE FI_RECV " << RendezvousDebugStr(*req);
+                if (enable_rdma_log_) PS_VLOG(3) << "DONE FI_RECV " << RendezvousDebugStr(*req);
                 trans->SendRendezvousReply(req, addr_pool_);
                 ReleaseWRContext(context, endpoint);
               } else {
@@ -968,7 +979,7 @@ class FabricVan : public Van {
                 // release the msg_buf from msgbuf_cache_
                 // ReleaseFirstMsg(msg_buf);
 
-                PS_VLOG(2) << "DONE FI_RECV kRendezvousReply";
+                if (enable_rdma_log_) PS_VLOG(3) << "DONE FI_RECV kRendezvousReply";
                 ReleaseWRContext(context, endpoint);
               }
             } else {
@@ -987,7 +998,7 @@ class FabricVan : public Van {
       int recv_bytes = zmq_->RecvMsg(&msg);
       // For debug, drop received message
       CHECK_NE(recv_bytes, -1) << "unexpected message size " << recv_bytes;
-      PS_VLOG(2) << "received ZMQ message " << msg.DebugString();
+      PS_VLOG(3) << "received ZMQ message " << msg.DebugString();
       CHECK(!msg.meta.control.empty()) << "msg.meta.control is empty";
       auto &ctrl = msg.meta.control;
       if (ctrl.cmd == Control::ADDR_REQUEST) {
@@ -1050,7 +1061,7 @@ class FabricVan : public Van {
 
     int sender_id;
     const std::string req_hostport = host_port(req_info.hostname, req_info.port);
-    PS_VLOG(2) << "handling connection request " << req_info.DebugString() << ". " << req_hostport;
+    PS_VLOG(3) << "handling connection request " << req_info.DebugString() << ". " << req_hostport;
     {
       std::lock_guard<std::mutex> lk(mu_);
       // not connected before
@@ -1065,7 +1076,7 @@ class FabricVan : public Van {
         // XXX: make sure the node differs such that connection is not skipped
         if (my_node_.role == Node::SCHEDULER) conn_node.role = Node::WORKER;
         else conn_node.role = Node::SCHEDULER;
-        PS_VLOG(1) << "connect to unseen node " << req_hostport << " with id = " << sender_id;
+        PS_VLOG(3) << "connect to unseen node " << req_hostport << " with id = " << sender_id;
         zmq_->Connect(conn_node);
         hostport_id_map_[req_hostport] = sender_id;
       }
