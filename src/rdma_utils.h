@@ -62,12 +62,17 @@ static const int kMaxConcurrentWorkRequest =
     kRxDepth + kStartDepth + kReplyDepth;
 static const int kMaxHostnameLength = 16;
 
-static const int kMaxResolveRetry = 50000;
-static const int kBasePort = 9010;
-
 // should have the same prefix with BytePS shared memory
 static const std::string kShmPrefix("BytePS_ShM_");
 static const std::string kShmPciePrefix("BytePS_Pcie");
+
+enum WRContextType {
+  kRendezvousStartContext,
+  kRendezvousReplyContext,
+  kWriteContext,
+  kReceiveContext
+};
+
 
 class MemoryAllocator {
  public:

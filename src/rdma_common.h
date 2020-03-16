@@ -36,13 +36,6 @@ static inline T align_ceil(T v, T align) {
 }
 
 
-enum WRContextType {
-  kRendezvousStartContext,
-  kRendezvousReplyContext,
-  kWriteContext,
-  kReceiveContext
-};
-
 enum MessageTypes : uint32_t {
   kRendezvousStart,
   kRendezvousReply,
