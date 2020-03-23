@@ -424,9 +424,6 @@ class ZMQVan : public Van {
   std::vector<std::thread*> thread_list_;
   bool standalone_;
 
-  // hostname:port -> id mapping
-  std::unordered_map<std::string, int> hostport_id_map_;
-
 };
 }  // namespace ps
 

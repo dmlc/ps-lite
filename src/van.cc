@@ -416,8 +416,6 @@ void Van::Start(int customer_id, bool standalone) {
     Node customer_specific_node = my_node_;
     customer_specific_node.customer_id = customer_id;
     msg.meta.recver = kScheduler;
-    // Add node commands calls Van::ProcessAddNodeCommand()
-    // this sets Node ID
     msg.meta.control.cmd = Control::ADD_NODE;
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;
@@ -519,19 +517,20 @@ void Van::Receiving() {
       // control msg
       auto &ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
+        LOG(INFO) << "Process TERMINATE";
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
-        LOG(INFO) << "Process ADD_NODE";
+        VLOG(2) << "Process ADD_NODE";
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
-        LOG(INFO) << "Process BARRIER";
+        VLOG(2) << "Process BARRIER";
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        LOG(INFO) << "Process HEARTBEAT";
+        VLOG(2) << "Process HEARTBEAT";
         ProcessHearbeat(&msg);
       } else {
-        LOG(INFO) << "Drop unknown typed message " << msg.DebugString();
+        LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
       }
     } else {
       ProcessDataMsg(&msg);

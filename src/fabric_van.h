@@ -73,11 +73,16 @@ struct FabricMemoryAllocator;
 struct FabricEndpoint;
 
 struct RendezvousMsg {
+  // length of the meta data
   uint64_t meta_len;
+  // msg.data.size()
   uint64_t data_num;
+  // msg.data[i].size()
   uint64_t data_len[kMaxDataFields];
-  uint64_t origin_addr; // the original address of the message buffer
-  uint64_t idx; // the tag for tsend / trecv
+ // the original address of the message buffer
+  uint64_t origin_addr;
+ // the tag for tsend / trecv
+  uint64_t idx;
 };
 
 std::string RendezvousDebugStr(const RendezvousMsg& msg) {
@@ -91,28 +96,43 @@ std::string RendezvousDebugStr(const RendezvousMsg& msg) {
 }
 
 struct BufferContext {
+  // the buffer (including meta and val)
   char *buffer;
+  // size of msg.meta
   size_t meta_len;
+  // msg.data.size()
   size_t data_num;
+  // msg.data[i].size()
   size_t data_len[kMaxDataFields];
+  // the remote endpoint
   FabricEndpoint *endpoint;
-  size_t buf_size;
 };
 
 enum WRContextType {
-  kRendezvousStartContext,
-  kRendezvousReplyContext,
-  kWriteContext,
-  kReadContext,
-  kReceiveContext
+  // send rendezvous start
+  kSendRendStart,
+  // send rendezvous reply
+  kSendRendReply,
+  // recv rendezvous msgs
+  kReceiveRend,
+  // send with data msg
+  kSendWithData,
+  // recv with data msg
+  kReceiveWithData
 };
 
 struct FabricWRContext {
+  // type of the WR context
   WRContextType type;
+  // the remote endpoint
   void *private_data = nullptr;
+  // tag / idx
   uint64_t tag;
-  struct iovec buf_vec[2];
-  size_t num_buf_vec;
+  // send/recv buffers:
+  // buffers[0] for meta, buffers[1] for data
+  struct iovec buffers[2];
+  // number of send/recv buffers
+  size_t num_buffers;
 };
 
 
@@ -121,10 +141,10 @@ std::string WRContextDebugStr(const FabricWRContext& ctx) {
   ss << "type = " << ctx.type
      << ", private_data = " << ctx.private_data
      << ", tag = " << ctx.tag
-     << ", num_buf_vec = " << ctx.num_buf_vec;
-  for (size_t i = 0; i < ctx.num_buf_vec; i++) {
-     ss << ", buf_vec[" << i << "].iov_base = " << ctx.buf_vec[i].iov_base
-        << ", buf_vec[" << i << "].iov_len = " << ctx.buf_vec[i].iov_len;
+     << ", num_buffers = " << ctx.num_buffers;
+  for (size_t i = 0; i < ctx.num_buffers; i++) {
+     ss << ", buffers[" << i << "].iov_base = " << ctx.buffers[i].iov_base
+        << ", buffers[" << i << "].iov_len = " << ctx.buffers[i].iov_len;
   }
   return ss.str();
 }
@@ -133,38 +153,32 @@ std::string host_port(const std::string& host, const int port) {
   return host + ":" + std::to_string(port);
 }
 
-void PrepareContext(FabricWRContext* context, void *meta_ptr, size_t meta_size,
-                    void *data_ptr, size_t data_size) {
-  context->buf_vec[0].iov_base = meta_ptr;
-  context->buf_vec[0].iov_len = meta_size;
+void PrepareWRContext(FabricWRContext* context, void *meta_buff, size_t meta_size,
+                      void *data_buff, size_t data_size) {
+  context->buffers[0].iov_base = meta_buff;
+  context->buffers[0].iov_len = meta_size;
   if (data_size != 0) {
-    context->num_buf_vec = 2;
-    context->buf_vec[1].iov_base = data_ptr;
-    context->buf_vec[1].iov_len = data_size;
+    context->num_buffers = 2;
+    context->buffers[1].iov_base = data_buff;
+    context->buffers[1].iov_len = data_size;
   } else {
-    context->num_buf_vec = 1;
+    context->num_buffers = 1;
   }
 }
 
-
 struct MessageBuffer {
+  // inline meta data size
   size_t inline_len;
+  // inline meta data
   char *inline_buf;
+  // WR context
   FabricWRContext *reserved_context;
+  // msg.data
   std::vector<SArray<char>> data;
-  // std::vector<std::pair<MRPtr, size_t>> mrs;
-};
-
-struct RequestContext {
-  uint32_t node;
-  uint16_t port;
-  char hostname[kMaxHostnameLength];
 };
 
 static_assert(std::is_pod<RendezvousMsg>::value,
               "RendezvousMsg must be a POD type.");
-static_assert(std::is_pod<RequestContext>::value,
-              "RequestContext must be a POD type.");
 
 static const size_t kMempoolChunkSize = sizeof(RendezvousMsg);
 
@@ -178,7 +192,6 @@ class FabricMemoryAllocator {
     if (size == 0) {
       return nullptr;
     }
-    // TODO(haibin) 8KB?
     // align to page size (usually 4KB)
     size = align_ceil(size, pagesize_);
 
@@ -192,6 +205,7 @@ class FabricMemoryAllocator {
   }
 
   std::mutex mu_;
+  // TODO(haibin) 8KB for EFA?
   size_t pagesize_ = sysconf(_SC_PAGESIZE);
   std::unordered_map<char *, size_t> used_list;
 };
@@ -396,13 +410,13 @@ struct FabricEndpoint {
     InitEndpoint(ep_name, av, ep, hp);
     // set contexts
     InitSendContext(start_tx_ctx, &free_start_ctx, kStartDepth,
-                    kRendezvousStartContext, kRendezvousStartMask);
+                    kSendRendStart, kRendezvousStartMask);
     InitSendContext(reply_tx_ctx, &free_reply_ctx, kReplyDepth,
-                    kRendezvousReplyContext, kRendezvousReplyMask);
+                    kSendRendReply, kRendezvousReplyMask);
     InitRecvContext(start_rx_ctx, kRxDepth / 2,
-                    kReceiveContext, kRendezvousStartMask);
+                    kReceiveRend, kRendezvousStartMask);
     InitRecvContext(reply_rx_ctx, kRxDepth / 2,
-                    kReceiveContext, kRendezvousReplyMask);
+                    kReceiveRend, kRendezvousReplyMask);
     // set transport
     trans = std::make_shared<FabricTransport>(this, allocator);
     initialized = true;
@@ -411,8 +425,8 @@ struct FabricEndpoint {
 
   void PostRecv(FabricWRContext *ctx) {
     while (true) {
-      int ret = fi_trecvv(endpoint, ctx->buf_vec, nullptr,
-                          ctx->num_buf_vec, peer_addr, ctx->tag, 0, static_cast<void *>(ctx));
+      int ret = fi_trecvv(endpoint, ctx->buffers, nullptr, ctx->num_buffers,
+                          peer_addr, ctx->tag, 0, static_cast<void *>(ctx));
       if (ret == -FI_EAGAIN) {
         // no resources
         LOG(WARNING) << "fi_trecv: FI_EAGAIN";
@@ -422,8 +436,8 @@ struct FabricEndpoint {
       }
       break;
     }
-    PS_VLOG(3) << "Posted recv buffer " << ctx->buf_vec << " for "
-               << readable_peer_addr << ". size = " << ctx->num_buf_vec // size
+    PS_VLOG(4) << "Posted recv buffer " << ctx->buffers << " for "
+               << readable_peer_addr << ". size = " << ctx->num_buffers
                << " ctx = " << static_cast<void *>(ctx);
   }
 
@@ -436,8 +450,9 @@ struct FabricEndpoint {
 
       ctx[i].private_data = this;
       ctx[i].tag = tag;
-      PS_VLOG(4) << "InitRecvContext " << i << " / " << num;
-      PrepareContext(ctx + i, buf, kMempoolChunkSize, static_cast<char*>(buf) + kMempoolChunkSize, 0);
+      PS_VLOG(4) << "InitRecvContext " << i << "/" << num;
+      PrepareWRContext(ctx + i, buf, kMempoolChunkSize,
+                       static_cast<char*>(buf) + kMempoolChunkSize, 0);
       PostRecv(&ctx[i]);
     }
   }
@@ -452,7 +467,8 @@ struct FabricEndpoint {
 
       ctx[i].private_data = this;
       ctx[i].tag = tag;
-      PrepareContext(ctx + i, buf, kMempoolChunkSize, static_cast<char*>(buf) + kMempoolChunkSize, 0);
+      PrepareWRContext(ctx + i, buf, kMempoolChunkSize,
+                       static_cast<char*>(buf) + kMempoolChunkSize, 0);
       queue->Push(&ctx[i]);
     }
   }
@@ -476,13 +492,13 @@ class FabricTransport {
   };
 
   ~FabricTransport() {
-    PS_VLOG(2) << "~FabricTransport";
+    PS_VLOG(3) << "~FabricTransport";
   }
 
   void Send(FabricWRContext *context) {
     while (true) {
       CHECK_NE(context->private_data, nullptr) << "private data must not be nullptr";
-      int ret = fi_tsendv(endpoint_->endpoint, context->buf_vec, nullptr,
+      int ret = fi_tsendv(endpoint_->endpoint, context->buffers, nullptr,
                           2, endpoint_->peer_addr, context->tag, context);
       if (ret == -FI_EAGAIN) {
         LOG(WARNING) << "fi_tsend: FI_EAGAIN";
@@ -500,7 +516,7 @@ class FabricTransport {
     endpoint_->free_start_ctx.WaitAndPop(&context);
 
     RendezvousMsg *req =
-        reinterpret_cast<RendezvousMsg *>(context->buf_vec[0].iov_base);
+        reinterpret_cast<RendezvousMsg *>(context->buffers[0].iov_base);
     CHECK(req != nullptr);
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
@@ -530,7 +546,6 @@ class FabricTransport {
     // TODO: why including all data_len[i] instead of data_len[1] ?
     size_t data_size = data_len;
     size_t alloc_size = meta_size + data_size;
-    buf_ctx->buf_size = alloc_size;
     char *buffer = allocator_->Alloc(alloc_size);
     CHECK(buffer);
     buf_ctx->buffer = buffer;
@@ -539,7 +554,7 @@ class FabricTransport {
     endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx);
 
     RendezvousMsg *resp =
-        reinterpret_cast<RendezvousMsg *>(reply_ctx->buf_vec[0].iov_base);
+        reinterpret_cast<RendezvousMsg *>(reply_ctx->buffers[0].iov_base);
 
     resp->origin_addr = req->origin_addr;
     resp->idx = addrpool.StoreAddress(buf_ctx);
@@ -548,11 +563,11 @@ class FabricTransport {
 
     endpoint_->data_rx_ctx.emplace(resp->idx, new FabricWRContext());
     FabricWRContext* recv_ctx = endpoint_->data_rx_ctx[resp->idx].get();
-    recv_ctx->type = kReadContext;
+    recv_ctx->type = kReceiveWithData;
     CHECK_NE(endpoint_, nullptr) << "endpoint must be initialized";
     recv_ctx->tag = resp->idx;
     recv_ctx->private_data = endpoint_;
-    PrepareContext(recv_ctx, buffer, meta_size, buffer + meta_size, data_size);
+    PrepareWRContext(recv_ctx, buffer, meta_size, buffer + meta_size, data_size);
     endpoint_->PostRecv(recv_ctx);
     PS_VLOG(3) << "SendRendezvousReply " << RendezvousDebugStr(*resp);
     Send(reply_ctx);
@@ -603,15 +618,12 @@ class FabricTransport {
     char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
     vals.reset(cur, len, [](void *) {});  // no need to delete
 
-    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
-    CHECK(msg->meta.val_len == len) << "Length does not match";
+    SArray<char> lens = CreateFunctionalSarray(&len, sizeof(uint32_t));
 
     msg->data.push_back(keys);
     msg->data.push_back(vals);
     msg->data.push_back(lens);
 
-    LOG(INFO) << "RecvPushRequest: len = " << len << " vals.size() = " << vals.size()
-              << " msg->data[1].size() = " << msg->data[1].size() << " val_len = " << msg->meta.val_len;
     return keys.size() + vals.size() + lens.size();
   }
 
@@ -623,7 +635,7 @@ class FabricTransport {
     char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
     vals.reset(cur, len, [](void *) {});  // no need to delete
 
-    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
+    SArray<char> lens = CreateFunctionalSarray(&len, sizeof(int));
 
     msg->data.push_back(keys);
     msg->data.push_back(vals);
@@ -699,10 +711,8 @@ class FabricVan : public Van {
       std::lock_guard<std::mutex> lk(endpoints_mu_);
       endpoints_.clear();
     }
-
-//    PS_VLOG(1) << "Destroying cq and pd.";
-//    CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
-//    TODO destructor for FabricContext
+    PS_VLOG(1) << "Clearing fabric context.";
+    context_.reset();
   }
 
   int Bind(const Node &node, int max_retry) override {
@@ -710,10 +720,8 @@ class FabricVan : public Van {
     InitContext();
 
     int my_port = zmq_->Bind(node, max_retry);
-    PS_VLOG(1) << "Done zmq->Bind. My port is " << my_port;
+    PS_VLOG(3) << "Done zmq->Bind. My port is " << my_port;
     event_polling_thread_.reset(new std::thread(&FabricVan::PollEvents, this));
-
-    // update zmq node info
     return my_port;
   }
 
@@ -721,10 +729,11 @@ class FabricVan : public Van {
     CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
-    PS_VLOG(1) << "Connect: " << node.DebugString() << " from " << my_node_.DebugString();
+
+    PS_VLOG(3) << "Connect: " << node.DebugString() << " from " << my_node_.DebugString();
     // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
-      PS_VLOG(1) << "Fabric skipped connection to node " << node.DebugString()
+      PS_VLOG(3) << "Fabric skipped connection to node " << node.DebugString()
                  << ". My node is " << my_node_.DebugString();
       return;
     }
@@ -782,61 +791,6 @@ class FabricVan : public Van {
         if (endpoint->status == FabricEndpoint::CONNECTED) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
-    }
-  }
-
-
-  void StoreMsgBuf(MessageBuffer *msg_buf, Message& msg) {
-    std::lock_guard<std::mutex> lk(addr_mu_);
-    CHECK_EQ(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
-    msgbuf_cache_[msg_buf] = msg;
-  }
-
-  MessageBuffer* PrepareNewMsgBuf(Message& msg, FabricEndpoint *endpoint) {
-    MessageBuffer *msg_buf = new MessageBuffer();
-    auto meta_len = GetPackMetaLen(msg.meta);
-    msg_buf->inline_len = meta_len;
-    msg_buf->inline_buf = mem_allocator_->Alloc(meta_len);
-    msg_buf->data = msg.data;
-    PackMeta(msg.meta, &(msg_buf->inline_buf), &meta_len);
-    // prepare send context
-    FabricWRContext* ctx = new FabricWRContext();
-    ctx->type = kWriteContext;
-    ctx->private_data = endpoint;
-    CHECK_NE(endpoint, nullptr) << "endpoint must be initialized";
-    msg_buf->reserved_context = ctx;
-    void *data_ptr = nullptr;
-    size_t data_size = 0;
-    if (msg.data.size() != 0) {
-      // pull response / push request : size = 3
-      // push response / pull request : size = 2
-      CHECK_GE(msg.data.size(), 2) << "Unexpected number of data: " << msg.data.size();
-      data_ptr = static_cast<char*>(msg.data[1].data());
-      data_size = msg.data[1].size();
-    }
-    PrepareContext(ctx, msg_buf->inline_buf, msg_buf->inline_len, data_ptr, data_size);
-    return msg_buf;
-  }
-
-  std::string EndpointsDebugStr() const {
-    std::stringstream ss;
-    ss << "{";
-    for (auto it = endpoints_.begin(); it != endpoints_.end(); it++) {
-      ss << std::to_string(it->first) << ",";
-    }
-    ss << "}";
-    return ss.str();
-  }
-
-  void AddMeta(Message &msg) {
-    if (msg.meta.request) {
-      msg.meta.key = DecodeKey(msg.data[0]);
-    }
-    if (msg.meta.push && msg.meta.request) {
-      // push request
-      CHECK_EQ(msg.data.size(), 3) << msg.data.size();
-      auto& vals = msg.data[1];
-      msg.meta.val_len = vals.size();
     }
   }
 
@@ -973,6 +927,22 @@ class FabricVan : public Van {
     return total_len;
   }
 
+  inline void SetNode(const Node& node) {
+    my_node_ = node;
+    zmq_->SetNode(node);
+  }
+
+ private:
+  std::string EndpointsDebugStr() const {
+    std::stringstream ss;
+    ss << "{";
+    for (auto it = endpoints_.begin(); it != endpoints_.end(); it++) {
+      ss << std::to_string(it->first) << ",";
+    }
+    ss << "}";
+    return ss.str();
+  }
+
   void PrintRecvLog(Message *msg, BufferContext *buffer_ctx, int meta_len) {
     std::lock_guard<std::mutex> lock(log_mu_);
 
@@ -1006,30 +976,61 @@ class FabricVan : public Van {
     }
   }
 
-  inline void SetNode(const Node& node) {
-    my_node_ = node;
-    zmq_->SetNode(node);
+  void StoreMsgBuf(MessageBuffer *msg_buf, Message& msg) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+    CHECK_EQ(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
+    PS_VLOG(3) << "Store msg_buf " << msg_buf;
+    msgbuf_cache_[msg_buf] = msg;
   }
 
- private:
-  void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, uint64_t remote_addr, uint32_t idx) {
+  void ReleaseFirstMsg(MessageBuffer *msg_buf) {
     std::lock_guard<std::mutex> lk(addr_mu_);
-
     CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
+    PS_VLOG(3) << "Release msg_buf " << msg_buf;
+    msgbuf_cache_.erase(msg_buf);
+  }
 
-    auto& msg = msgbuf_cache_[msg_buf];
+  Message* GetFirstMsg(MessageBuffer *msg_buf) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end()) << "msg_buf = " << msg_buf;
+    return &msgbuf_cache_[msg_buf];
+  }
 
-    auto key = msg.meta.key;
-    auto is_push = msg.meta.push;
-    auto recver = msg.meta.recver;
+  MessageBuffer* PrepareNewMsgBuf(Message& msg, FabricEndpoint *endpoint) {
+    MessageBuffer *msg_buf = new MessageBuffer();
+    auto meta_len = GetPackMetaLen(msg.meta);
+    msg_buf->inline_len = meta_len;
+    msg_buf->inline_buf = mem_allocator_->Alloc(meta_len);
+    msg_buf->data = msg.data;
+    PackMeta(msg.meta, &(msg_buf->inline_buf), &meta_len);
+    // prepare send context
+    FabricWRContext* ctx = new FabricWRContext();
+    ctx->type = kSendWithData;
+    ctx->private_data = endpoint;
+    CHECK_NE(endpoint, nullptr) << "endpoint must be initialized";
+    msg_buf->reserved_context = ctx;
+    void *data_buff = nullptr;
+    size_t data_size = 0;
+    if (msg.data.size() != 0) {
+      // pull response / push request : size = 3
+      // push response / pull request : size = 2
+      CHECK_GE(msg.data.size(), 2) << "Unexpected number of data: " << msg.data.size();
+      data_buff = static_cast<char*>(msg.data[1].data());
+      data_size = msg.data[1].size();
+    }
+    PrepareWRContext(ctx, msg_buf->inline_buf, msg_buf->inline_len, data_buff, data_size);
+    return msg_buf;
+  }
 
-    // TODO: how is push and pull addr used later?
-    // auto t = std::make_tuple(remote_addr, rkey, idx, msg_buf);
-    // if (is_push) {
-    //   push_addr_[key][recver] = t;
-    // } else {
-    //   pull_addr_[key][recver] = t;
-    // }
+  void AddMeta(Message &msg) {
+    if (msg.meta.request) {
+      msg.meta.key = DecodeKey(msg.data[0]);
+      // push request
+      if (msg.meta.push) {
+        CHECK_EQ(msg.data.size(), 3) << msg.data.size();
+        msg.meta.val_len = msg.data[1].size();
+      }
+    }
   }
 
   void InitContext() {
@@ -1042,26 +1043,20 @@ class FabricVan : public Van {
 
   void ReleaseWRContext(FabricWRContext *context, FabricEndpoint *endpoint) {
     switch (context->type) {
-      case kRendezvousStartContext:
+      case kSendRendStart:
         endpoint->free_start_ctx.Push(context);
         break;
-      case kRendezvousReplyContext:
+      case kSendRendReply:
         endpoint->free_reply_ctx.Push(context);
         break;
-      //case kWriteContext:
-      case kReadContext:
-      case kReceiveContext:
+      //case kSendWithData: TODO: recycle
+      case kReceiveWithData:
+      case kReceiveRend:
         endpoint->PostRecv(context);
         break;
       default:
         CHECK(0);
     }
-  }
-
-  Message* GetFirstMsg(MessageBuffer *msg_buf) {
-    std::lock_guard<std::mutex> lk(addr_mu_);
-    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
-    return &msgbuf_cache_[msg_buf];
   }
 
   void HandleCQError(struct fid_cq *cq) {
@@ -1080,9 +1075,8 @@ class FabricVan : public Van {
     }
   }
 
-  std::string CQDebugStr(const struct fi_cq_tagged_entry& cq_entry) const {
+  std::string EntryDebugStr(const struct fi_cq_tagged_entry& cq_entry) const {
     uint64_t flags = cq_entry.flags;
-    bool is_tagged = flags & FI_TAGGED;
     bool is_send = flags & FI_SEND;
     bool is_recv = flags & FI_RECV;
     uint64_t tag = cq_entry.tag;
@@ -1100,13 +1094,6 @@ class FabricVan : public Van {
     return ss.str();
   }
 
-  void ReleaseFirstMsg(MessageBuffer *msg_buf) {
-    std::lock_guard<std::mutex> lk(addr_mu_);
-    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
-    msgbuf_cache_.erase(msg_buf);
-  }
-
-
   void HandleCompletionEvent(const struct fi_cq_tagged_entry& cq_entry) {
     uint64_t flags = cq_entry.flags;
     bool is_tagged = flags & FI_TAGGED;
@@ -1116,31 +1103,33 @@ class FabricVan : public Van {
     uint64_t tag = cq_entry.tag;
 
     // op_context is the local context
-    PS_VLOG(4) << CQDebugStr(cq_entry);
+    PS_VLOG(4) << EntryDebugStr(cq_entry);
     FabricWRContext *context = static_cast<FabricWRContext *>(cq_entry.op_context);
     CHECK_NE(context, nullptr) << "FabricWRContext should not be null: " << context;
     FabricEndpoint *endpoint = static_cast<FabricEndpoint *>(context->private_data);
     CHECK_NE(endpoint, nullptr) << "FabricEndpoint should not be null: "
                                 << endpoint << ". Context = " << context << " " << WRContextDebugStr(*context);
+
     // Rendezvous messages
-    CHECK_EQ(context->buf_vec[0].iov_base, cq_entry.buf) << "buffer address does not match";
-    bool start_msg = tag == kRendezvousStartMask;
-    bool reply_msg = tag == kRendezvousReplyMask;
+    CHECK_EQ(context->buffers[0].iov_base, cq_entry.buf) << "buffer address does not match";
+    bool start_msg = (tag == kRendezvousStartMask);
+    bool reply_msg = (tag == kRendezvousReplyMask);
     // TODO: proper masking
-    bool data_msg = not start_msg and not reply_msg;
+    bool data_msg = !start_msg && !reply_msg;
     if (is_send) {
       if (start_msg || reply_msg) {
         ReleaseWRContext(context, endpoint);
-        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buf_vec[0].iov_base);
+        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
         PS_VLOG(3) << "DONE FI_SEND " << RendezvousDebugStr(*req);
       } else {
+        // TODO: recycle
         PS_VLOG(3) << "DONE FI_SEND data";
       }
     } else if (is_recv) {
       // receive
       if (start_msg) {
         // kRendezvousStart
-        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buf_vec[0].iov_base);
+        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
         auto trans = CHECK_NOTNULL(endpoint->GetTransport());
     
         PS_VLOG(3) << "DONE FI_RECV " << RendezvousDebugStr(*req);
@@ -1150,32 +1139,21 @@ class FabricVan : public Van {
         // the tag is the address of the buffer context posted for recving
         BufferContext *buf_ctx = addr_pool_.GetAddress(tag);
         recv_buffers_.Push(buf_ctx);
-        buf_ctx->endpoint->PostRecv(context);
+        ReleaseWRContext(context, buf_ctx->endpoint);
         PS_VLOG(3) << "DONE FI_RECV tagged: " << tag;
       } else {
-        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buf_vec[0].iov_base);
+        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
 
         // kRendezvousReply
         uint64_t origin_addr = req->origin_addr;
-        // idx used to retrieve prepared context
-        uint32_t idx = req->idx;
-    
         MessageBuffer *msg_buf =
     	reinterpret_cast<MessageBuffer *>(origin_addr);
 
-        // Before RDMA write, store the remote info so that
-        // subsequent write does not need repeated rendezvous
-        // TODO: how to use the cached value?
-        // no need for "remote_addr"? We may need to cache which endpoint it is
-        // StoreRemoteAndLocalInfo(msg_buf, remote_addr, idx);
-
         Message *msg = GetFirstMsg(msg_buf);
-
-        // auto addr_tuple = GetRemoteAndLocalInfo(msg->meta.key, msg->meta.push, msg->meta.recver);
 
         // PrintSendLog(*msg, msg_buf, addr_tuple);
         FabricWRContext* send_context = msg_buf->reserved_context;
-        send_context->tag = idx;
+        send_context->tag = req->idx;
 
         auto trans = CHECK_NOTNULL(endpoint->GetTransport());
         if (!IsValidPushpull(*msg)) {
@@ -1192,11 +1170,6 @@ class FabricVan : public Van {
           trans->SendPullRequest(send_context);
         } else if (!msg->meta.push && !msg->meta.request) {
           // server, pull response
-          // map_mu_.lock();
-          // auto temp_mr = mem_mr_.find(msg_buf->data[1].data());
-          // CHECK_NE(temp_mr, mem_mr_.end());
-          // map_mu_.unlock();
-          // trans->SendPullResponse(*msg, msg_buf, addr_tuple, temp_mr->second->lkey);
           trans->SendPushResponse(send_context);
         } else {
           LOG(FATAL) << "unknown message type";
@@ -1239,7 +1212,6 @@ class FabricVan : public Van {
     while (!should_stop_) {
       Message msg;
       int recv_bytes = zmq_->RecvMsg(&msg);
-      // For debug, drop received message
       CHECK_NE(recv_bytes, -1) << "unexpected message size " << recv_bytes;
       PS_VLOG(3) << "zmq recv: " << msg.DebugString();
       CHECK(!msg.meta.control.empty()) << "msg.meta.control is empty";
@@ -1342,7 +1314,6 @@ class FabricVan : public Van {
 
   AddressPool<BufferContext> addr_pool_;
   std::unique_ptr<FabricMemoryAllocator> mem_allocator_;
-
   std::atomic<bool> should_stop_;
 
   std::mutex endpoints_mu_;
@@ -1350,11 +1321,6 @@ class FabricVan : public Van {
   std::unordered_map<int, std::unique_ptr<FabricEndpoint>> endpoints_;
   // host:port -> endpoint for incoming connections
   std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> incoming_;
-
-  //std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
-
-  // ibverbs protection domain
-  struct ibv_pd *pd_ = nullptr;
 
   // cq thread
   std::unique_ptr<std::thread> cq_polling_thread_;
@@ -1364,20 +1330,9 @@ class FabricVan : public Van {
   // Recv buffer queue
   ThreadsafeQueue<BufferContext *> recv_buffers_;
 
-  // JYM: the following are for push/pull Fabricbuffer reuse
-
   // whether my role is server or not
   bool is_server;
 
-  // macros for key_meta_map
-  using MetaInfo = std::tuple<int, uint64_t, int>; // len, addr, rkey
-  using SenderMeta = std::unordered_map<int, MetaInfo>; // sender as the key
-  // (key, sender) --> MetaInfo
-  std::unordered_map<ps::Key, SenderMeta> key_meta_map_;
-  // a static address for the key
-  std::unordered_map<ps::Key, ps::Key> key_addr_map_;
-  // a static address for the length
-  std::unordered_map<ps::Key, int> key_len_map_;
   // mutex for memory map
   std::mutex map_mu_;
 
@@ -1400,16 +1355,9 @@ class FabricVan : public Van {
   std::mutex mu_;
   bool is_worker_;
 
-  void* receiver_ = nullptr; // for incoming connect queries
-
   std::mutex addr_mu_;
-  // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
-  //std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
-  //std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
   std::unordered_map<MessageBuffer*, Message> msgbuf_cache_; // msg_buf, msg
 
-  // for data. But for libfabric, we change the type
-  std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
   std::mutex log_mu_;
 };  // namespace ps
 };  // namespace ps
