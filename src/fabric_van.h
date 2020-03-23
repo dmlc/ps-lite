@@ -71,7 +71,6 @@ class FabricTransport;
 struct FabricMemoryAllocator;
 struct FabricEndpoint;
 
-// TODO: make an union
 struct RendezvousMsg {
   uint64_t meta_len;
   uint64_t data_num;
@@ -110,10 +109,14 @@ enum WRContextType {
 struct FabricWRContext {
   WRContextType type;
   void *buffer = nullptr;
+  size_t size = 0;
   void *private_data = nullptr;
   uint64_t tag;
-  size_t size = 0;
+  struct iovec buf_vec[2];
+  size_t num_buf_vec;
+  bool use_vec = false;
 };
+
 
 std::string WRContextDebugStr(const FabricWRContext& ctx) {
   std::stringstream ss;
@@ -121,9 +124,42 @@ std::string WRContextDebugStr(const FabricWRContext& ctx) {
      << ", buffer = " << ctx.buffer
      << ", private_data = " << ctx.private_data
      << ", tag = " << ctx.tag
-     << ", size = " << ctx.size;
+     << ", size = " << ctx.size
+     << ", use_vec = " << ctx.use_vec;
+  if (ctx.use_vec) {
+    ss << ", buf_vec[0].iov_base = " << ctx.buf_vec[0].iov_base
+       << ", buf_vec[0].iov_len  = " << ctx.buf_vec[0].iov_len
+       << ", buf_vec[1].iov_base = " << ctx.buf_vec[1].iov_base
+       << ", buf_vec[1].iov_len = "  << ctx.buf_vec[1].iov_len;
+  }
   return ss.str();
 }
+
+std::string host_port(const std::string& host, const int port) {
+  return host + ":" + std::to_string(port);
+}
+
+void PrepareContext(FabricWRContext* context, void *meta_ptr, size_t meta_size,
+                    void *data_ptr, size_t data_size) {
+  auto use_vec = Environment::Get()->find("PS_MULTI_SEND");
+  if (data_size) CHECK(!use_vec) << "Must set PS_MULTI_SEND to enable multi-send/recv";
+  if (use_vec) {
+    context->use_vec = true;
+    context->buf_vec[0].iov_base = meta_ptr;
+    context->buf_vec[0].iov_len = meta_size;
+    if (data_size != 0) {
+      context->num_buf_vec = 2;
+      context->buf_vec[1].iov_base = data_ptr;
+      context->buf_vec[1].iov_len = data_size;
+    } else {
+      context->num_buf_vec = 1;
+    }
+  } else {
+    context->buffer = meta_ptr;
+    context->size = meta_size;
+  }
+}
+
 
 struct MessageBuffer {
   size_t inline_len;
@@ -314,7 +350,7 @@ struct FabricContext {
 
 struct FabricEndpoint {
   enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
-  ConnectionStatus status;
+  ConnectionStatus status = IDLE;
   // the node id
   int node_id = Node::kEmpty;
   // host:port
@@ -331,6 +367,8 @@ struct FabricEndpoint {
   std::string readable_peer_addr;
   // the fabric endpoint
   struct fid_ep *endpoint;
+  // whether it is initialized
+  bool initialized = false;
 
   // send ctxs
   FabricWRContext start_tx_ctx[kStartDepth];
@@ -368,10 +406,11 @@ struct FabricEndpoint {
     hostport = hp;
   }
 
-  void Init(const char* ep_name, struct fid_av *av, struct fid_ep *ep, const std::string& hp) {
+  void Init(const char* ep_name, struct fid_av *av, struct fid_ep *ep,
+            const std::string& hp, FabricMemoryAllocator *allocator) {
     // set the endpoint and its address
     InitEndpoint(ep_name, av, ep, hp);
-
+    // set contexts
     InitSendContext(start_tx_ctx, &free_start_ctx, kStartDepth,
                     kRendezvousStartContext, kRendezvousStartMask);
     InitSendContext(reply_tx_ctx, &free_reply_ctx, kReplyDepth,
@@ -380,10 +419,36 @@ struct FabricEndpoint {
                     kReceiveContext, kRendezvousStartMask);
     InitRecvContext(reply_rx_ctx, kRxDepth / 2,
                     kReceiveContext, kRendezvousReplyMask);
+    // set transport
+    trans = std::make_shared<FabricTransport>(this, allocator);
+    initialized = true;
     PS_VLOG(3) << "Endpoint initialized";
   }
 
+  void PostMultiRecv_(FabricWRContext *ctx) {
+    while (true) {
+      int ret = fi_trecvv(endpoint, ctx->buf_vec, nullptr,
+                          ctx->num_buf_vec, peer_addr, ctx->tag, 0, static_cast<void *>(ctx));
+      if (ret == -FI_EAGAIN) {
+        // no resources
+        LOG(WARNING) << "fi_trecv: FI_EAGAIN";
+        continue;
+      } else if (ret != 0) {
+        check_err(ret, "Unable to do fi_recv message");
+      }
+      break;
+    }
+    PS_VLOG(3) << "Posted recv buffer " << ctx->buffer << " for "
+               << readable_peer_addr << ". size = " << ctx->size
+               << " ctx = " << static_cast<void *>(ctx);
+  }
+
   void PostRecv(FabricWRContext *ctx) {
+    if (ctx->use_vec) PostMultiRecv_(ctx);
+    else PostRecv_(ctx);
+  }
+
+  void PostRecv_(FabricWRContext *ctx) {
     while (true) {
       int ret = fi_trecv(endpoint, ctx->buffer, ctx->size, nullptr,
                          peer_addr, ctx->tag, 0, static_cast<void *>(ctx));
@@ -408,11 +473,10 @@ struct FabricEndpoint {
       aligned_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
 
-      ctx[i].buffer = buf;
       ctx[i].private_data = this;
-      ctx[i].size = kMempoolChunkSize;
       ctx[i].tag = tag;
       PS_VLOG(4) << "InitRecvContext " << i << " / " << num;
+      PrepareContext(ctx + i, buf, kMempoolChunkSize, static_cast<char*>(buf) + kMempoolChunkSize, 0);
       PostRecv(&ctx[i]);
     }
   }
@@ -425,17 +489,14 @@ struct FabricEndpoint {
       aligned_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
 
-      ctx[i].buffer = buf;
       ctx[i].private_data = this;
-      ctx[i].size = kMempoolChunkSize;
       ctx[i].tag = tag;
+      PrepareContext(ctx + i, buf, kMempoolChunkSize, static_cast<char*>(buf) + kMempoolChunkSize, 0);
       queue->Push(&ctx[i]);
     }
   }
 
   void SetNodeID(int id) { node_id = id; }
-
-  void SetTransport(std::shared_ptr<FabricTransport> t) { trans = t; }
 
   std::shared_ptr<FabricTransport> GetTransport() { return trans; }
 
@@ -457,7 +518,23 @@ class FabricTransport {
     PS_VLOG(2) << "~FabricTransport";
   }
 
-  void Send(FabricWRContext *context) {
+  void MultiSend_(FabricWRContext *context) {
+    while (true) {
+      CHECK_NE(context->private_data, nullptr) << "private data must not be nullptr";
+      int ret = fi_tsendv(endpoint_->endpoint, context->buf_vec, nullptr,
+                          2, endpoint_->peer_addr, context->tag, context);
+      if (ret == -FI_EAGAIN) {
+        LOG(WARNING) << "fi_tsend: FI_EAGAIN";
+      } else if (ret != 0) {
+        check_err(ret, "Unable to do fi_send message");
+      } else {
+        break;
+      }
+    }
+    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
+  }
+
+  void Send_(FabricWRContext *context) {
     while (true) {
       CHECK_NE(context->private_data, nullptr) << "private data must not be nullptr";
       int ret = fi_tsend(endpoint_->endpoint, context->buffer, context->size,
@@ -473,6 +550,11 @@ class FabricTransport {
     PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
   }
 
+  void Send(FabricWRContext *context) {
+    if (context->use_vec) MultiSend_(context);
+    else Send_(context);
+  }
+
   void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) {
     FabricWRContext *context = nullptr;
     endpoint_->free_start_ctx.WaitAndPop(&context);
@@ -482,7 +564,6 @@ class FabricTransport {
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
     req->data_num = msg_buf->data.size();
-    // TODO: what about keys? included already?
     for (size_t i = 0; i < req->data_num; ++i) {
       req->data_len[i] = msg.data[i].size();
     }
@@ -503,7 +584,10 @@ class FabricTransport {
     }
 
     // worker only needs a buffer for receving meta
-    size_t alloc_size = is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len) : req->meta_len;
+    size_t meta_size = is_server_ ? align_ceil(req->meta_len, pagesize_) : req->meta_len;
+    // TODO: why including all data_len[i] instead of data_len[1] ?
+    size_t data_size = data_len;
+    size_t alloc_size = meta_size + data_size;
     buf_ctx->buf_size = alloc_size;
     char *buffer = allocator_->Alloc(alloc_size);
     CHECK(buffer);
@@ -523,15 +607,54 @@ class FabricTransport {
     endpoint_->data_rx_ctx.emplace(resp->idx, new FabricWRContext());
     FabricWRContext* recv_ctx = endpoint_->data_rx_ctx[resp->idx].get();
     recv_ctx->type = kReadContext;
-    recv_ctx->buffer = buffer;
-    recv_ctx->private_data = endpoint_;
     CHECK_NE(endpoint_, nullptr) << "endpoint must be initialized";
-    recv_ctx->size = alloc_size;
     recv_ctx->tag = resp->idx;
+    recv_ctx->private_data = endpoint_;
+    PrepareContext(recv_ctx, buffer, meta_size, buffer + meta_size, data_size);
     endpoint_->PostRecv(recv_ctx);
-
     PS_VLOG(3) << "SendRendezvousReply " << RendezvousDebugStr(*resp);
     Send(reply_ctx);
+  }
+
+  // we don't have the address tuple
+  void SendPushRequest(Message &msg, MessageBuffer *msg_buf) {//, RemoteTuple remote_tuple) {
+    LOG(FATAL) << "NOT IMPLEMENTED";
+  }
+
+  virtual int RecvPushResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+    CHECK_EQ(buffer_ctx->data_num, 0);
+    return 0;
+  }
+
+  virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+    CHECK(msg->meta.push && msg->meta.request);
+    CHECK_EQ(buffer_ctx->data_num, 3);
+    uint32_t len = buffer_ctx->data_len[1];
+
+    SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
+
+    SArray<char> vals;
+    char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
+    vals.reset(cur, len, [](void *) {});  // no need to delete
+
+    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
+    CHECK(msg->meta.val_len == len) << "Length does not match";
+
+    msg->data.push_back(keys);
+    msg->data.push_back(vals);
+    msg->data.push_back(lens);
+
+    LOG(INFO) << "RecvPushRequest: len = " << len << " vals.size() = " << vals.size()
+              << " msg->data[1].size() = " << msg->data[1].size() << " val_len = " << msg->meta.val_len;
+    return keys.size() + vals.size() + lens.size();
+  }
+
+  SArray<char> CreateFunctionalSarray(void *value, size_t size) {
+    SArray<char> sarr;
+    void *p = malloc(size);
+    memcpy(p, value, size);
+    sarr.reset((char *) p, size, [p](void *) { free(p); });
+    return sarr;
   }
 
  protected:
@@ -550,7 +673,6 @@ class FabricVan : public Van {
   virtual std::string GetType() const {
     return std::string("fabric");
   }
-
 
  protected:
   void Start(int customer_id, bool standalone) override {
@@ -587,13 +709,6 @@ class FabricVan : public Van {
     PS_VLOG(1) << "Clearing mempool.";
     mem_allocator_.reset();
 
-
-//    auto map_iter = memory_mr_map.begin();
-//    while (map_iter != memory_mr_map.end()) {
-//      ibv_dereg_mr(map_iter->second);
-//      map_iter++;
-//    }
-//
     PS_VLOG(1) << "Clearing endpoints.";
     incoming_.clear();
     {
@@ -630,48 +745,51 @@ class FabricVan : public Van {
                  << ". My node is " << my_node_.DebugString();
       return;
     }
-    const std::string remote_hostport = host_port(node.hostname, node.port);
-    {
-      std::lock_guard<std::mutex> lk(mu_);
-      if (hostport_id_map_.find(remote_hostport) == hostport_id_map_.end()) {
-        hostport_id_map_[remote_hostport] = node.id;
-      }
-    }
-
     if (node.id != Node::kEmpty) {
+      FabricEndpoint *endpoint;
       endpoints_mu_.lock();
       auto it = endpoints_.find(node.id);
-
       // if there is an endpoint with pending connection
-      if (it != endpoints_.end()) {
-        LOG(WARNING) << "FabricVan does not support re-connection";
-        endpoints_mu_.unlock();
-        return;
+      if (it == endpoints_.end()) {
+        endpoints_[node.id] = std::make_unique<FabricEndpoint>();
       }
-
-      FabricEndpoint *endpoint;
-      endpoints_[node.id] = std::make_unique<FabricEndpoint>();
       endpoint = endpoints_[node.id].get();
       endpoints_mu_.unlock();
 
-      endpoint->SetNodeID(node.id);
+      {
+        std::lock_guard<std::mutex> lk(endpoint->connect_mu);
+        endpoint->status = FabricEndpoint::CONNECTING;
+        endpoint->SetNodeID(node.id);
+      }
+
+      const std::string remote_hostport = host_port(node.hostname, node.port);
+      int recver_id = -1;
+      {
+        std::lock_guard<std::mutex> lk(mu_);
+        // connect zmq if not done before
+        if (zmq_id_map_.find(remote_hostport) == zmq_id_map_.end()) {
+          zmq_id_map_[remote_hostport] = node.id;
+          zmq_->Connect(node);
+        }
+        recver_id = zmq_id_map_[remote_hostport];
+      }
 
       while (endpoint->status != FabricEndpoint::CONNECTED) {
         std::unique_lock<std::mutex> lk(endpoint->connect_mu);
         endpoint->status = FabricEndpoint::CONNECTING;
-
+        // addr_request message
         Message req;
-        req.meta.recver = hostport_id_map_[remote_hostport];
+        req.meta.recver = recver_id;
         req.meta.control.cmd = Control::ADDR_REQUEST;
         Node req_info;
         req_info.role = my_node_.role;
         req_info.hostname = my_node_.hostname;
         req_info.port = my_node_.port;
+        req_info.id = my_node_.id;
+        // auxilary id for tracking connection requests
         req_info.aux_id = node.id;
         context_->addr.CopyTo(req_info.endpoint_name, &req_info.endpoint_name_len);
         req.meta.control.node.push_back(req_info);
-        // connect zmq. node id is recorded in hostport_id_map_
-        zmq_->Connect(node);
         zmq_->Send(req);
 
         endpoint->cv.wait(lk, [endpoint] {
@@ -684,15 +802,6 @@ class FabricVan : public Van {
     }
   }
 
-  uint64_t DecodeKey(SArray<char> keys) { // just a translation, the decoded key might not be readable when we have multiple servers
-    ps::Key key = 0;
-    uint64_t coef = 1;
-    for (unsigned int i = 0; i < keys.size(); ++i) {
-      key += coef * (uint8_t) keys.data()[i];
-      coef *= 256; // 256=2^8 (uint8_t)
-    }
-    return key;
-  }
 
   void StoreMsgBuf(MessageBuffer *msg_buf, Message& msg) {
     std::lock_guard<std::mutex> lk(addr_mu_);
@@ -710,11 +819,19 @@ class FabricVan : public Van {
     // prepare send context
     FabricWRContext* ctx = new FabricWRContext();
     ctx->type = kWriteContext;
-    ctx->buffer = msg_buf->inline_buf;
     ctx->private_data = endpoint;
     CHECK_NE(endpoint, nullptr) << "endpoint must be initialized";
-    ctx->size = msg_buf->inline_len;
+    // ctx->size = msg_buf->inline_len;
+    // ctx->buffer = msg_buf->inline_buf;
     msg_buf->reserved_context = ctx;
+    void *data_ptr = nullptr;
+    size_t data_size = 0;
+    if (msg.data.size() != 0) {
+      CHECK_EQ(msg.data.size(), 3) << "Unexpected number of data";
+      data_ptr = static_cast<char*>(msg.data[1].data());
+      data_size = msg.data[1].size();
+    }
+    PrepareContext(ctx, msg_buf->inline_buf, msg_buf->inline_len, data_ptr, data_size);
     return msg_buf;
   }
 
@@ -726,13 +843,24 @@ class FabricVan : public Van {
     }
     ss << "}";
     return ss.str();
+  }
 
+  void AddMeta(Message &msg) {
+    if (msg.meta.request) {
+      msg.meta.key = DecodeKey(msg.data[0]);
+    }
+    if (msg.meta.push && msg.meta.request) {
+      // push request
+      CHECK_EQ(msg.data.size(), 3) << msg.data.size();
+      auto& vals = msg.data[1];
+      msg.meta.val_len = vals.size();
+    }
   }
 
   int SendMsg(Message &msg) override {
     int remote_id = msg.meta.recver;
     PS_VLOG(3) << "SendMsg: " << msg.DebugString() << " to node " << remote_id;
-    CHECK_NE(remote_id, Meta::kEmpty);
+    CHECK_NE(remote_id, Node::kEmpty);
 
     endpoints_mu_.lock();
     CHECK_NE(endpoints_.find(remote_id), endpoints_.end()) << EndpointsDebugStr();
@@ -743,11 +871,11 @@ class FabricVan : public Van {
     size_t data_len = msg.meta.data_size;
     size_t total_len = meta_len + data_len;
     CHECK(meta_len);
+    CHECK(meta_len);
 
     // pack meta info
     if (IsValidPushpull(msg)) {
-      LOG(FATAL) << "NOT IMPLEMENTED";
-      // AddMeta(msg);
+      AddMeta(msg);
       // PackWorkerTensorAddress(msg);
     }
 
@@ -760,16 +888,16 @@ class FabricVan : public Van {
       trans->SendRendezvousBegin(msg, msg_buf);
       return total_len;
     } else {
-      LOG(FATAL) << "NOT IMPLEMENTED";
-      // auto is_push = msg.meta.push;
-      // auto key = msg.meta.key;
-      // if (!HasRemoteInfo(msg, key, is_push, remote_id)) {
-      //   MessageBuffer *msg_buf = PrepareNewMsgBuf(msg);
-      //   StoreMsgBuf(msg_buf, msg);
-      //   PrepareData(msg, msg_buf);
-      //   trans->SendRendezvousBegin(msg, msg_buf);
-      //   return total_len;
-      // }
+      auto is_push = msg.meta.push;
+      auto key = msg.meta.key;
+      // TODO: implement caching
+      //if (!HasRemoteInfo(msg, key, is_push, remote_id)) {
+        MessageBuffer *msg_buf = PrepareNewMsgBuf(msg, endpoint);
+        StoreMsgBuf(msg_buf, msg);
+        // PrepareData(msg, msg_buf);
+        trans->SendRendezvousBegin(msg, msg_buf);
+        return total_len;
+      //}
     }
 
     LOG(FATAL) << "NOT IMPLEMENTED";
@@ -834,33 +962,72 @@ class FabricVan : public Van {
 
     auto trans = CHECK_NOTNULL(endpoint->GetTransport());
 
-    // PrintRecvLog(msg, buffer_ctx, meta_len);
+    PrintRecvLog(msg, buffer_ctx, meta_len);
 
     if (!IsValidPushpull(*msg)) {
-      // PS_VLOG(3) << "Recved " << total_len << " bytes";
       return total_len;
     }
-    LOG(FATAL) << "NOT IMPLEMENTED";
 
-    // // valid data message
-    // if (msg->meta.push && msg->meta.request) {
-    //   // push request
-    //   total_len += trans->RecvPushRequest(msg, buffer_ctx, meta_len);
-    //   StoreWorkerTensorAddress(msg);
-    // } else if (!msg->meta.push && msg->meta.request) {
-    //   // pull request
-    //   total_len += trans->RecvPullRequest(msg, buffer_ctx, meta_len);
-    // } else if (msg->meta.push && !msg->meta.request) {
-    //   // push response
-    //   total_len += trans->RecvPushResponse(msg, buffer_ctx, meta_len);
-    // } else if (!msg->meta.push && !msg->meta.request) {
-    //   // pull response
-    //   total_len += trans->RecvPullResponse(msg, buffer_ctx, meta_len);
-    // } else {
-    //   CHECK(0) << "unknown msg type";
-    // }
+    // valid data message
+    if (msg->meta.push && msg->meta.request) {
+      // push request
+      // FIXME: this cannot be empty
+      CHECK_NE(msg->meta.sender, Node::kEmpty);
+      total_len += trans->RecvPushRequest(msg, buffer_ctx, meta_len);
+      // StoreWorkerTensorAddress(msg);
+
+    //} else if (!msg->meta.push && msg->meta.request) {
+    //  // pull request
+    //  total_len += trans->RecvPullRequest(msg, buffer_ctx, meta_len);
+    } else if (msg->meta.push && !msg->meta.request) {
+      // push response
+      LOG(INFO) << "TEST PASSED";
+      while (true);
+      CHECK_NE(msg->meta.sender, Node::kEmpty);
+      total_len += trans->RecvPushResponse(msg, buffer_ctx, meta_len);
+    //} else if (!msg->meta.push && !msg->meta.request) {
+    //  // pull response
+    //  total_len += trans->RecvPullResponse(msg, buffer_ctx, meta_len);
+    } else {
+      LOG(INFO) << "TEST PASSED2";
+      while (true);
+      CHECK(0) << "unknown msg type";
+    }
 
     return total_len;
+  }
+
+  void PrintRecvLog(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+    std::lock_guard<std::mutex> lock(log_mu_);
+
+    if (!IsValidPushpull(*msg)) {
+      PS_VLOG(4) << "Recv Control Message" << std::flush;
+    } else if (msg->meta.push && msg->meta.request) {
+      // push request
+      PS_VLOG(4) << "Recv Push Request: key=" << msg->meta.key
+          << "\t timestamp=" << msg->meta.timestamp
+          << "\t sender=" << msg->meta.sender
+          << "\t tensor_len=" << buffer_ctx->data_len[1]
+          << std::flush;
+    } else if (!msg->meta.push && msg->meta.request) {
+      // pull request
+      PS_VLOG(4) << "Recv Pull Request: key=" << msg->meta.key
+          << "\t timestamp=" << msg->meta.timestamp
+          << "\t sender=" << msg->meta.sender
+          << std::flush;
+    } else if (msg->meta.push && !msg->meta.request) {
+      // push response
+      PS_VLOG(4) << "Recv Push Response: key=" << msg->meta.key
+          << "\t timestamp=" << msg->meta.timestamp
+          << "\t sender=" << msg->meta.sender
+          << std::flush;
+    } else if (!msg->meta.push && !msg->meta.request) {
+      // pull response
+      PS_VLOG(4) << "Recv Pull Response: key=" << msg->meta.key
+          << "\t timestamp=" << msg->meta.timestamp
+          << "\t sender=" << msg->meta.sender
+          << "\t tensor_len=" << msg->meta.val_len;
+    }
   }
 
   inline void SetNode(const Node& node) {
@@ -966,7 +1133,7 @@ class FabricVan : public Van {
     uint64_t tag = cq_entry.tag;
 
     // op_context is the local context
-    PS_VLOG(2) << CQDebugStr(cq_entry);
+    PS_VLOG(4) << CQDebugStr(cq_entry);
     FabricWRContext *context = static_cast<FabricWRContext *>(cq_entry.op_context);
     CHECK_NE(context, nullptr) << "FabricWRContext should not be null: " << context;
     FabricEndpoint *endpoint = static_cast<FabricEndpoint *>(context->private_data);
@@ -1031,8 +1198,27 @@ class FabricVan : public Van {
         if (!IsValidPushpull(*msg)) {
           // control message
           trans->Send(send_context);
+        } else if (msg->meta.push && msg->meta.request) {
+          // worker, push request
+          trans->Send(send_context);
+          // trans->SendPushRequest(*msg, msg_buf); //, addr_tuple);
+        // } else if (msg->meta.push && !msg->meta.request) {
+        //   // server, push response
+        //   trans->SendPushResponse(*msg, msg_buf, addr_tuple);
+        // } else if (!msg->meta.push && msg->meta.request) {
+        //   // worker, pull request
+        //   trans->SendPullRequest(*msg, msg_buf, addr_tuple);
+        // } else if (!msg->meta.push && !msg->meta.request) {
+        //   // server, pull response
+        //   map_mu_.lock();
+        //   auto temp_mr = mem_mr_.find(msg_buf->data[1].data());
+        //   CHECK_NE(temp_mr, mem_mr_.end());
+        //   map_mu_.unlock();
+        //   trans->SendPullResponse(*msg, msg_buf, addr_tuple, temp_mr->second->lkey);
         } else {
-          LOG(FATAL) << "NOT IMPLEMENTED";
+          LOG(INFO) << "TEST PASSED";
+          while (true);
+          LOG(FATAL) << "";
         }
 
         // release the msg_buf from msgbuf_cache_
@@ -1087,34 +1273,30 @@ class FabricVan : public Van {
     }
   }
 
-  std::string host_port(const std::string& host, const int port) {
-    return host + ":" + std::to_string(port);
-  }
-
   void OnConnectRequest(const Message &msg) {
     const auto& req_info = msg.meta.control.node[0];
     Node addr_info;
     FabricAddr src_addr;
     src_addr.CopyFrom(req_info.endpoint_name, req_info.endpoint_name_len);
 
-    int sender_id;
+    // the zmq_sender_id is NOT the actual node id
+    int zmq_sender_id;
     const std::string req_hostport = host_port(req_info.hostname, req_info.port);
-    PS_VLOG(3) << "handling connection request " << req_info.DebugString() << ". " << req_hostport;
+    PS_VLOG(3) << "Handling connection request " << req_info.DebugString() << ". " << req_hostport;
     {
       std::lock_guard<std::mutex> lk(mu_);
       // not connected before
-      if (hostport_id_map_.find(req_hostport) == hostport_id_map_.end()) {
-        sender_id = 30000 + hostport_id_map_.size();
+      if (zmq_id_map_.find(req_hostport) == zmq_id_map_.end()) {
+        zmq_sender_id = 30000 + zmq_id_map_.size();
         // connect to the remote node
         Node conn_node;
-        // XXX the sender_id is not consistent with the actual node id
-        conn_node.id = sender_id;
+        conn_node.id = zmq_sender_id;
         conn_node.hostname = req_info.hostname;
         conn_node.port = req_info.port;
         zmq_->Connect(conn_node);
-        hostport_id_map_[req_hostport] = sender_id;
+        zmq_id_map_[req_hostport] = zmq_sender_id;
       }
-      sender_id = hostport_id_map_[req_hostport];
+      zmq_sender_id = zmq_id_map_[req_hostport];
     }
     context_->addr.CopyTo(addr_info.endpoint_name, &addr_info.endpoint_name_len);
     addr_info.hostname = my_node_.hostname;
@@ -1122,22 +1304,31 @@ class FabricVan : public Van {
     addr_info.aux_id = req_info.aux_id;
 
     Message reply;
-    reply.meta.recver = sender_id;
+    reply.meta.recver = zmq_sender_id;
     reply.meta.control.cmd = Control::ADDR_RESOLVED;
     reply.meta.control.node.push_back(addr_info);
     zmq_->Send(reply);
 
-    const auto r = incoming_.emplace(std::make_unique<FabricEndpoint>());
-    FabricEndpoint *endpoint = r.first->get();
-    endpoint->Init(src_addr.name, context_->av, context_->ep, req_hostport);
-    std::shared_ptr<FabricTransport> t =
-        std::make_shared<FabricTransport>(endpoint, mem_allocator_.get());
-    endpoint->SetTransport(t);
+    FabricEndpoint *endpoint;
+    // create the endpoint if it does not exist
+    if (incoming_.find(req_hostport) == incoming_.end()) {
+      incoming_.emplace(req_hostport, std::make_unique<FabricEndpoint>());
+    }
+    endpoint = incoming_[req_hostport].get();
 
+    // initialize the endpoint
+    if (!endpoint->initialized) {
+      endpoint->Init(src_addr.name, context_->av, context_->ep,
+                     req_hostport, mem_allocator_.get());
+    }
+    // set endpoint node id
+    if (req_info.id != Node::kEmpty) {
+      endpoint->SetNodeID(req_info.id);
+      PS_VLOG(3) << "Updated Endpoint " << req_hostport << " with ID = " << req_info.id;
+    }
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&FabricVan::PollCQ, this));
     }
-
   }
 
   void OnConnected(const Message &msg) {
@@ -1147,15 +1338,14 @@ class FabricVan : public Van {
     const int sender_id = addr_info.aux_id;
     const std::string hostport = host_port(addr_info.hostname, addr_info.port);
 
-    PS_VLOG(3) << "handling connected reply" << addr_info.DebugString();
+    PS_VLOG(3) << "Handling connected reply" << addr_info.DebugString();
     // retrieve and init endpoint
     FabricEndpoint *endpoint = endpoints_[sender_id].get();
     CHECK(endpoint) << "Endpoint not found.";
-    endpoint->Init(sender_addr.name, context_->av, context_->ep, hostport);
-    std::shared_ptr<FabricTransport> t =
-        std::make_shared<FabricTransport>(endpoint, mem_allocator_.get());
-    endpoint->SetTransport(t);
-
+    if (!endpoint->initialized) {
+      endpoint->Init(sender_addr.name, context_->av, context_->ep,
+                     hostport, mem_allocator_.get());
+    }
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&FabricVan::PollCQ, this));
     }
@@ -1167,24 +1357,16 @@ class FabricVan : public Van {
     endpoint->cv.notify_all();
   }
 
-  void OnRejected(const Message &msg) {
-    LOG(FATAL) << "NOT IMPLEMENTED";
-  }
-
-
-  void OnDisconnected(const Message &msg) {
-    LOG(FATAL) << "NOT REACHED";
-  }
-
-
   AddressPool<BufferContext> addr_pool_;
   std::unique_ptr<FabricMemoryAllocator> mem_allocator_;
 
   std::atomic<bool> should_stop_;
 
   std::mutex endpoints_mu_;
+  // node id -> endpoint for outgoing connections
   std::unordered_map<int, std::unique_ptr<FabricEndpoint>> endpoints_;
-  std::unordered_set<std::unique_ptr<FabricEndpoint>> incoming_;
+  // host:port -> endpoint for incoming connections
+  std::unordered_map<std::string, std::unique_ptr<FabricEndpoint>> incoming_;
 
   //std::unordered_map<char *, struct ibv_mr *> memory_mr_map;
 
@@ -1213,7 +1395,7 @@ class FabricVan : public Van {
   std::unordered_map<ps::Key, ps::Key> key_addr_map_;
   // a static address for the length
   std::unordered_map<ps::Key, int> key_len_map_;
-
+  // mutex for memory map
   std::mutex map_mu_;
 
   // note that ZMQ use the node id to identify the senders.
@@ -1225,9 +1407,9 @@ class FabricVan : public Van {
   // - zmq_->Send
   // - zmq_->RecvMsg
   // we need to make sure req.meta.recver is set correctly.
-  // we use hostport_id_map_ to map host:port to IDs. The ID can be arbtrary, as long
+  // we use zmq_id_map_ to map host:port to IDs. The ID can be arbtrary, as long
   // as the id is unique.
-  std::unordered_map<std::string, int> hostport_id_map_;
+  std::unordered_map<std::string, int> zmq_id_map_;
   Van* zmq_;
 
   std::unique_ptr<FabricContext> context_;
@@ -1243,7 +1425,9 @@ class FabricVan : public Van {
   //std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
   std::unordered_map<MessageBuffer*, Message> msgbuf_cache_; // msg_buf, msg
 
+  // for data. But for libfabric, we change the type
   std::unordered_map<char*, struct fid_mr*> mem_mr_; // (memory address, fid_mr)
+  std::mutex log_mu_;
 };  // namespace ps
 };  // namespace ps
 

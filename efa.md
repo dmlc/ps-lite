@@ -18,14 +18,18 @@ sudo make install
 
 ```
 make clean; USE_FABRIC=1 make -j;
+
+killall test_benchmark; make clean; make -j USE_FABRIC=1;
+
 ```
 
 ## Run Test in 3 windows
 ```
 
-DMLC_ROLE=scheduler DMLC_EFA_DEBUG=1 PS_VERBOSE=1 ENABLE_RDMA_LOG=1 DMLC_ENABLE_FABRIC=1 bash tests/local_multi_workers.sh 1 1 tests/test_kv_app_benchmark 1024000 10 0
+DMLC_ENABLE_FABRIC=1 PS_VERBOSE=2 NUM_KEY_PER_SERVER=2 BYTEPS_USE_VEC=1 DMLC_ROLE=scheduler DMLC_EFA_DEBUG=1 ENABLE_RDMA_LOG=1 bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 1024000 5 0
 
-DMLC_ROLE=server DMLC_EFA_DEBUG=1 PS_VERBOSE=1 ENABLE_RDMA_LOG=1 DMLC_ENABLE_FABRIC=1 bash tests/local_multi_workers.sh 1 1 tests/test_kv_app_benchmark 1024000 10 0
+DMLC_ENABLE_FABRIC=1 PS_VERBOSE=2 NUM_KEY_PER_SERVER=2 BYTEPS_USE_VEC=1 DMLC_ROLE=server DMLC_EFA_DEBUG=1 ENABLE_RDMA_LOG=1 bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 1024000 5 0
 
-killall test_kv_app_benchmark
+DMLC_ENABLE_FABRIC=1 PS_VERBOSE=2 NUM_KEY_PER_SERVER=2 BYTEPS_USE_VEC=1 DMLC_ROLE=worker DMLC_EFA_DEBUG=1 ENABLE_RDMA_LOG=1 bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 1024000 5 0
+
 ```

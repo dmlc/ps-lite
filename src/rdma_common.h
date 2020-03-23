@@ -59,6 +59,16 @@ bool IsValidPushpull(const Message &msg) {
   return true;
 }
 
+uint64_t DecodeKey(SArray<char> keys) { // just a translation, the decoded key might not be readable when we have multiple servers
+  ps::Key key = 0;
+  uint64_t coef = 1;
+  for (unsigned int i = 0; i < keys.size(); ++i) {
+    key += coef * (uint8_t) keys.data()[i];
+    coef *= 256; // 256=2^8 (uint8_t)
+  }
+  return key;
+}
+
 
 template <typename T>
 class AddressPool {

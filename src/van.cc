@@ -481,7 +481,7 @@ void Van::Stop() {
 
 int Van::Send(Message &msg) {
   int send_bytes = SendMsg(msg);
-  CHECK_NE(send_bytes, -1);
+  CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
   if (Postoffice::Get()->verbose() >= 2) {
