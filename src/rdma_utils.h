@@ -174,7 +174,6 @@ typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>>
 struct MessageBuffer {
   size_t inline_len;
   char *inline_buf;
-  WRContext *reserved_context;
   std::vector<SArray<char>> data;
   std::vector<std::pair<MRPtr, size_t>> mrs;
 };
