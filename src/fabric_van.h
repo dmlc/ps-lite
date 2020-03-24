@@ -44,9 +44,9 @@
 
 namespace ps {
 
-
-static const int kStartDepth = 2;
-static const int kRxDepth = 4; // should be larger than kStartDepth
+// TODO: why use a larger number?
+static const int kStartDepth = 128;
+static const int kRxDepth = 2048; // should be larger than kStartDepth
 static const int kReplyDepth = kRxDepth;
 
 static const int kTimeoutms = 1000;
@@ -127,7 +127,7 @@ struct FabricWRContext {
   WRContextType type;
   // the remote endpoint
   void *private_data = nullptr;
-  // tag
+  // libfabric tag
   uint64_t tag;
   // send/recv buffers:
   // buffers[0] for meta, buffers[1] for data
@@ -185,7 +185,9 @@ static const size_t kMempoolChunkSize = sizeof(RendezvousMsg);
 
 class FabricMemoryAllocator {
  public:
-  explicit FabricMemoryAllocator() {}
+  explicit FabricMemoryAllocator() {
+    LOG(INFO) << "aligned to pagesize " << pagesize_;
+  }
 
   ~FabricMemoryAllocator() {}
 
@@ -199,16 +201,11 @@ class FabricMemoryAllocator {
     char *p;
     aligned_malloc((void**) &p, size);
     CHECK(p);
-
-    std::lock_guard<std::mutex> lk(mu_);
-    used_list.emplace(p, size);
     return p;
   }
 
   std::mutex mu_;
-  // TODO(haibin) 8KB for EFA?
   size_t pagesize_ = sysconf(_SC_PAGESIZE);
-  std::unordered_map<char *, size_t> used_list;
 };
 
 
@@ -237,7 +234,6 @@ struct FabricAddr {
     *(ep_name_len) = len;
     memcpy(ep_name, name, sizeof(name));
   }
-
 };
 
 struct FabricContext {
@@ -275,8 +271,8 @@ struct FabricContext {
     hints->caps = FI_TAGGED | FI_MSG | FI_DIRECTED_RECV;
     hints->mode = FI_CONTEXT;
     hints->domain_attr->av_type = FI_AV_TABLE;
-    hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
-    hints->domain_attr->data_progress = FI_PROGRESS_AUTO;
+    hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
+    hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
     hints->tx_attr->msg_order = FI_ORDER_SAS;
     hints->rx_attr->msg_order = FI_ORDER_SAS;
 
@@ -338,12 +334,12 @@ struct FabricContext {
 
   ~FabricContext() {
     PS_VLOG(2) << "~FabricContext";
-    // fi_close((fid_t)ep);
-    // fi_close((fid_t)cq);
-    // fi_close((fid_t)av);
-    // fi_close((fid_t)domain);
-    // fi_close((fid_t)fabric);
-    // fi_freeinfo(fi);
+    fi_close((fid_t) ep);
+    fi_close((fid_t) cq);
+    fi_close((fid_t) av);
+    fi_close((fid_t) domain);
+    fi_close((fid_t) fabric);
+    fi_freeinfo(info);
   }
 };
 
@@ -383,7 +379,6 @@ struct FabricEndpoint {
   ThreadsafeQueue<FabricWRContext *> free_reply_ctx;
 
   ~FabricEndpoint() {
-    // TODO: properly release resources
     PS_VLOG(2) << "~FabricEndpoint";
   }
 
@@ -511,7 +506,7 @@ class FabricTransport {
         break;
       }
     }
-    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr
+    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->node_id
                << " tag = " << context->tag;
   }
 
@@ -565,7 +560,6 @@ class FabricTransport {
     // TODO: proper masking
     CHECK_EQ(resp->tag, resp->tag & kDataMask) << "tag out of bound";
 
-    // TODO: is it necessary to push it to a vector?
     endpoint_->data_rx_ctx.emplace(resp->tag, new FabricWRContext());
     FabricWRContext* recv_ctx = endpoint_->data_rx_ctx[resp->tag].get();
     recv_ctx->type = kReceiveWithData;
@@ -581,24 +575,6 @@ class FabricTransport {
   int RecvPushResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) {
     CHECK_EQ(buffer_ctx->data_num, 0);
     return 0;
-  }
-
-  void SendPullRequest(FabricWRContext *send_context) {
-    // CHECK_EQ(msg_buf->mrs.size(), 0);
-    Send(send_context);
-  }
-
-  void SendPushResponse(FabricWRContext *send_context) {
-    // CHECK_EQ(msg_buf->mrs.size(), 0);
-    Send(send_context);
-  }
-
-  void SendPushRequest(FabricWRContext *send_context) {
-    Send(send_context);
-  }
-
-  void SendPullResponse(FabricWRContext *send_context) {
-    Send(send_context);
   }
 
   int RecvPullRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) {
@@ -1176,9 +1152,7 @@ class FabricVan : public Van {
         send_context->tag = req->tag;
         PS_VLOG(3) << "CQ: START FI_RECV kRendezvousReply: <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> origin_addr = " << origin_addr << " req = " << req << " msg_buf = " << msg_buf;
 
-        // TODO: when to store and when to release????
         StoreRemoteAndLocalInfo(msg_buf, send_context);
-        // Message *msg = GetFirstMsg(msg_buf);
 
         // PrintSendLog(*msg, msg_buf, addr_tuple);
 

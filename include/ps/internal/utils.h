@@ -32,6 +32,15 @@ inline V GetEnv(const char *key, V default_val) {
   if (val == nullptr) {
     return default_val;
   } else {
+    return V(val);
+  }
+}
+
+inline int GetEnv(const char *key, int default_val) {
+  const char *val = Environment::Get()->find(key);
+  if (val == nullptr) {
+    return default_val;
+  } else {
     return atoi(val);
   }
 }
