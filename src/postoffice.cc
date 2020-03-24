@@ -15,15 +15,12 @@ Postoffice::Postoffice() {
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
-  int enable_rdma = GetEnv("DMLC_ENABLE_RDMA", 0);
-  int enable_fabric = GetEnv("DMLC_ENABLE_FABRIC", 1);
-  if (enable_fabric) {
-    LOG(INFO) << "enable Fabric";
-    van_ = Van::Create("fabric");
-  } else if (enable_rdma) {
-    LOG(INFO) << "enable RDMA for networking";
-    van_ = Van::Create("rdma");
+  const char* rdma = GetEnv("DMLC_ENABLE_RDMA", nullptr);
+  if (rdma) {
+    LOG(INFO) << "enable RDMA Van: " << rdma;
+    van_ = Van::Create(rdma);
   } else {
+    LOG(INFO) << "enable TCP Van: ZeroMQ";
     van_ = Van::Create("zmq");
   }
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));

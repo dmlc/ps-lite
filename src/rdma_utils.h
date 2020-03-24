@@ -16,7 +16,7 @@
 #ifndef PS_RDMA_UTILS_H_
 #define PS_RDMA_UTILS_H_
 
-#ifdef DMLC_USE_RDMA
+#ifdef DMLC_USE_IBVERBS
 
 
 #include <errno.h>
@@ -221,5 +221,5 @@ int RoundUp(int x, int y) { return DivUp(x, y) * y; }
 
 };  // namespace ps
 
-#endif  // DMLC_USE_RDMA
+#endif  // DMLC_USE_IBVERBS
 #endif  // PS_RDMA_VAN_H_

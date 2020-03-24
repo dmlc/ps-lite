@@ -25,9 +25,9 @@ INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread -lrt
 
-ifeq ($(USE_RDMA), 1)
+ifeq ($(USE_IBVERBS), 1)
 LIBS += -lrdmacm -libverbs
-CFLAGS += -DDMLC_USE_RDMA
+CFLAGS += -DDMLC_USE_IBVERBS
 endif
 
 ifeq ($(USE_FABRIC), 1)

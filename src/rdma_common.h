@@ -15,7 +15,7 @@
 #ifndef PS_RDMA_COMMON_H_
 #define PS_RDMA_COMMON_H_
 
-// #ifdef DMLC_USE_RDMA
+#if defined(DMLC_USE_IBVERBS) || defined(DMLC_USE_FABRIC)
 
 #define DIVUP(x, y) (((x)+(y)-1)/(y))
 #define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
@@ -125,5 +125,5 @@ class AddressPool {
 
 };  // namespace ps
 
-//#endif  // DMLC_USE_RDMA
+#endif  // DMLC_USE_IBVERBS || DMLC_USE_FABRIC
 #endif  // PS_RDMA_COMMON_H_

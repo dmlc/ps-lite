@@ -88,7 +88,8 @@ class KVWorker : public SimpleApp {
 #ifdef USE_PROFILING
     const char *val;
     val = Environment::Get()->find("DMLC_ENABLE_RDMA");
-    is_worker_zpull_ = val ? atoi(val) : false;
+    is_worker_zpull_ = val ? true : false;
+
     if (is_worker_zpull_) LOG(INFO) << "Enable worker zero-copy pull";
 
     val = Environment::Get()->find("ENABLE_PROFILING");

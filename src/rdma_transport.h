@@ -16,7 +16,7 @@
 #ifndef PS_RDMA_TRANSPORT_H_
 #define PS_RDMA_TRANSPORT_H_
 
-#ifdef DMLC_USE_RDMA
+#ifdef DMLC_USE_IBVERBS
 
 #include "rdma_utils.h"
 
@@ -614,6 +614,6 @@ class IPCTransport : public RDMATransport {
 
 };  // namespace ps
 
-#endif  // DMLC_USE_RDMA
+#endif  // DMLC_USE_IBVERBS
 #endif  // PS_RDMA_VAN_H_
 

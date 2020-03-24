@@ -73,8 +73,8 @@ Van *Van::Create(const std::string &type) {
 
   if (type == "zmq") {
     return new ZMQVan();
-#ifdef DMLC_USE_RDMA
-  } else if (type == "rdma") {
+#ifdef DMLC_USE_IBVERBS
+  } else if (type == "ibverbs") {
     return new RDMAVan();
 #endif
 #ifdef DMLC_USE_FABRIC
