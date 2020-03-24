@@ -539,10 +539,8 @@ class FabricTransport {
       data_len += req->data_len[i];
     }
 
-    // worker only needs a buffer for receving meta???? why not both????
-    // size_t meta_size = is_server_ ? align_ceil(req->meta_len, pagesize_) : req->meta_len;
     size_t meta_size = align_ceil(req->meta_len, pagesize_);
-    // TODO: why including all data_len[i] instead of data_len[1] ?
+    // TODO: why including all data_len[i]?
     size_t data_size = data_len;
     size_t alloc_size = meta_size + data_size;
     char *buffer = allocator_->Alloc(alloc_size);
@@ -557,7 +555,6 @@ class FabricTransport {
 
     resp->origin_addr = req->origin_addr;
     resp->tag = addrpool.StoreAddress(buf_ctx);
-    // TODO: proper masking
     CHECK_EQ(resp->tag, resp->tag & kDataMask) << "tag out of bound";
 
     endpoint_->data_rx_ctx.emplace(resp->tag, new FabricWRContext());
@@ -579,12 +576,9 @@ class FabricTransport {
 
   int RecvPullRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
-
     SArray<char> vals; // add an empty sarray to pass kvapp check
-
     msg->data.push_back(keys);
     msg->data.push_back(vals);
-
     return keys.size() + vals.size();
   }
 
@@ -593,12 +587,10 @@ class FabricTransport {
     CHECK_EQ(buffer_ctx->data_num, 3);
 
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
-
     uint32_t len = buffer_ctx->data_len[1];
     SArray<char> vals;
     char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
     vals.reset(cur, len, [](void *) {});  // no need to delete
-
     SArray<char> lens = CreateFunctionalSarray(&len, sizeof(uint32_t));
 
     msg->data.push_back(keys);
@@ -610,12 +602,10 @@ class FabricTransport {
 
   int RecvPullResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
-
     uint32_t len = buffer_ctx->data_len[1];
     SArray<char> vals;
     char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
     vals.reset(cur, len, [](void *) {});  // no need to delete
-
     SArray<char> lens = CreateFunctionalSarray(&len, sizeof(int));
 
     msg->data.push_back(keys);
@@ -944,12 +934,6 @@ class FabricVan : public Van {
     msgbuf_cache_.erase(msg_buf);
   }
 
-  Message* GetFirstMsg(MessageBuffer *msg_buf) {
-    std::lock_guard<std::mutex> lk(addr_mu_);
-    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end()) << "msg_buf = " << msg_buf;
-    return &msgbuf_cache_[msg_buf];
-  }
-
   MessageBuffer* PrepareNewMsgBuf(Message& msg, FabricEndpoint *endpoint) {
     MessageBuffer *msg_buf = new MessageBuffer();
     auto meta_len = GetPackMetaLen(msg.meta);
@@ -977,6 +961,7 @@ class FabricVan : public Van {
     return msg_buf;
   }
 
+  // TODO: what about duplicate remote info?
   bool HasRemoteInfo(uint64_t key, bool is_push, int recver) {
     std::lock_guard<std::mutex> lk(addr_mu_);
     if (is_push && (push_context_.find(key) != push_context_.end())
@@ -1107,7 +1092,6 @@ class FabricVan : public Van {
     CHECK_EQ(context->buffers[0].iov_base, cq_entry.buf) << "buffer address does not match";
     bool start_msg = (tag == kRendezvousStartMask);
     bool reply_msg = (tag == kRendezvousReplyMask);
-    // TODO: proper masking
     bool data_msg = !start_msg && !reply_msg;
     if (is_send) {
       if (start_msg || reply_msg) {
@@ -1141,7 +1125,6 @@ class FabricVan : public Van {
         RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
 
         // kRendezvousReply
-        // FIXME: is it possible to get two r-start ?????
         uint64_t origin_addr = req->origin_addr;
         MessageBuffer *msg_buf =
     	reinterpret_cast<MessageBuffer *>(origin_addr);
