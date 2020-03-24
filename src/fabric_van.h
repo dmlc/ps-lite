@@ -1164,12 +1164,16 @@ class FabricVan : public Van {
         uint64_t origin_addr = req->origin_addr;
         MessageBuffer *msg_buf =
     	reinterpret_cast<MessageBuffer *>(origin_addr);
+        PS_VLOG(4) << "kRendezvousReply: req = " << req << " msg_buf = " << msg_buf;
+        CHECK(msg_buf != nullptr);
 
+        FabricWRContext* send_context = msg_buf->reserved_context;
+        send_context->tag = req->idx;
+
+        StoreRemoteAndLocalInfo(msg_buf, send_context);
         // Message *msg = GetFirstMsg(msg_buf);
 
         // PrintSendLog(*msg, msg_buf, addr_tuple);
-        FabricWRContext* send_context = msg_buf->reserved_context;
-        send_context->tag = req->idx;
 
         auto trans = CHECK_NOTNULL(endpoint->GetTransport());
         trans->Send(send_context);
