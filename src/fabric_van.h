@@ -404,6 +404,8 @@ struct FabricEndpoint {
             const std::string& hp, FabricMemoryAllocator *allocator) {
     // set the endpoint and its address
     InitEndpoint(ep_name, av, ep, hp);
+    // set transport
+    trans = std::make_shared<FabricTransport>(this, allocator);
     // set contexts
     InitSendContext(start_tx_ctx, &free_start_ctx, kStartDepth,
                     kSendRendStart, kRendezvousStartMask);
@@ -413,8 +415,6 @@ struct FabricEndpoint {
                     kReceiveRend, kRendezvousStartMask);
     InitRecvContext(reply_rx_ctx, kRxDepth / 2,
                     kReceiveRend, kRendezvousReplyMask);
-    // set transport
-    trans = std::make_shared<FabricTransport>(this, allocator);
     initialized = true;
     PS_VLOG(3) << "Endpoint initialized";
   }
@@ -433,7 +433,7 @@ struct FabricEndpoint {
       break;
     }
     PS_VLOG(4) << "Posted recv buffer " << ctx->buffers << " for "
-               << readable_peer_addr << ". size = " << ctx->num_buffers
+               << node_id << ". size = " << ctx->num_buffers
                << " ctx = " << static_cast<void *>(ctx) << " tag = " << ctx->tag;
   }
 
