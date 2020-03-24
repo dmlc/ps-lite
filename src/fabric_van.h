@@ -508,7 +508,8 @@ class FabricTransport {
         break;
       }
     }
-    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr;
+    PS_VLOG(3) << "Posted fi_send to endpoint " << endpoint_->readable_peer_addr
+               << " tag = " << context->tag;
   }
 
   void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) {
@@ -669,6 +670,8 @@ class FabricVan : public Van {
     return std::string("fabric");
   }
 
+  typedef std::tuple<FabricWRContext*, MessageBuffer*> ContextTuple;
+
  protected:
   void Start(int customer_id, bool standalone) override {
     start_mu_.lock();
@@ -808,7 +811,6 @@ class FabricVan : public Van {
     size_t data_len = msg.meta.data_size;
     size_t total_len = meta_len + data_len;
     CHECK(meta_len);
-    CHECK(meta_len);
 
     // pack meta info
     if (IsValidPushpull(msg)) {
@@ -826,21 +828,16 @@ class FabricVan : public Van {
     } else {
       auto is_push = msg.meta.push;
       auto key = msg.meta.key;
-      // TODO: implement caching
-      //if (!HasRemoteInfo(msg, key, is_push, remote_id)) {
+      if (!HasRemoteInfo(key, is_push, remote_id)) {
         MessageBuffer *msg_buf = PrepareNewMsgBuf(msg, endpoint);
         StoreMsgBuf(msg_buf, msg);
-        // PrepareData(msg, msg_buf);
         trans->SendRendezvousBegin(msg, msg_buf);
         return total_len;
-      //}
+      }
     }
 
-    LOG(FATAL) << "NOT IMPLEMENTED";
-    // TODO: ?
-    /*
-    auto addr_tuple = GetRemoteAndLocalInfo(msg.meta.key, msg.meta.push, remote_id);
-    MessageBuffer *msg_buf = std::get<3>(addr_tuple); // local message buffer
+    auto context_tuple = GetRemoteAndLocalInfo(msg.meta.key, msg.meta.push, remote_id);
+    MessageBuffer *msg_buf = std::get<1>(context_tuple); // local message buffer
 
     // prepare new meta and data
     CHECK_EQ(msg_buf->inline_len, (size_t) meta_len);
@@ -851,30 +848,7 @@ class FabricVan : public Van {
     // PrintSendLog(msg, msg_buf, addr_tuple);
 
     // already know remote address, directly use RDMA-write
-    if (msg.meta.push && msg.meta.request) {
-      // worker, push request
-      LOG(FATAL) << "NOT IMPLEMENTED";
-      // trans->SendPushRequest(msg, msg_buf, addr_tuple);
-    } else if (msg.meta.push && !msg.meta.request) {
-      // server, push response
-      LOG(FATAL) << "NOT IMPLEMENTED";
-      // trans->SendPushResponse(msg, msg_buf, addr_tuple);
-    } else if (!msg.meta.push && msg.meta.request) {
-      // worker, pull request
-      LOG(FATAL) << "NOT IMPLEMENTED";
-      // trans->SendPullRequest(msg, msg_buf, addr_tuple);
-    } else if (!msg.meta.push && !msg.meta.request) {
-      // server, pull response
-      LOG(FATAL) << "NOT IMPLEMENTED";
-      // map_mu_.lock();
-      // auto temp_mr = mem_mr_.find(msg_buf->data[1].data());
-      // CHECK_NE(temp_mr, mem_mr_.end());
-      // map_mu_.unlock();
-      // trans->SendPullResponse(msg, msg_buf, addr_tuple, temp_mr->second->lkey);
-    } else {
-      CHECK(0) << "unexpected message type";
-    }
-    */
+    trans->Send(std::get<0>(context_tuple));
     return total_len;
   }
 
@@ -1003,6 +977,7 @@ class FabricVan : public Van {
     msg_buf->inline_buf = mem_allocator_->Alloc(meta_len);
     msg_buf->data = msg.data;
     PackMeta(msg.meta, &(msg_buf->inline_buf), &meta_len);
+
     // prepare send context
     FabricWRContext* ctx = new FabricWRContext();
     ctx->type = kSendWithData;
@@ -1020,6 +995,42 @@ class FabricVan : public Van {
     }
     PrepareWRContext(ctx, msg_buf->inline_buf, msg_buf->inline_len, data_buff, data_size);
     return msg_buf;
+  }
+
+  bool HasRemoteInfo(uint64_t key, bool is_push, int recver) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+    if (is_push && (push_context_.find(key) != push_context_.end())
+        && (push_context_[key].find(recver) != push_context_[key].end())) {
+      return true;
+    }
+    if (!is_push && (pull_context_.find(key) != pull_context_.end())
+        && (pull_context_[key].find(recver) != pull_context_[key].end())) {
+      return true;
+    }
+    return false;
+  }
+
+  void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, FabricWRContext* ctx) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+
+    CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
+
+    auto& msg = msgbuf_cache_[msg_buf];
+
+    auto key = msg.meta.key;
+    auto is_push = msg.meta.push;
+    auto recver = msg.meta.recver;
+
+    if (is_push) {
+      push_context_[key][recver] = std::make_pair(ctx, msg_buf);
+    } else {
+      pull_context_[key][recver] = std::make_pair(ctx, msg_buf);
+    }
+  }
+
+  ContextTuple GetRemoteAndLocalInfo(uint64_t key, bool is_push, int recver) {
+    std::lock_guard<std::mutex> lk(addr_mu_);
+    return (is_push ? push_context_[key][recver] : pull_context_[key][recver]);
   }
 
   void AddMeta(Message &msg) {
@@ -1049,8 +1060,11 @@ class FabricVan : public Van {
       case kSendRendReply:
         endpoint->free_reply_ctx.Push(context);
         break;
-      //case kSendWithData: TODO: recycle
+      case kSendWithData:
+        break;
       case kReceiveWithData:
+        endpoint->PostRecv(context);
+        break;
       case kReceiveRend:
         endpoint->PostRecv(context);
         break;
@@ -1122,7 +1136,7 @@ class FabricVan : public Van {
         RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
         PS_VLOG(3) << "DONE FI_SEND " << RendezvousDebugStr(*req);
       } else {
-        // TODO: recycle
+        ReleaseWRContext(context, endpoint);
         PS_VLOG(3) << "DONE FI_SEND data";
       }
     } else if (is_recv) {
@@ -1149,31 +1163,33 @@ class FabricVan : public Van {
         MessageBuffer *msg_buf =
     	reinterpret_cast<MessageBuffer *>(origin_addr);
 
-        Message *msg = GetFirstMsg(msg_buf);
+        // Message *msg = GetFirstMsg(msg_buf);
 
         // PrintSendLog(*msg, msg_buf, addr_tuple);
         FabricWRContext* send_context = msg_buf->reserved_context;
         send_context->tag = req->idx;
 
         auto trans = CHECK_NOTNULL(endpoint->GetTransport());
-        if (!IsValidPushpull(*msg)) {
-          // control message
-          trans->Send(send_context);
-        } else if (msg->meta.push && msg->meta.request) {
-          // worker, push request
-          trans->SendPushRequest(send_context);
-        } else if (msg->meta.push && !msg->meta.request) {
-          // server, push response
-          trans->SendPushResponse(send_context);
-        } else if (!msg->meta.push && msg->meta.request) {
-          // worker, pull request
-          trans->SendPullRequest(send_context);
-        } else if (!msg->meta.push && !msg->meta.request) {
-          // server, pull response
-          trans->SendPushResponse(send_context);
-        } else {
-          LOG(FATAL) << "unknown message type";
-        }
+        trans->Send(send_context);
+
+        // if (!IsValidPushpull(*msg)) {
+        //   // control message
+        //   trans->Send(send_context);
+        // } else if (msg->meta.push && msg->meta.request) {
+        //   // worker, push request
+        //   trans->SendPushRequest(send_context);
+        // } else if (msg->meta.push && !msg->meta.request) {
+        //   // server, push response
+        //   trans->SendPushResponse(send_context);
+        // } else if (!msg->meta.push && msg->meta.request) {
+        //   // worker, pull request
+        //   trans->SendPullRequest(send_context);
+        // } else if (!msg->meta.push && !msg->meta.request) {
+        //   // server, pull response
+        //   trans->SendPushResponse(send_context);
+        // } else {
+        //   LOG(FATAL) << "unknown message type";
+        // }
 
         // release the msg_buf from msgbuf_cache_
         ReleaseFirstMsg(msg_buf);
@@ -1357,6 +1373,12 @@ class FabricVan : public Van {
 
   std::mutex addr_mu_;
   std::unordered_map<MessageBuffer*, Message> msgbuf_cache_; // msg_buf, msg
+
+  typedef std::unordered_map<int, ContextTuple> KeyContext;
+
+  // <key, recver>, <FabricWRContext*, MessageBuffer*>
+  std::unordered_map<uint64_t, KeyContext> push_context_;
+  std::unordered_map<uint64_t, KeyContext> pull_context_;
 
   std::mutex log_mu_;
 };  // namespace ps
