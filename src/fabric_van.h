@@ -81,7 +81,7 @@ struct RendezvousMsg {
   uint64_t data_len[kMaxDataFields];
  // the original address of the message buffer
   uint64_t origin_addr;
- // the tag for tsend / trecv
+ // the tag for tsend / trecv. Used for Rendezvous reply
   uint64_t idx;
 };
 
@@ -438,7 +438,7 @@ struct FabricEndpoint {
     }
     PS_VLOG(4) << "Posted recv buffer " << ctx->buffers << " for "
                << readable_peer_addr << ". size = " << ctx->num_buffers
-               << " ctx = " << static_cast<void *>(ctx);
+               << " ctx = " << static_cast<void *>(ctx) << " tag = " << ctx->tag;
   }
 
   void InitRecvContext(FabricWRContext *ctx, size_t num,
@@ -450,6 +450,7 @@ struct FabricEndpoint {
 
       ctx[i].private_data = this;
       ctx[i].tag = tag;
+      ctx[i].type = type;
       PS_VLOG(4) << "InitRecvContext " << i << "/" << num;
       PrepareWRContext(ctx + i, buf, kMempoolChunkSize,
                        static_cast<char*>(buf) + kMempoolChunkSize, 0);
@@ -467,6 +468,7 @@ struct FabricEndpoint {
 
       ctx[i].private_data = this;
       ctx[i].tag = tag;
+      ctx[i].type = type;
       PrepareWRContext(ctx + i, buf, kMempoolChunkSize,
                        static_cast<char*>(buf) + kMempoolChunkSize, 0);
       queue->Push(&ctx[i]);
