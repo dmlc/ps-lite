@@ -651,8 +651,6 @@ class FabricVan : public Van {
     std::string role(val);
     LOG(INFO) << "This is a " << role;
 
-    val = Environment::Get()->find("ENABLE_RDMA_LOG");
-
     start_mu_.unlock();
     zmq_ = Van::Create("zmq");
     zmq_->Start(customer_id, true);
