@@ -34,15 +34,27 @@ struct Endpoint {
   struct rdma_cm_id *cm_id;
   std::shared_ptr<Transport> trans;
 
-  WRContext rx_ctx[kRxDepth];
-
-  WRContext start_ctx[kStartDepth];
-  WRContext reply_ctx[kReplyDepth];
+  int kStartDepth = 128;
+  int kRxDepth = 2048;
+  int kReplyDepth = kRxDepth;
+  WRContext *rx_ctx;
+  WRContext *start_ctx;
+  WRContext *reply_ctx;
 
   ThreadsafeQueue<WRContext *> free_start_ctx;
   ThreadsafeQueue<WRContext *> free_reply_ctx;
 
-  Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {}
+  Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {
+    auto byteps_rx_depth = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
+    auto byteps_start_depth = Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
+    kStartDepth = byteps_start_depth ? atoi(byteps_start_depth) : kStartDepth;
+    kRxDepth = byteps_rx_depth ? atoi(byteps_rx_depth) : kRxDepth;
+    kReplyDepth = kRxDepth;
+
+    start_ctx = new WRContext[kStartDepth];
+    reply_ctx = new WRContext[kReplyDepth];
+    rx_ctx = new WRContext[kRxDepth];
+  }
 
   ~Endpoint() {
     for (int i = 0; i < kRxDepth; ++i) {
@@ -92,7 +104,9 @@ struct Endpoint {
       ib_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      CHECK(mr);
+      CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno) 
+          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
+          << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
 
       ctx[i].type = type;
       ctx[i].buffer = mr;
@@ -127,8 +141,9 @@ struct Endpoint {
       CHECK(buf);
       struct ibv_mr *mr =
           ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-      CHECK(mr)<< "ibv_reg_mr failed: " << strerror(errno)
-               << ", i=" << i <<", kMempoolChunkSize="<< kMempoolChunkSize;
+      CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno) 
+          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
+          << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
 
       rx_ctx[i].type = kReceiveContext;
       rx_ctx[i].buffer = mr;
