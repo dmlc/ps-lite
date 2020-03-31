@@ -17,7 +17,10 @@
 #include "./meta.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
+
 #include "./fabric_van.h"
+#include "./lf_fabric_van.h"
+
 #include "./resender.h"
 #include "./zmq_van.h"
 #define USE_PROFILING
@@ -80,6 +83,10 @@ Van *Van::Create(const std::string &type) {
 #ifdef DMLC_USE_FABRIC
   } else if (type == "fabric") {
     return new FabricVan();
+#endif
+#ifdef DMLC_USE_LFFABRIC
+  } else if (type == "lffabric") {
+    return new LockFreeFabricVan();
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
@@ -517,17 +524,17 @@ void Van::Receiving() {
       // control msg
       auto &ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
-        LOG(INFO) << "Process TERMINATE";
+        PS_VLOG(2) << "Process TERMINATE";
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
-        VLOG(2) << "Process ADD_NODE";
+        PS_VLOG(2) << "Process ADD_NODE";
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
-        VLOG(2) << "Process BARRIER";
+        PS_VLOG(2) << "Process BARRIER";
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        VLOG(2) << "Process HEARTBEAT";
+        PS_VLOG(2) << "Process HEARTBEAT";
         ProcessHearbeat(&msg);
       } else {
         LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
@@ -536,6 +543,7 @@ void Van::Receiving() {
       ProcessDataMsg(&msg);
     }
   }
+  PS_VLOG(1) << "Van::Receiving exited";
 }
 
 int Van::GetPackMetaLen(const Meta &meta) {

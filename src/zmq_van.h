@@ -73,7 +73,7 @@ class ZMQVan : public Van {
   }
 
   void Stop() override {
-    PS_VLOG(1) << my_node_.ShortDebugString() << " is stopping";
+    PS_VLOG(1) << "Stopping " << my_node_.ShortDebugString();
     Van::Stop();
     // join all threads
     should_stop_ = true;
@@ -139,8 +139,9 @@ class ZMQVan : public Van {
       zmq_close(it->second);
     }
     mu_.unlock();
-    // worker doesn't need to connect to the other workers. same for server
-    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
+    // worker doesn't need to connect to the other workers if not in standalone mode.
+    // same for server
+    if ((node.role == my_node_.role) && (node.id != my_node_.id) && !standalone_) {
       PS_VLOG(1) << "Zmq skipped connection to node " << node.DebugString()
                  << ". My node is " << my_node_.DebugString();
       return;
@@ -240,7 +241,7 @@ class ZMQVan : public Van {
 
     auto it = senders_.find(id);
     if (it == senders_.end()) {
-      LOG(WARNING) << "there is no socket to node " << id;
+      LOG(FATAL) << "there is no socket to node " << id;
       return -1;
     }
 

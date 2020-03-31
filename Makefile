@@ -36,6 +36,12 @@ CFLAGS += -DDMLC_USE_FABRIC
 INCPATH += -I$(FABRIC_PATH)/include
 endif
 
+ifeq ($(USE_LFFABRIC), 1)
+LIBS += -lfabric -L$(FABRIC_PATH)/lib64 -L$(FABRIC_PATH)/lib
+CFLAGS += -DDMLC_USE_LFFABRIC
+INCPATH += -I$(FABRIC_PATH)/include
+endif
+
 ifdef ASAN
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls
 endif

@@ -15,16 +15,19 @@ shift
 arg="$@"
 
 # start the scheduler
+# export FI_LOG_LEVEL=Debug
 export DMLC_PS_ROOT_URI=${DMLC_PS_ROOT_URI:-'127.0.0.1'}
 export DMLC_PS_ROOT_PORT=${DMLC_PS_ROOT_PORT:-8000}
 export DMLC_INTERFACE=${DMLC_INTERFACE:-eth0}
 
 if [ $DMLC_ROLE == 'scheduler' ]; then
     (${bin} ${arg} 2>&1 | tee sched.log)
+    # gdb --args ${bin} ${arg}
 elif [ $DMLC_ROLE == 'server' ]; then
     for ((i=0; i<${DMLC_NUM_SERVER}; ++i)); do
         export HEAPPROFILE=./S${i}
         (${bin} ${arg} 2>&1 | tee server.log)
+        # gdb --args ${bin} ${arg}
     done
 elif [ $DMLC_ROLE == 'worker' ]; then
     for ((i=0; i<${DMLC_NUM_WORKER}; ++i)); do
