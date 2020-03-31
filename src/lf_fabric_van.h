@@ -847,7 +847,7 @@ class LockFreeFabricVan : public Van {
 
     auto trans = CHECK_NOTNULL(endpoint->GetTransport());
 
-    PrintRecvLog(msg, buffer_ctx, meta_len);
+    // PrintRecvLog(msg, buffer_ctx, meta_len);
 
     if (!IsValidPushpull(*msg)) {
       if (should_stop_.load()) {
@@ -1342,9 +1342,6 @@ class LockFreeFabricVan : public Van {
 
   // whether my role is server or not
   bool is_server;
-
-  // mutex for memory map
-  std::mutex map_mu_;
 
   // note that ZMQ use the node id to identify the senders.
   // to setup the connection for libfabric, we don't know the node id ahead of time
