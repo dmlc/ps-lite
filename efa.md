@@ -25,8 +25,8 @@ killall test_benchmark; make clean; make -j USE_FABRIC=1;
 
 ## Run Test in 3 windows
 ```
-DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 NUM_KEY_PER_SERVER=40 DMLC_ROLE=worker bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 1024000 100 1
-DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 DMLC_ROLE=scheduler bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
-DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 DMLC_ROLE=server    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
+LOG_DURATION=1 DMLC_PS_ROOT_URI=172.31.93.7 DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 NUM_KEY_PER_SERVER=40 DMLC_ROLE=worker bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 1024000 100 1
+DMLC_PS_ROOT_URI=172.31.93.7 DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 DMLC_ROLE=scheduler bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
+DMLC_PS_ROOT_URI=172.31.93.7 DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 DMLC_ROLE=server    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
 
 ```
