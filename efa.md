@@ -17,7 +17,7 @@ sudo make install
 ```
 
 ```
-make clean; USE_FABRIC=1 make -j;
+make clean; USE_LFFABRIC=1 make -j;
 
 killall test_benchmark; make clean; make -j USE_FABRIC=1;
 
