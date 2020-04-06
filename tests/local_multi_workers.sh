@@ -28,16 +28,16 @@ elif [ $DMLC_ROLE == 'server' ]; then
     for ((i=0; i<${DMLC_NUM_SERVER}; ++i)); do
         export HEAPPROFILE=./S${i}
         # (${bin} ${arg} &)
-        # (${bin} ${arg} 2>&1 | tee server.log)
-        (numactl --physcpubind=0-35 --membind=0 ${bin} ${arg} 2>&1 | tee server.log)
+        (${bin} ${arg} 2>&1 | tee server.log)
+        # (numactl --physcpubind=0-35 --membind=0 ${bin} ${arg} 2>&1 | tee server.log)
         # gdb --args ${bin} ${arg}
     done
 elif [ $DMLC_ROLE == 'worker' ]; then
     for ((i=0; i<${DMLC_NUM_WORKER}; ++i)); do
         export HEAPPROFILE=./S${i}
         # (${bin} ${arg} &)
-        # (${bin} ${arg} 2>&1 | tee worker.log)
-        (numactl --physcpubind=0-35 --membind=0 ${bin} ${arg} 2>&1 | tee worker.log)
+        (${bin} ${arg} 2>&1 | tee worker.log)
+        # (numactl --physcpubind=0-35 --membind=0 ${bin} ${arg} 2>&1 | tee worker.log)
     done
 fi
 wait

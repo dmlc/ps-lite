@@ -1168,6 +1168,7 @@ class LockFreeFabricVan : public Van {
         MessageBuffer *msg_buf = PrepareNewMsgBuf(msg, endpoint);
         endpoint->StoreMsgBuf(msg_buf, msg);
         trans->SendRendezvousBegin(msg, msg_buf);
+        PS_VLOG(6) << "SendRendezvousBegin " << msg.DebugString();
         return;
       }
     }
