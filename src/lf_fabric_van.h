@@ -130,6 +130,8 @@ struct FabricWRContext {
   struct iovec buffers[2];
   // number of send/recv buffers
   size_t num_buffers;
+  // private msg_buf point
+  void* private_data;
 };
 
 
@@ -946,6 +948,7 @@ class LockFreeFabricVan : public Van {
     FabricWRContext* ctx = new FabricWRContext();
     ctx->type = kSendWithData;
     msg_buf->reserved_context = ctx;
+    ctx->private_data = msg_buf;
     void *data_buff = nullptr;
     size_t data_size = 0;
     if (msg.data.size() != 0) {
@@ -979,6 +982,7 @@ class LockFreeFabricVan : public Van {
         endpoint->free_reply_ctx.Push(context);
         break;
       case kSendWithData:
+        endpoint->StoreRemoteContext(reinterpret_cast<MessageBuffer *>(context->private_data), context);
         break;
       case kReceiveWithData:
         endpoint->PostRecv(context);
@@ -1091,9 +1095,6 @@ class LockFreeFabricVan : public Van {
 
         auto trans = CHECK_NOTNULL(endpoint->GetTransport());
         trans->Send(send_context);
-
-        // release the msg_buf from msgbuf_cache
-        endpoint->ReleaseFirstMsg(msg_buf);
 
         ReleaseWRContext(context, endpoint);
         PS_VLOG(3) << "CQ: DONE  FI_RECV kRendezvousReply: <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> origin_addr = " << origin_addr << " req = " << req << " msg_buf = " << msg_buf;
