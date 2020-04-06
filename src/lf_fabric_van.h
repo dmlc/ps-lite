@@ -809,7 +809,7 @@ class LockFreeFabricVan : public Van {
     CHECK_NE(remote_id, Node::kEmpty);
 
     endpoints_mu_.lock();
-    CHECK_NE(endpoints_.find(remote_id), endpoints_.end()) << EndpointsDebugStr();
+    CHECK_NE(endpoints_.find(remote_id), endpoints_.end()) << remote_id << " v.s. " << EndpointsDebugStr();
     FabricEndpoint *endpoint = endpoints_[remote_id];
     endpoints_mu_.unlock();
 
