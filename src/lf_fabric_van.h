@@ -1215,10 +1215,9 @@ class LockFreeFabricVan : public Van {
     while (!should_stop_polling_.load()) {
       if (endpoint->send_queue.Size()) {
         WorkerSendMsg(endpoint);
-      } else {
-        // read from completion queue
-        WorkerPollCQ(endpoint, cq_entries);
       }
+      // read from completion queue
+      WorkerPollCQ(endpoint, cq_entries);
     }
     PS_VLOG(1) << "WorkerThread exited " << hostname << ":" << port;
   }
