@@ -291,7 +291,7 @@ struct FabricContext {
 
     // fi_av_straddr: human readable name
     fi_av_straddr(av, addr.name, readable_addr.name, &readable_addr.len);
-    PS_VLOG(1) << "Endpoint created: " << addr.DebugStr()
+    PS_VLOG(3) << "Endpoint created: " << addr.DebugStr()
                << " readable endpoint = "
                << std::string(readable_addr.name, readable_addr.len);
   }

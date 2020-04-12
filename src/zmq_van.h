@@ -175,7 +175,7 @@ class ZMQVan : public Van {
     }
     std::lock_guard<std::mutex> lk(mu_);
     senders_[id] = sender;
-    PS_VLOG(1) << "Zmq Connected to: " << node.DebugString();
+    PS_VLOG(3) << "Zmq Connected to: " << node.DebugString();
   }
 
   int SendMsg(Message& msg) override {
