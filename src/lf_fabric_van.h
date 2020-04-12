@@ -134,7 +134,6 @@ struct FabricWRContext {
   void* private_data;
 };
 
-
 std::string WRContextDebugStr(const FabricWRContext& ctx) {
   std::stringstream ss;
   ss << "type = " << ctx.type
@@ -233,8 +232,6 @@ struct FabricAddr {
 };
 
 struct FabricContext {
-  // fabric provider info
-  struct fi_info *info;
   // fabric top-level object
   struct fid_fabric *fabric;
   // domains which maps to a specific local network interface adapter
@@ -252,41 +249,12 @@ struct FabricContext {
   // maximum tag
   uint64_t max_tag;
 
-  void Init() {
-    struct fi_info *hints = nullptr;
+  void Init(fi_info* info) {
     struct fi_cq_attr cq_attr = {};
     struct fi_av_attr av_attr = {};
-    int fi_version, ret;
-
-    // set hints for capacity and modes, create fabric, domain and cq
-    hints = fi_allocinfo();
-    CHECK(hints != nullptr) << "Failed to allocate hints";
-
-    // hints to filter providers
-    hints->ep_attr->type = FI_EP_RDM;
-    hints->caps = FI_TAGGED | FI_MSG | FI_DIRECTED_RECV;
-    hints->mode = FI_CONTEXT;
-    hints->domain_attr->av_type = FI_AV_TABLE;
-    hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
-    hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
-    hints->tx_attr->msg_order = FI_ORDER_SAS;
-    hints->rx_attr->msg_order = FI_ORDER_SAS;
-
-    // request for EFA as the provider
-    hints->fabric_attr->prov_name = strdup("efa");
-    fi_version = FI_VERSION(1, 8);
-
-    // fi_getinfo
-    ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info);
-    CHECK_NE(ret, -FI_ENODATA) << "Could not find any optimal provider";
-    check_err(ret, "fi_getinfo failed");
-    fi_freeinfo(hints);
-
-    CHECK_EQ(info->ep_attr->mem_tag_format, kEFAMemTagFormat)
-      << "unexpected structured tag format: " << info->ep_attr->mem_tag_format;
 
     // fi_fabric: create fabric
-    ret = fi_fabric(info->fabric_attr, &fabric, nullptr);
+    int ret = fi_fabric(info->fabric_attr, &fabric, nullptr);
     check_err(ret, "Couldn't open a fabric provider");
 
     // fi_domain: create domain
@@ -335,7 +303,6 @@ struct FabricContext {
     fi_close((fid_t) av);
     fi_close((fid_t) domain);
     fi_close((fid_t) fabric);
-    fi_freeinfo(info);
   }
 };
 
@@ -416,10 +383,10 @@ struct FabricEndpoint {
     addr_cv.notify_all();
   }
 
-  void Create(const std::string& hp) {
+  void Create(const std::string& hp, fi_info* info) {
     fabric_ctx = std::unique_ptr<FabricContext>(new FabricContext());
     CHECK(fabric_ctx != nullptr);
-    fabric_ctx->Init();
+    fabric_ctx->Init(info);
     mem_allocator.reset(new FabricMemoryAllocator());
     hostport = hp;
   }
@@ -691,8 +658,37 @@ class FabricTransport {
 
 class LockFreeFabricVan : public Van {
  public:
-  LockFreeFabricVan() {}
-  ~LockFreeFabricVan() {}
+  LockFreeFabricVan() {
+    struct fi_info *hints = nullptr;
+    int fi_version, ret;
+
+    // set hints for capacity and modes, create fabric, domain and cq
+    hints = fi_allocinfo();
+    CHECK(hints != nullptr) << "Failed to allocate hints";
+
+    // hints to filter providers
+    hints->ep_attr->type = FI_EP_RDM;
+    hints->caps = FI_TAGGED | FI_MSG | FI_DIRECTED_RECV;
+    hints->mode = FI_CONTEXT;
+    hints->domain_attr->av_type = FI_AV_TABLE;
+    hints->domain_attr->control_progress = FI_PROGRESS_MANUAL;
+    hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
+    hints->tx_attr->msg_order = FI_ORDER_SAS;
+    hints->rx_attr->msg_order = FI_ORDER_SAS;
+
+    // request for EFA as the provider
+    hints->fabric_attr->prov_name = strdup("efa");
+    fi_version = FI_VERSION(1, 8);
+
+    // fi_getinfo
+    ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info_);
+    CHECK_NE(ret, -FI_ENODATA) << "Could not find any optimal provider";
+    check_err(ret, "fi_getinfo failed");
+  }
+
+  ~LockFreeFabricVan() {
+    PS_VLOG(3) << "~LockFreeFabricVan";
+  }
 
   virtual std::string GetType() const {
     return std::string("lffabric");
@@ -709,8 +705,10 @@ class LockFreeFabricVan : public Van {
     LOG(INFO) << "This is a " << role;
 
     start_mu_.unlock();
+
     zmq_ = Van::Create("zmq");
     zmq_->Start(customer_id, true);
+
     Van::Start(customer_id, false);
   }
 
@@ -748,6 +746,8 @@ class LockFreeFabricVan : public Van {
       // endpoint must be cleared after thread->join
       worker_endpoints_.clear();
     }
+    // free fabric info
+    fi_freeinfo(info_);
   }
 
   int Bind(const Node &node, int max_retry) override {
@@ -772,6 +772,7 @@ class LockFreeFabricVan : public Van {
     }
     if (node.id != Node::kEmpty) {
       FabricEndpoint *endpoint = GetOrCreateEndpoint(node.hostname, node.port, node.role);
+
       // set node id
       endpoint->SetNodeID(node.id);
 
@@ -1105,7 +1106,7 @@ class LockFreeFabricVan : public Van {
   }
 
   FabricEndpoint* WorkerCreateEndpoint(const std::string hostname, const int port,
-                                       const Node::Role role) {
+                                       const Node::Role role, fi_info* info) {
     FabricEndpoint* endpoint = nullptr;
     {
       const std::string hostport = hostport_str(hostname, port);
@@ -1116,7 +1117,7 @@ class LockFreeFabricVan : public Van {
 
       // init fabric_ctx
       PS_VLOG(3) << "Initializing a fabric endpoint";
-      endpoint->Create(hostport);
+      endpoint->Create(hostport, info);
 
       // init zmq connection
       int connection_id = 10000 + zmq_connections_.size();
@@ -1208,8 +1209,9 @@ class LockFreeFabricVan : public Van {
     }
   }
 
+
   void WorkerThread(const std::string hostname, const int port, const Node::Role role) {
-    FabricEndpoint* endpoint = WorkerCreateEndpoint(hostname, port, role);
+    FabricEndpoint* endpoint = WorkerCreateEndpoint(hostname, port, role, info_);
     WorkerInitPeerAddr(endpoint);
     // Pre-allocated work completions array used for polling
     struct fi_cq_tagged_entry cq_entries[kMaxConcurrentWorkRequest];
@@ -1352,6 +1354,8 @@ class LockFreeFabricVan : public Van {
   Van* zmq_;
 
   bool is_worker_;
+  // fabric provider info
+  struct fi_info *info_;
 
   std::mutex log_mu_;
 };  // namespace ps

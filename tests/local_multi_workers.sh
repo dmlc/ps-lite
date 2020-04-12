@@ -16,7 +16,7 @@ arg="$@"
 
 # start the scheduler
 # export FI_LOG_LEVEL=Debug
-export DMLC_PS_ROOT_URI=${DMLC_PS_ROOT_URI:-'172.31.93.7'}
+export DMLC_PS_ROOT_URI=${DMLC_PS_ROOT_URI:-'127.0.0.1'}
 export DMLC_PS_ROOT_PORT=${DMLC_PS_ROOT_PORT:-8000}
 export DMLC_INTERFACE=${DMLC_INTERFACE:-eth0}
 
