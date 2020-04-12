@@ -113,9 +113,13 @@ class ZMQVan : public Van {
     unsigned seed = static_cast<unsigned>(time(NULL) + port);
     for (int i = 0; i < max_retry + 1; ++i) {
       auto address = addr + std::to_string(port);
-      if (zmq_bind(receiver_, address.c_str()) == 0) break;
+      int ret = zmq_bind(receiver_, address.c_str());
+      if (ret == 0) break;
       if (i == max_retry) {
         port = -1;
+	int zmq_err = zmq_errno();
+	LOG(FATAL) << "Reached max retry for bind: " << zmq_strerror(zmq_err)
+		   << ". errno = " << zmq_err;
       } else {
         port = 10000 + rand_r(&seed) % 40000;
       }
