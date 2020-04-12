@@ -684,6 +684,11 @@ class LockFreeFabricVan : public Van {
     ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info_);
     CHECK_NE(ret, -FI_ENODATA) << "Could not find any optimal provider";
     check_err(ret, "fi_getinfo failed");
+    struct fi_info* providers = info_;
+    while (providers) {
+      LOG(INFO) << "Found a fabric provider " << providers->fabric_attr->prov_name;
+      providers = providers->next;
+    }
   }
 
   ~LockFreeFabricVan() {
