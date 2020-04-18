@@ -1,5 +1,6 @@
 /**
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  */
 
 #include <chrono>
@@ -22,6 +23,7 @@
 
 #include "./resender.h"
 #include "./zmq_van.h"
+#include "./ucx_van.h"
 #define USE_PROFILING
 
 namespace ps {
@@ -86,6 +88,10 @@ Van *Van::Create(const std::string &type) {
 #ifdef DMLC_USE_FABRIC
   } else if (type == "fabric") {
     return new FabricVan();
+#endif
+#ifdef DMLC_USE_UCX
+  } else if (type == "ucx") {
+    return new UCXVan();
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
@@ -705,4 +711,11 @@ void Van::Heartbeat() {
     Send(msg);
   }
 }
+
+bool Van::IsValidPushpull(const Message &msg) {
+   if (!msg.meta.control.empty()) return false;
+   if (msg.meta.simple_app) return false;
+   return true;
+}
+
 }  // namespace ps

@@ -36,6 +36,11 @@ CFLAGS += -DDMLC_USE_FABRIC
 INCPATH += -I$(FABRIC_PATH)/include
 endif
 
+ifeq ($(USE_UCX), 1)
+LIBS += -lucp -luct -lucs -lucm
+CFLAGS += -DDMLC_USE_UCX
+endif
+
 ifdef ASAN
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls
 endif

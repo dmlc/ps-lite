@@ -1,5 +1,6 @@
 /**
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  */
 #include <unistd.h>
 #include <thread>
@@ -15,9 +16,15 @@ Postoffice::Postoffice() {
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
-  const char* rdma = GetEnv("DMLC_ENABLE_RDMA", "zmq");
-  LOG(INFO) << "Creating Van: " << rdma;
-  van_ = Van::Create(rdma);
+  const char* van_type = GetEnv("DMLC_ENABLE_RDMA", "zmq");
+  int enable_ucx  = GetEnv("DMLC_ENABLE_UCX", 0);
+  if (enable_ucx) {
+    LOG(INFO) << "enable UCX for networking";
+    van_ = Van::Create("ucx");
+  } else {
+    LOG(INFO) << "Creating Van: " << van_type;
+    van_ = Van::Create(van_type);
+  }
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
   val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));

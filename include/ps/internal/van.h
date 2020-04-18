@@ -1,5 +1,6 @@
 /**
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  */
 #ifndef PS_INTERNAL_VAN_H_
 #define PS_INTERNAL_VAN_H_
@@ -134,6 +135,8 @@ class Van {
    * \brief unpack meta from a string
    */
   void UnpackMeta(const char *meta_buf, int buf_size, Meta *meta);
+
+  bool IsValidPushpull(const Message &msg);
 
   Node scheduler_;
   Node my_node_;

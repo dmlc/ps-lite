@@ -1,0 +1,26 @@
+name: CI
+
+on: [push, pull_request]
+
+env:
+  UCX_LINK: https://github.com/openucx/ucx
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Install dependencies
+      run: sudo apt-get install numactl libnuma-dev
+    - name: Get UCX
+      run: git clone $UCX_LINK /tmp/ucx
+    - name: Build UCX
+      run: |
+        set -eE
+        cd /tmp/ucx
+        ./autogen.sh
+        ./contrib/configure-release --without-java --enable-mt --prefix $PWD/install
+        make -j install
+    - uses: actions/checkout@v1
+    - name: Build
+      run: make -j USE_UCX=1 ADD_CFLAGS="-I/tmp/ucx/install/include -L/tmp/ucx/install/lib"
