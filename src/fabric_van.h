@@ -656,9 +656,9 @@ class FabricTransport {
 
 }; // class Transport
 
-class LockFreeFabricVan : public Van {
+class FabricVan : public Van {
  public:
-  LockFreeFabricVan() {
+  FabricVan() {
     struct fi_info *hints = nullptr;
     int fi_version, ret;
 
@@ -691,8 +691,8 @@ class LockFreeFabricVan : public Van {
     }
   }
 
-  ~LockFreeFabricVan() {
-    PS_VLOG(3) << "~LockFreeFabricVan";
+  ~FabricVan() {
+    PS_VLOG(3) << "~FabricVan";
   }
 
   virtual std::string GetType() const {
@@ -759,7 +759,7 @@ class LockFreeFabricVan : public Van {
     std::lock_guard<std::mutex> lk(endpoints_mu_);
     int my_port = zmq_->Bind(node, max_retry);
     PS_VLOG(3) << "Done zmq->Bind. My port is " << my_port;
-    event_polling_thread_.reset(new std::thread(&LockFreeFabricVan::EventPollingThread, this));
+    event_polling_thread_.reset(new std::thread(&FabricVan::EventPollingThread, this));
     return my_port;
   }
 
@@ -1261,7 +1261,7 @@ class LockFreeFabricVan : public Van {
       if (workers_.find(hostport) == workers_.end()) {
         CHECK(worker_endpoints_.find(hostport) == worker_endpoints_.end());
         worker_endpoints_[hostport].reset(new FabricEndpoint());
-        auto thread = new std::thread(&LockFreeFabricVan::WorkerThread, this,
+        auto thread = new std::thread(&FabricVan::WorkerThread, this,
                                       host, port, role);
         workers_[hostport].reset(thread);
       }

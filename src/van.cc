@@ -19,7 +19,6 @@
 #include "./rdma_van.h"
 
 #include "./fabric_van.h"
-#include "./lf_fabric_van.h"
 
 #include "./resender.h"
 #include "./zmq_van.h"
