@@ -696,7 +696,7 @@ class FabricVan : public Van {
   }
 
   virtual std::string GetType() const {
-    return std::string("lffabric");
+    return std::string("fabric");
   }
 
  protected:

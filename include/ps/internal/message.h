@@ -106,7 +106,7 @@ struct Node {
   char endpoint_name[64];
   /** \brief the length of the endpoint name */
   size_t endpoint_name_len = 0;
-  /** \brief the auxilary id */
+  /** \brief the auxilary id. currently used for fabric van communication setup */
   int aux_id;
 };
 /**
@@ -122,7 +122,7 @@ struct Control {
     if (empty()) return "";
     std::vector<std::string> cmds = {
       "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT", "BOOTSTRAP", "ADDR_REQUEST",
-	  "ADDR_RESOLVED"
+      "ADDR_RESOLVED"
     };
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
@@ -137,7 +137,7 @@ struct Control {
   }
   /** \brief all commands */
   enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, BOOTSTRAP, ADDR_REQUEST,
-	  	  	  	 ADDR_RESOLVED};
+                 ADDR_RESOLVED};
   /** \brief the command */
   Command cmd;
   /** \brief node infos */

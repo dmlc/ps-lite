@@ -1,8 +1,8 @@
-## Build with EFA
+## Build with libfabric for elastic fabric accelerator
 
-AMI: Base DLAMI (ubuntu/AML)
+AMI: Base Deep Learning AMI (ubuntu/AML)
 
-for AML install gcc-4.9 first
+1. install gcc-4.9 first
 
 ```
 set -e
@@ -16,17 +16,14 @@ make -j$(nproc)
 sudo make install
 ```
 
+2. build ps-lite
 ```
-make clean; USE_LFFABRIC=1 make -j;
-
-killall test_benchmark; make clean; make -j USE_FABRIC=1;
-
+make clean; USE_FABRIC=1 make -j;
 ```
 
-## Run Test in 3 windows
+3. run tests
 ```
-LOG_DURATION=1 DMLC_PS_ROOT_URI=172.31.93.7 DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 NUM_KEY_PER_SERVER=40 DMLC_ROLE=worker bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 1024000 100 1
-DMLC_PS_ROOT_URI=172.31.93.7 DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 DMLC_ROLE=scheduler bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
-DMLC_PS_ROOT_URI=172.31.93.7 DMLC_ENABLE_RDMA=lffabric PS_VERBOSE=2 DMLC_ROLE=server    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
-
+DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric DMLC_ROLE=worker    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 4096000 100 1
+DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric DMLC_ROLE=scheduler bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
+DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric DMLC_ROLE=server    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
 ```
