@@ -56,6 +56,22 @@ class RDMAVan : public Van {
     enable_log_ = val ? atoi(val) : false;
     if (enable_log_) LOG(INFO) << "Enable RDMA logging.";
 
+    val = Environment::Get()->find("BYTEPS_RDMA_MAX_CONCURR_WR");
+    if (val) {    
+      // should make sure: kMaxConcurrentWorkRequest >= kStartDepth + kReplyDepth + kRxDepth
+      kMaxConcurrentWorkRequest = atoi(val);
+
+      auto start_depth_env = Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
+      auto rx_depth_env = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
+
+      auto start_depth = start_depth_env ? atoi(start_depth_env) : 128;
+      auto rx_depth = rx_depth_env ? atoi(rx_depth_env) : 2048;
+      auto reply_depth = rx_depth;
+
+      CHECK_GE(kMaxConcurrentWorkRequest, start_depth + reply_depth + rx_depth) 
+          << "Should make sure: kMaxConcurrentWorkRequest >= kStartDepth + kReplyDepth + kRxDepth";
+    }
+
     start_mu_.unlock();
     Van::Start(customer_id);
   }
@@ -957,6 +973,8 @@ class RDMAVan : public Van {
   // logging
   bool enable_log_;
   std::mutex log_mu_;
+
+  int kMaxConcurrentWorkRequest = 4224; // 128 + 2048 * 2
 
 };  // class RDMAVan
 

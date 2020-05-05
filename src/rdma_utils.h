@@ -58,8 +58,6 @@ static const int kReplyDepth = kRxDepth;
 static const int kSGEntry = 1;
 static const int kTimeoutms = 1000;
 static const int kRdmaListenBacklog = 128;
-static const int kMaxConcurrentWorkRequest =
-    kRxDepth + kStartDepth + kReplyDepth;
 static const int kMaxHostnameLength = 16;
 
 // should have the same prefix with BytePS shared memory
