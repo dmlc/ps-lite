@@ -22,7 +22,7 @@ endif
 
 
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
-CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
+CFLAGS = -std=c++14 -msse2 -fPIC -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread -lrt
 
 ifeq ($(USE_IBVERBS), 1)
@@ -33,12 +33,6 @@ endif
 ifeq ($(USE_FABRIC), 1)
 LIBS += -lfabric -L$(FABRIC_PATH)/lib64 -L$(FABRIC_PATH)/lib
 CFLAGS += -DDMLC_USE_FABRIC
-INCPATH += -I$(FABRIC_PATH)/include
-endif
-
-ifeq ($(USE_LFFABRIC), 1)
-LIBS += -lfabric -L$(FABRIC_PATH)/lib64 -L$(FABRIC_PATH)/lib
-CFLAGS += -DDMLC_USE_LFFABRIC
 INCPATH += -I$(FABRIC_PATH)/include
 endif
 

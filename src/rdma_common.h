@@ -15,7 +15,7 @@
 #ifndef PS_RDMA_COMMON_H_
 #define PS_RDMA_COMMON_H_
 
-#if defined(DMLC_USE_IBVERBS) || defined(DMLC_USE_FABRIC) || defined(DMLC_USE_LFFABRIC)
+#if defined(DMLC_USE_IBVERBS) || defined(DMLC_USE_FABRIC)
 
 #define DIVUP(x, y) (((x)+(y)-1)/(y))
 #define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
