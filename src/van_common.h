@@ -35,7 +35,6 @@ static inline T align_ceil(T v, T align) {
   return align_floor(v + align - 1, align);
 }
 
-
 enum MessageTypes : uint32_t {
   kRendezvousStart,
   kRendezvousReply,

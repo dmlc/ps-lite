@@ -1,8 +1,19 @@
-/**
- * Copyright (c) 2020 by Contributors
- * Authors: access2rohit@gmail.com (Rohit Srivastava)
- *          linhaibin.eric@gmail.com (Haibin Lin)
-*/
+
+// Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// =============================================================================
+
 #ifndef PS_FABRIC_VAN_H_
 #define PS_FABRIC_VAN_H_
 
@@ -31,7 +42,7 @@
 
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
-#include "rdma_common.h"
+#include "van_common.h"
 
 #include <rdma/fi_errno.h>
 #include <rdma/fabric.h>
@@ -41,22 +52,10 @@
 
 namespace ps {
 
-static const int kStartDepth = 128;
-static const int kRxDepth = 2048; // should be larger than kStartDepth
-// static const int kStartDepth = 2;
-// static const int kRxDepth = 4; // should be larger than kStartDepth
-static const int kReplyDepth = kRxDepth;
-
-static const int kTimeoutms = 1000;
-static const int kRdmaListenBacklog = 128;
-static const int kMaxConcurrentWorkRequest =
-    kRxDepth + kStartDepth + kReplyDepth;
-static const int kMaxHostnameLength = 16;
-
-
 static const uint64_t kRendezvousStartMask = 0x8000000000000000ULL;
 static const uint64_t kRendezvousReplyMask = 0x4000000000000000ULL;
 static const uint64_t kDataMask = 0x3FFFFFFFFFFFFFFFULL;
+
 // 1010101010101010101010101010101010101010101010101010101010101010
 static const uint64_t kEFAMemTagFormat = 12297829382473034410ULL;
 
@@ -307,6 +306,11 @@ struct FabricContext {
 };
 
 struct FabricEndpoint {
+
+  static const int kStartDepth = 128;
+  static const int kRxDepth = 2048; // should be larger than kStartDepth
+  static const int kReplyDepth = kRxDepth;
+
   enum ConnectionStatus { EMPTY, IDLE, CONNECTING, CONNECTED, REJECTED };
   ConnectionStatus status = EMPTY;
   // the node id
@@ -1363,6 +1367,10 @@ class FabricVan : public Van {
   struct fi_info *info_;
 
   std::mutex log_mu_;
+
+  // TODO(haibin): make it configurable
+  int kMaxConcurrentWorkRequest = 4224; // 128 + 2048 * 2
+
 };  // namespace ps
 };  // namespace ps
 

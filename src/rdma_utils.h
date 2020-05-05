@@ -46,14 +46,10 @@
 
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
-#include "rdma_common.h"
+#include "van_common.h"
 
 
 namespace ps {
-
-static const int kStartDepth = 128;
-static const int kRxDepth = 2048; // should be larger than kStartDepth
-static const int kReplyDepth = kRxDepth;
 
 static const int kSGEntry = 1;
 static const int kTimeoutms = 1000;

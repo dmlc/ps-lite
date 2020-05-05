@@ -519,17 +519,13 @@ void Van::Receiving() {
       // control msg
       auto &ctrl = msg.meta.control;
       if (ctrl.cmd == Control::TERMINATE) {
-        PS_VLOG(2) << "Process TERMINATE";
         ProcessTerminateCommand();
         break;
       } else if (ctrl.cmd == Control::ADD_NODE) {
-        PS_VLOG(2) << "Process ADD_NODE";
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
-        PS_VLOG(2) << "Process BARRIER";
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
-        PS_VLOG(2) << "Process HEARTBEAT";
         ProcessHearbeat(&msg);
       } else {
         LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
@@ -538,7 +534,6 @@ void Van::Receiving() {
       ProcessDataMsg(&msg);
     }
   }
-  PS_VLOG(1) << "Van::Receiving exited";
 }
 
 int Van::GetPackMetaLen(const Meta &meta) {
