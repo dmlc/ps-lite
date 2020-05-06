@@ -465,13 +465,9 @@ class FabricVan : public Van {
     if (is_send) {
       if (start_msg || reply_msg) {
         RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
-        PS_VLOG(3) << "CQ: START FI_SEND RendezvousMsg <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> content = " << "start = " << start_msg << " " << RendezvousDebugStr(*req);
         ReleaseWRContext(context, endpoint);
-        PS_VLOG(3) << "CQ: DONE  FI_SEND RendezvousMsg <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> content = " << "start = " << start_msg << " " << RendezvousDebugStr(*req);
       } else {
-        PS_VLOG(3) << "CQ: START FI_SEND data: <endpoint,tag> = <" << endpoint->node_id << "," << tag << ">";
         ReleaseWRContext(context, endpoint);
-        PS_VLOG(3) << "CQ: DONE  FI_SEND data: <endpoint,tag> = <" << endpoint->node_id << "," << tag << ">";
       }
     } else if (is_recv) {
       // receive
@@ -479,17 +475,13 @@ class FabricVan : public Van {
         // kRendezvousStart
         RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
         auto trans = CHECK_NOTNULL(endpoint->GetTransport());
-        PS_VLOG(3) << "CQ: START FI_RECV RendezvousStart <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> content = " << RendezvousDebugStr(*req);
         trans->SendRendezvousReply(req, endpoint->addr_pool);
         ReleaseWRContext(context, endpoint);
-        PS_VLOG(3) << "CQ: DONE  FI_RECV RendezvousStart <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> content = " << RendezvousDebugStr(*req);
       } else if (data_msg) {
         // the tag is the address of the buffer context posted for recving
-        PS_VLOG(3) << "CQ: START FI_RECV data <endpoint,tag> = <" << endpoint->node_id << "," << tag << ">";
         FabricBufferContext *buf_ctx = endpoint->addr_pool.GetAddress(tag);
         recv_buffers_.Push(buf_ctx);
         ReleaseWRContext(context, buf_ctx->endpoint);
-        PS_VLOG(3) << "CQ: DONE  FI_RECV data <endpoint,tag> = <" << endpoint->node_id << "," << tag << ">";
       } else {
         RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
 
@@ -502,7 +494,6 @@ class FabricVan : public Van {
         FabricWRContext* send_context = msg_buf->reserved_context;
         // now we know which tag to use to reach the peer
         send_context->tag = req->tag;
-        PS_VLOG(3) << "CQ: START FI_RECV kRendezvousReply: <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> origin_addr = " << origin_addr << " req = " << req << " msg_buf = " << msg_buf;
 
         endpoint->StoreRemoteContext(msg_buf, send_context);
 
@@ -512,7 +503,6 @@ class FabricVan : public Van {
         trans->Send(send_context);
 
         ReleaseWRContext(context, endpoint);
-        PS_VLOG(3) << "CQ: DONE  FI_RECV kRendezvousReply: <endpoint,tag> = <" << endpoint->node_id << "," << tag << "> origin_addr = " << origin_addr << " req = " << req << " msg_buf = " << msg_buf;
       }
     } else {
       LOG(FATAL) << "unknown completion entry" << flags;
