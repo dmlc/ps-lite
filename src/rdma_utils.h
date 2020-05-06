@@ -194,16 +194,6 @@ static_assert(std::is_pod<RequestContext>::value,
 static const size_t kMempoolChunkSize =
     std::max({sizeof(RendezvousStart), sizeof(RendezvousReply)});
 
-uint64_t DecodeKey(SArray<char> keys) { // just a translation, the decoded key might not be readable when we have multiple servers
-  ps::Key key = 0;
-  uint64_t coef = 1;
-  for (unsigned int i = 0; i < keys.size(); ++i) {
-    key += coef * (uint8_t) keys.data()[i];
-    coef *= 256; // 256=2^8 (uint8_t)
-  }
-  return key;
-}
-
 uint64_t DecodeWorkerKey(uint64_t key) {
   auto kr = ps::Postoffice::Get()->GetServerKeyRanges()[ps::Postoffice::Get()->my_rank()];
   return key - kr.begin();

@@ -23,7 +23,5 @@ make clean; USE_FABRIC=1 make -j;
 
 3. run tests
 ```
-DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric DMLC_ROLE=worker    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 4096000 100 1
-DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric DMLC_ROLE=scheduler bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
-DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric DMLC_ROLE=server    bash tests/local_multi_workers.sh 1 1 tests/test_benchmark
+DMLC_INTERFACE=eth0 DMLC_PS_ROOT_URI=ROOT_IP DMLC_ENABLE_RDMA=fabric bash tests/local_multi_workers.sh 1 1 tests/test_benchmark 4096000 100 1
 ```

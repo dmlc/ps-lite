@@ -35,7 +35,7 @@ class RDMAVan : public Van {
   }
 
  protected:  
-  void Start(int customer_id) override {
+  void Start(int customer_id, bool standalone) override {
     start_mu_.lock();
     should_stop_ = false;
 
@@ -73,7 +73,7 @@ class RDMAVan : public Van {
     }
 
     start_mu_.unlock();
-    Van::Start(customer_id);
+    if (!standalone) Van::Start(customer_id, false);
   }
 
   void Stop() override {
