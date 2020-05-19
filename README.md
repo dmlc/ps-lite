@@ -75,6 +75,9 @@ export DMLC_INTERFACE=eth5        # my RDMA interface
 DMLC_ROLE=worker ./tests/test_benchmark
 ```
 
+If you want to use libfabric with Amazon Elastic Fabric Adaptor, make sure to set `DMLC_ENABLE_RDMA=fabric` for all processes. If you are
+using libfabric < 1.10, please also set `FI_EFA_ENABLE_SHM_TRANSFER=0` to avoid a bug in the EFA shm provider.
+
 If you just want to use TCP, make sure to unset `DMLC_ENABLE_RDMA` for all processes.
 
 ### 2. Benchmark with IPC support
