@@ -5,10 +5,10 @@ This is the communication library for [BytePS](https://github.com/bytedance/byte
 ```bash
 git clone -b byteps https://github.com/bytedance/ps-lite
 cd ps-lite 
-make -j USE_IBVERBS=1 USE_FABRIC=1
+make -j USE_RDMA=1 USE_FABRIC=1
 ```
 
-Remove `USE_IBVERBS=1` if you don't want to build with RDMA ibverbs support.
+Remove `USE_RDMA=1` if you don't want to build with RDMA ibverbs support.
 Remove `USE_FABRIC=1` if you don't want to build with RDMA libfabric support for AWS Elastic Fabric Adaptor.
 
 ## Concepts

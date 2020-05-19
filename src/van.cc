@@ -75,8 +75,12 @@ Van *Van::Create(const std::string &type) {
 
   if (type == "zmq") {
     return new ZMQVan();
-#ifdef DMLC_USE_IBVERBS
+#ifdef DMLC_USE_RDMA
   } else if (type == "ibverbs") {
+    return new RDMAVan();
+  } else if (type == "1") {
+    LOG(WARNING) << "DMLC_ENABLE_RDMA=1 will be deprecated. "
+	         << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
     return new RDMAVan();
 #endif
 #ifdef DMLC_USE_FABRIC
