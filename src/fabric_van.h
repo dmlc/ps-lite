@@ -463,12 +463,7 @@ class FabricVan : public Van {
     bool reply_msg = (tag == kRendezvousReplyMask);
     bool data_msg = !start_msg && !reply_msg;
     if (is_send) {
-      if (start_msg || reply_msg) {
-        RendezvousMsg *req = static_cast<RendezvousMsg*>(context->buffers[0].iov_base);
-        ReleaseWRContext(context, endpoint);
-      } else {
-        ReleaseWRContext(context, endpoint);
-      }
+      ReleaseWRContext(context, endpoint);
     } else if (is_recv) {
       // receive
       if (start_msg) {
