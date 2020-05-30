@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <fcntl.h>
-#include <numa.h>
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/types.h>
