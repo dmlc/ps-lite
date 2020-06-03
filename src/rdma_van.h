@@ -259,7 +259,6 @@ class RDMAVan : public Van {
     // pack meta info
     if (IsValidPushpull(msg)) {
       AddMeta(msg);
-      PackWorkerTensorAddress(msg);
     }
 
     auto trans = CHECK_NOTNULL(endpoint->GetTransport());
@@ -349,7 +348,6 @@ class RDMAVan : public Van {
     if (msg->meta.push && msg->meta.request) { 
       // push request
       total_len += trans->RecvPushRequest(msg, buffer_ctx, meta_len);
-      StoreWorkerTensorAddress(msg);
     } else if (!msg->meta.push && msg->meta.request) { 
       // pull request
       total_len += trans->RecvPullRequest(msg, buffer_ctx, meta_len);
@@ -446,39 +444,6 @@ class RDMAVan : public Van {
     }
   }
 
-  void PackWorkerTensorAddress(Message &msg) {
-    // must be pull response
-    if (msg.meta.push || msg.meta.request) return;
-    
-    uint64_t key = msg.meta.key;
-    auto recver = msg.meta.recver;
-
-    std::lock_guard<std::mutex> lock(info_mu_);
-    CHECK_NE(tensor_info_map_.find(key), tensor_info_map_.end());
-    CHECK_NE(tensor_info_map_[key].find(recver), tensor_info_map_[key].end());
-    msg.meta.val_len = std::get<0>(tensor_info_map_[key][recver]);
-    msg.meta.addr = std::get<1>(tensor_info_map_[key][recver]);
-    msg.meta.option = std::get<2>(tensor_info_map_[key][recver]);
-  }
-
-  void StoreWorkerTensorAddress(Message *msg) {
-    auto key = msg->meta.key;
-    auto len = msg->meta.val_len;
-    auto addr = msg->meta.addr;
-    auto rkey = msg->meta.option;
-    auto sender = msg->meta.sender;
-
-    std::lock_guard<std::mutex> lock(info_mu_);
-    if (tensor_info_map_.find(key) == tensor_info_map_.end()
-          || tensor_info_map_[key].find(sender) == tensor_info_map_[key].end()) {
-      tensor_info_map_[key][sender] = std::make_tuple(len, addr, rkey);
-    } else {
-      CHECK_EQ(len, std::get<0>(tensor_info_map_[key][sender]));
-      CHECK_EQ(addr, std::get<1>(tensor_info_map_[key][sender]));
-      CHECK_EQ(rkey, std::get<2>(tensor_info_map_[key][sender]));
-    }
-  }
-
   bool HasRemoteInfo(Message& msg, uint64_t key, bool is_push, int recver) {
     std::lock_guard<std::mutex> lk(addr_mu_);
     if (is_push && (push_addr_.find(key) != push_addr_.end()) 
@@ -560,6 +525,19 @@ class RDMAVan : public Van {
       }
       ++sa_cnt;
     }
+    // register for tensor address of pull request 
+    if (IsValidPushpull(msg) && !msg.meta.push && msg.meta.request) {
+      CHECK_GT(msg.meta.val_len, 0) << msg.meta.val_len;
+      auto addr = reinterpret_cast<char*>(msg.meta.addr);
+      std::lock_guard<std::mutex> lock(map_mu_);
+      if (mem_mr_.find(addr) == mem_mr_.end()) {
+        struct ibv_mr *temp_mr;
+        CHECK(temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), addr, msg.meta.val_len,
+                IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE))
+                << "Failed to register the memory region: " << strerror(errno);
+        mem_mr_[addr] = temp_mr;
+      }
+    }
   }
 
   void PrepareData(Message &msg, MessageBuffer *msg_buf) {
@@ -578,17 +556,11 @@ class RDMAVan : public Van {
     if (msg.meta.request) {
       msg.meta.key = DecodeKey(msg.data[0]);
     }
-    if (msg.meta.push && msg.meta.request) { 
-      // push request
-      CHECK_EQ(msg.data.size(), 3) << msg.data.size();
-
+    if (!msg.meta.push && msg.meta.request) { 
+      // pull request 
       std::lock_guard<std::mutex> lock(map_mu_);
-      CHECK_NE(mem_mr_.find(msg.data[1].data()), mem_mr_.end());
-
-      auto& vals = msg.data[1];
-      msg.meta.addr = reinterpret_cast<uint64_t>(vals.data()); // vals address
-      msg.meta.val_len = vals.size();
-      msg.meta.option = mem_mr_[vals.data()]->rkey;
+      auto val_addr = reinterpret_cast<char*>(msg.meta.addr);
+      msg.meta.option = mem_mr_[val_addr]->rkey;
     }
   }
 
@@ -951,12 +923,6 @@ class RDMAVan : public Van {
   bool disable_ipc_ = false;
   std::mutex local_mu_;
   std::unordered_map<int, bool> is_local_;
-
-  // worker's tensor address
-  std::mutex info_mu_;
-  using TensorInfo = std::tuple<int, uint64_t, int>; // len, addr, rkey
-  using RemoteTensorMeta = std::unordered_map<int, TensorInfo>; // sender as the key
-  std::unordered_map<ps::Key, RemoteTensorMeta> tensor_info_map_; // (key, sender) --> TensorInfo
 
   std::mutex addr_mu_;
   // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
