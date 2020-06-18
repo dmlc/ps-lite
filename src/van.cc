@@ -97,6 +97,10 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
         getenv("BYTEPS_ENABLE_MIXED_MODE") 
         ? atoi(getenv("BYTEPS_ENABLE_MIXED_MODE")) 
         : false;
+    bool sparse_mode = getenv("BYTEPS_ORDERED_HOSTS") ? true : false;
+    CHECK_NE(mixed_mode && sparse_mode, true) 
+      << "BYTEPS_ENABLE_MIXED_MODE and BYTEPS_ORDERED_HOSTS should not coexist";
+
     if (mixed_mode) {
       std::unordered_map<std::string, size_t> ip_cnt;
       for (auto &node : nodes->control.node) { 
@@ -122,6 +126,34 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
           PS_VLOG(1) << "Colocated " << ((node.role == Node::SERVER) ? "Server" : "Worker") << ": \t" << node_host_ip;
         }
       }
+    } else if (sparse_mode) {
+      PS_VLOG(1) << "Assign the rank as the same order in BYTEPS_ORDERED_HOSTS";
+      CHECK(getenv("BYTEPS_ORDERED_HOSTS")) 
+          << "\n should set it as a list of IP:port (port is optional) concatenated by comma " 
+          << "\n an example: BYTEPS_ORDERED_HOSTS=10.0.0.1:1234,10.0.0.2:4321";
+      std::string sparse_hosts = std::string(getenv("BYTEPS_ORDERED_HOSTS"));
+      std::vector<std::string> hosts_list;
+      
+      size_t pos = 0;
+      while ((pos = sparse_hosts.find(",")) != std::string::npos) {
+        std::string host = sparse_hosts.substr(0, pos);
+        hosts_list.push_back(host);
+        sparse_hosts.erase(0, pos + 1);
+      }
+      hosts_list.push_back(sparse_hosts);
+
+      std::unordered_map<std::string, size_t> ip_pos;
+      for (size_t i = 0; i < hosts_list.size(); ++i) {
+        std::string ip = hosts_list[i].substr(0, hosts_list[i].find(":"));
+        CHECK_EQ(ip_pos.find(ip), ip_pos.end()) << "\nDuplicate IP found in BYTEPS_ORDERED_HOSTS: " << ip; 
+        ip_pos[ip] = i;
+      }
+
+      // sort the ip in the same order as BYTEPS_ORDERED_HOSTS
+      std::sort(nodes->control.node.begin(), nodes->control.node.end(),
+                [&ip_pos](const Node &a, const Node &b) {
+                  return ip_pos[a.hostname] < ip_pos[b.hostname];
+                });
     } else {
       // sort the nodes according their ip and port
       std::sort(nodes->control.node.begin(), nodes->control.node.end(),
