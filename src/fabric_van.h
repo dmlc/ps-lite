@@ -355,7 +355,8 @@ class FabricVan : public Van {
     FabricMessageBuffer *msg_buf = new FabricMessageBuffer();
     auto meta_len = GetPackMetaLen(msg.meta);
     msg_buf->inline_len = meta_len;
-    msg_buf->inline_buf = endpoint->mem_allocator->Alloc(meta_len);
+    size_t meta_size = 0;
+    msg_buf->inline_buf = endpoint->mem_allocator->Alloc(meta_len, &meta_size);
     msg_buf->data = msg.data;
     PackMeta(msg.meta, &(msg_buf->inline_buf), &meta_len);
 
@@ -373,7 +374,7 @@ class FabricVan : public Van {
       data_buff = static_cast<char*>(msg.data[1].data());
       data_size = msg.data[1].size();
     }
-    PrepareWRContext(ctx, msg_buf->inline_buf, msg_buf->inline_len, data_buff, data_size);
+    PrepareWRContext(ctx, msg_buf->inline_buf, meta_size, data_buff, data_size);
     return msg_buf;
   }
 

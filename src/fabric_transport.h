@@ -344,7 +344,7 @@ class FabricTransport {
 
     auto val = Environment::Get()->find("DMLC_ROLE");
     std::string role(val);
-    is_server_ = (role=="server");
+    is_server_ = (role == "server");
   };
 
   ~FabricTransport() {
@@ -354,7 +354,8 @@ class FabricTransport {
   void Send(FabricWRContext *context) {
     while (true) {
       int ret = fi_tsendv(endpoint_->fabric_ctx->ep, context->buffers, nullptr,
-                          2, endpoint_->peer_addr, context->tag, context);
+                          context->num_buffers, endpoint_->peer_addr,
+                          context->tag, context);
       if (ret == -FI_EAGAIN) {
         LOG(WARNING) << "fi_tsend: FI_EAGAIN";
       } else if (ret != 0) {
@@ -399,7 +400,7 @@ class FabricTransport {
     size_t meta_size = align_ceil(req->meta_len, pagesize_);
     size_t data_size = data_len;
     size_t alloc_size = meta_size + data_size;
-    char *buffer = allocator_->Alloc(alloc_size);
+    char *buffer = allocator_->Alloc(alloc_size, &alloc_size);
     CHECK(buffer);
     buf_ctx->buffer = buffer;
 

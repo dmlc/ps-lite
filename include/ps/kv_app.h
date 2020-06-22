@@ -88,7 +88,7 @@ class KVWorker : public SimpleApp {
 #ifdef USE_PROFILING
     const char *val;
     val = Environment::Get()->find("DMLC_ENABLE_RDMA");
-    if (val == nullptr || std::string(val) == "0") {
+    if (val == nullptr || std::string(val) == "0" || std::string(val) == "zmq") {
       is_worker_zpull_ = false;
     } else {
       is_worker_zpull_ = true;

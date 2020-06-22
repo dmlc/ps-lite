@@ -159,15 +159,15 @@ class FabricMemoryAllocator {
 
   ~FabricMemoryAllocator() {}
 
-  char *Alloc(size_t size) {
+  char *Alloc(size_t size, size_t* actual_size) {
     if (size == 0) {
       return nullptr;
     }
     // align to page size (usually 4KB)
-    size = align_ceil(size, pagesize_);
+    *actual_size = align_ceil(size, pagesize_);
 
     char *p;
-    aligned_malloc((void**) &p, size);
+    aligned_malloc((void**) &p, *actual_size);
     CHECK(p);
     return p;
   }
