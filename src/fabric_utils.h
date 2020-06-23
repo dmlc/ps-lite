@@ -50,8 +50,10 @@ enum FabricWRContextType {
 };
 
 struct FabricBufferContext {
-  // the buffer (including meta and val)
-  char *buffer;
+  // the buffer for meta
+  char *meta_buffer;
+  // the buffer for data
+  char *data_buffer;
   // size of msg.meta
   size_t meta_len;
   // msg.data.size()
@@ -94,10 +96,14 @@ struct RendezvousMsg {
   uint64_t data_num;
   // msg.data[i].size()
   uint64_t data_len[kMaxDataFields];
- // the original address of the message buffer
+  // the original address of the message buffer
   uint64_t origin_addr;
- // the tag for tsend / trestatus_cv. Used for Rendezvous reply
+  // the tag for tsend / trecv. Used for Rendezvous reply
   uint64_t tag;
+  // whether it is for pull response
+  bool pull_response;
+  // the original key of the pull request
+  uint64_t key;
 };
 
 std::string RendezvousDebugStr(const RendezvousMsg& msg) {
@@ -106,7 +112,8 @@ std::string RendezvousDebugStr(const RendezvousMsg& msg) {
      << ", data_num = " << msg.data_num
      << ", data_len = " << msg.data_len[0]
      << ", origin_addr = " << msg.origin_addr
-     << ", tag = " << msg.tag;
+     << ", tag = " << msg.tag
+     << ", key = " << msg.key;
   return ss.str();
 }
 

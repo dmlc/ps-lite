@@ -256,7 +256,7 @@ class FabricVan : public Van {
 
     // the second argument is actually deprecated,
     // we keep it as is in order to be compatible
-    UnpackMeta(buffer_ctx->buffer, buffer_ctx->meta_len, &msg->meta);
+    UnpackMeta(buffer_ctx->meta_buffer, buffer_ctx->meta_len, &msg->meta);
     int meta_len = GetPackMetaLen(msg->meta);
 
     int total_len = 0;
@@ -565,6 +565,8 @@ class FabricVan : public Van {
     } else {
       auto is_push = msg.meta.push;
       auto key = msg.meta.key;
+      // store address if this is a pull request for zero-copy pull
+      if (is_push && msg.meta.request) endpoint->StorePushAddr(msg);
       if (!endpoint->HasRemoteInfo(key, is_push)) {
         FabricMessageBuffer *msg_buf = PrepareNewMsgBuf(msg, endpoint);
         endpoint->StoreMsgBuf(msg_buf, msg);

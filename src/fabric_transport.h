@@ -187,6 +187,7 @@ struct FabricEndpoint {
   ThreadsafeQueue<Message> send_queue;
 
   std::unordered_map<FabricMessageBuffer*, Message> msgbuf_cache; // msg_buf, msg
+  std::unordered_map<uint64_t, std::pair<char*, size_t>> addr_cache; // key, <addr, size>
 
   typedef std::tuple<FabricWRContext*, FabricMessageBuffer*> CtxTuple;
 
@@ -328,6 +329,18 @@ struct FabricEndpoint {
     msgbuf_cache[msg_buf] = msg;
   }
 
+  std::pair<char*, size_t> GetPushAddr(uint64_t key) {
+    CHECK_NE(addr_cache.find(key), addr_cache.end())
+             << "Cannot find key " << key << " in addr_cache";
+    return addr_cache[key];
+  }
+
+  void StorePushAddr(Message& msg) {
+    auto key = msg.meta.key;
+    CHECK_GE(msg.data.size(), 2) << "Unexpected number of data: " << msg.data.size();
+    addr_cache[key] = std::make_pair(static_cast<char*>(msg.data[1].data()), msg.data[1].size());
+  }
+
   void ReleaseFirstMsg(FabricMessageBuffer *msg_buf) {
     CHECK_NE(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
     PS_VLOG(6) << "Release msg_buf " << msg_buf;
@@ -381,6 +394,13 @@ class FabricTransport {
     for (size_t i = 0; i < req->data_num; ++i) {
       req->data_len[i] = msg.data[i].size();
     }
+    // if it is a pull response, let the worker know and reuse the address
+    if (IsValidPushpull(msg) && !msg.meta.request) {
+      req->pull_response = !msg.meta.push;
+      req->key = msg.meta.key;
+    } else {
+      req->pull_response = false;
+    }
     Send(context);
     PS_VLOG(3) << "SendRendezvousBegin " << RendezvousDebugStr(*req);
   }
@@ -390,19 +410,33 @@ class FabricTransport {
     buf_ctx->meta_len = req->meta_len;
     buf_ctx->data_num = req->data_num;
     buf_ctx->endpoint = endpoint_;
-
-    size_t data_len = 0;
     for (size_t i = 0; i < req->data_num; ++i) {
       buf_ctx->data_len[i] = req->data_len[i];
-      data_len += req->data_len[i];
     }
-
+    size_t data_size = 0;
+    if (req->pull_response) {
+      CHECK(req->data_num >= 2);
+    }
+    if (req->data_num >= 2) {
+      data_size = req->data_len[1];
+    }
     size_t meta_size = align_ceil(req->meta_len, pagesize_);
-    size_t data_size = data_len;
-    size_t alloc_size = meta_size + data_size;
-    char *buffer = allocator_->Alloc(alloc_size, &alloc_size);
-    CHECK(buffer);
-    buf_ctx->buffer = buffer;
+    char *meta_buffer = nullptr;
+    char *data_buffer = nullptr;
+    if (req->pull_response) {
+      size_t alloc_size = meta_size;
+      meta_buffer = allocator_->Alloc(meta_size, &alloc_size);
+      auto addr_size_pair = endpoint_->GetPushAddr(req->key);
+      CHECK_EQ(addr_size_pair.second, data_size) << "Inconsistent data buffer size";
+      data_buffer = addr_size_pair.first;
+    } else {
+      size_t alloc_size = meta_size + data_size;
+      meta_buffer = allocator_->Alloc(alloc_size, &alloc_size);
+      data_buffer = meta_buffer + meta_size;
+    }
+    CHECK(meta_buffer) << "Unable to allocate memory";
+    buf_ctx->meta_buffer = meta_buffer;
+    buf_ctx->data_buffer = data_buffer;
 
     FabricWRContext *reply_ctx = nullptr;
     endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx);
@@ -418,7 +452,7 @@ class FabricTransport {
     recv_ctx->type = kReceiveWithData;
     CHECK_NE(endpoint_, nullptr);
     recv_ctx->tag = resp->tag;
-    PrepareWRContext(recv_ctx, buffer, meta_size, buffer + meta_size, data_size);
+    PrepareWRContext(recv_ctx, meta_buffer, meta_size, data_buffer, data_size);
     endpoint_->PostRecv(recv_ctx);
     Send(reply_ctx);
     PS_VLOG(3) << "SendRendezvousReply " << RendezvousDebugStr(*resp);
@@ -444,7 +478,7 @@ class FabricTransport {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
     uint32_t len = buffer_ctx->data_len[1];
     SArray<char> vals;
-    char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
+    char* cur = buffer_ctx->data_buffer;
     vals.reset(cur, len, [](void *) {});  // no need to delete
     SArray<char> lens = CreateFunctionalSarray(&len, sizeof(uint32_t));
 
@@ -459,7 +493,7 @@ class FabricTransport {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
     uint32_t len = buffer_ctx->data_len[1];
     SArray<char> vals;
-    char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
+    char* cur = buffer_ctx->data_buffer;
     vals.reset(cur, len, [](void *) {});  // no need to delete
     SArray<char> lens = CreateFunctionalSarray(&len, sizeof(int));
 
