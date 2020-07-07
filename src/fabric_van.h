@@ -566,7 +566,7 @@ class FabricVan : public Van {
       auto is_push = msg.meta.push;
       auto key = msg.meta.key;
       // store address if this is a pull request for zero-copy pull
-      if (is_push && msg.meta.request) endpoint->StorePushAddr(msg);
+      if (!is_push && msg.meta.request) endpoint->StorePullAddr(msg);
       if (!endpoint->HasRemoteInfo(key, is_push)) {
         FabricMessageBuffer *msg_buf = PrepareNewMsgBuf(msg, endpoint);
         endpoint->StoreMsgBuf(msg_buf, msg);

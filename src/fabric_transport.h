@@ -329,16 +329,16 @@ struct FabricEndpoint {
     msgbuf_cache[msg_buf] = msg;
   }
 
-  std::pair<char*, size_t> GetPushAddr(uint64_t key) {
+  std::pair<char*, size_t> GetPullAddr(uint64_t key) {
     CHECK_NE(addr_cache.find(key), addr_cache.end())
              << "Cannot find key " << key << " in addr_cache";
     return addr_cache[key];
   }
 
-  void StorePushAddr(Message& msg) {
+  void StorePullAddr(Message& msg) {
     auto key = msg.meta.key;
     CHECK_GE(msg.data.size(), 2) << "Unexpected number of data: " << msg.data.size();
-    addr_cache[key] = std::make_pair(static_cast<char*>(msg.data[1].data()), msg.data[1].size());
+    addr_cache[key] = std::make_pair((char*)(msg.meta.addr), msg.meta.val_len);
   }
 
   void ReleaseFirstMsg(FabricMessageBuffer *msg_buf) {
@@ -426,7 +426,7 @@ class FabricTransport {
     if (req->pull_response) {
       size_t alloc_size = meta_size;
       meta_buffer = allocator_->Alloc(meta_size, &alloc_size);
-      auto addr_size_pair = endpoint_->GetPushAddr(req->key);
+      auto addr_size_pair = endpoint_->GetPullAddr(req->key);
       CHECK_EQ(addr_size_pair.second, data_size) << "Inconsistent data buffer size";
       data_buffer = addr_size_pair.first;
     } else {
