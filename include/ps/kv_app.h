@@ -15,7 +15,6 @@
 #include <string.h>
 #include <sstream>
 
-#define USE_PROFILING
 namespace ps {
 
 /**
@@ -71,8 +70,6 @@ class KVWorker : public SimpleApp {
    */
   using Callback = std::function<void()>;
 
-  bool is_profiling_;
-
   bool is_worker_zpull_;
 
   /**
@@ -85,53 +82,15 @@ class KVWorker : public SimpleApp {
     using namespace std::placeholders;
     slicer_ = std::bind(&KVWorker<Val>::DefaultSlicer, this, _1, _2, _3);
     obj_ = new Customer(app_id, customer_id, std::bind(&KVWorker<Val>::Process, this, _1));
-#ifdef USE_PROFILING
-    const char *val;
-    val = Environment::Get()->find("DMLC_ENABLE_RDMA");
-    if (val == nullptr || std::string(val) == "0" || std::string(val) == "zmq") {
-      is_worker_zpull_ = false;
-    } else {
-      is_worker_zpull_ = true;
-    }
-
-    if (is_worker_zpull_) LOG(INFO) << "Enable worker zero-copy pull";
-
-    val = Environment::Get()->find("ENABLE_PROFILING");
-    is_profiling_ = val? atoi(val) : false;
-    if (is_profiling_) {
-      LOG(INFO) << "KVapp: Enable Profiling.";
-      std::string sysvar = "";
-      if (getenv("PROFILE_PATH")!=nullptr)
-          sysvar = std::string(getenv("PROFILE_PATH"));
-
-      std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-      std::stringstream temp_stream;
-      std::string ts_string;
-      temp_stream << ms.count();
-      temp_stream >> ts_string;
-      if (sysvar.length()==0) {
-          fout.open("pslite_profile_kvapp_worker_" + ts_string, std::fstream::out);
-          LOG(INFO) << "output file name as pslite_profile";
-      }
-      else {
-          fout.open(sysvar + "_kvapp_worker", std::fstream::out);
-          LOG(INFO) << "output file at " << sysvar;
-      }
-    }
-#endif
+    auto val = Environment::Get()->find("DMLC_ENABLE_RDMA");
+    is_worker_zpull_ = val ? atoi(val) : false;
+    if (is_worker_zpull_) PS_VLOG(1) << "Enable worker zero-copy pull";
   }
 
   /** \brief deconstructor */
   virtual ~KVWorker() {
     delete obj_;
     obj_ = nullptr;
-#ifdef USE_PROFILING
-    if (is_profiling_) {
-      fout.clear();
-      fout.flush();
-      fout.close();
-    }
-#endif
   }
 
   /**
@@ -279,10 +238,6 @@ class KVWorker : public SimpleApp {
     CHECK(slicer); slicer_ = slicer;
   }
 
-  /** \brief for running time profiling */
-#ifdef USE_PROFILING
-  std::fstream fout;
-#endif
  private:
 
 
@@ -314,7 +269,7 @@ class KVWorker : public SimpleApp {
    * @param push whether or not it is a push request
    * @param cmd command
    */
-  void Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs);
+  void Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs);
   /** \brief internal receive handle */
   void Process(const Message& msg);
   /** \brief default kv slicer */
@@ -348,6 +303,12 @@ struct KVMeta {
   int customer_id;
   /** \brief the key */
   Key key;
+  /** \brief the tensor address */
+  uint64_t addr;
+  /** \brief the value length */
+  int val_len;
+  /** \brief the option */
+  int option;
 };
 
 /**
@@ -357,7 +318,6 @@ template <typename Val>
 class KVServer : public SimpleApp {
  public:
 
-  bool is_profiling_;
   /**
    * \brief constructor
    * \param app_id the app id, should match with \ref KVWorker's id
@@ -365,32 +325,6 @@ class KVServer : public SimpleApp {
   explicit KVServer(int app_id) : SimpleApp() {
     using namespace std::placeholders;
     obj_ = new Customer(app_id, app_id, std::bind(&KVServer<Val>::Process, this, _1));
-#ifdef USE_PROFILING
-    const char *val;
-    val = Environment::Get()->find("ENABLE_PROFILING");
-    is_profiling_ = val? atoi(val) : false;
-    if (is_profiling_) {
-      LOG(INFO) << "KVapp: Enable Profiling.";
-      std::string sysvar = "";
-      if (getenv("PROFILE_PATH")!=nullptr)
-          sysvar = std::string(getenv("PROFILE_PATH"));
-
-      std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-      std::stringstream temp_stream;
-      std::string ts_string;
-      temp_stream << ms.count();
-      temp_stream >> ts_string;
-
-      if(sysvar.length()==0){
-          fout.open("pslite_profile_kvapp_server_"+ts_string, std::fstream::out);
-          LOG(INFO) << "output file name as pslite_profile";
-      }
-      else{
-          fout.open(sysvar + "_kvapp_server", std::fstream::out);
-          LOG(INFO) << "output file at" << sysvar;
-      }
-    }
-#endif
   }
 
   /** \brief deconstructor */
@@ -403,13 +337,6 @@ class KVServer : public SimpleApp {
         delete &iter->second;
         server_key_map.erase(iter++);
     }
-#ifdef USE_PROFILING
-    if (is_profiling_) {
-      fout.clear();
-      fout.flush();
-      fout.close();
-    }
-#endif
   }
 
   /**
@@ -432,9 +359,6 @@ class KVServer : public SimpleApp {
    * \param res the kv pairs that will send back to the worker
    */
   void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>());
-#ifdef USE_PROFILING
-  std::fstream fout;
-#endif
 
  private:
   /** \brief internal receive handle */
@@ -493,6 +417,9 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.timestamp = msg.meta.timestamp;
   meta.customer_id = msg.meta.customer_id;
   meta.key       = msg.meta.key;
+  meta.addr      = msg.meta.addr;
+  meta.val_len   = msg.meta.val_len;
+  meta.option    = msg.meta.option;
 
   KVPairs<Val> data;
   int n = msg.data.size();
@@ -505,16 +432,6 @@ void KVServer<Val>::Process(const Message& msg) {
       data.lens = msg.data[2];
       CHECK_EQ(data.lens.size(), data.keys.size());
     }
-#ifdef USE_PROFILING
-    if (is_profiling_){
-      std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-      std::lock_guard<std::mutex> lock(log_mu_);
-      if (meta.push)
-        fout << (int) data.keys[0] << "\tserver_process_push\t" << ms.count() << "\n";
-      else
-        fout << (int) data.keys[0] << "\tserver_process_pull\t" << ms.count() << "\n";
-    }
-#endif
   }
   CHECK(request_handle_);
 
@@ -532,23 +449,15 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
   msg.meta.timestamp   = req.timestamp;
   msg.meta.recver      = req.sender;
   msg.meta.key         = req.key;
+  msg.meta.addr        = req.addr;
+  msg.meta.val_len     = req.val_len;
+  msg.meta.option      = req.option;
   if (res.keys.size()) {
     msg.AddData(res.keys);
     msg.AddData(res.vals);
     if (res.lens.size()) {
       msg.AddData(res.lens);
     }
-#ifdef USE_PROFILING
-    if (is_profiling_) {
-      std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-      std::lock_guard<std::mutex> lock(log_mu_);
-      if (!req.push)
-        fout << (int)res.keys[0] << "\tserver_send_pull_response\t" << ms.count() << "\n";
-      else {
-        // TODO
-      }
-    }
-#endif
   }
   Postoffice::Get()->van()->Send(msg);
 }
@@ -611,7 +520,7 @@ void KVWorker<Val>::DefaultSlicer(
 }
 
 template <typename Val>
-void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs) {
+void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
   // slice the message
   SlicedKVs sliced;
   slicer_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
@@ -626,7 +535,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
     RunCallback(timestamp);
   }
   for (size_t i = 0; i < sliced.size(); ++i) {
-    const auto& s = sliced[i];
+    auto& s = sliced[i];
     if (!s.first) continue;
     Message msg;
     msg.meta.app_id = obj_->app_id();
@@ -636,7 +545,10 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
     msg.meta.head        = cmd;
     msg.meta.timestamp   = timestamp;
     msg.meta.recver      = Postoffice::Get()->ServerRankToID(i);
-    const auto& kvs = s.second;
+    auto& kvs = s.second;
+    msg.meta.addr = reinterpret_cast<uint64_t>(kvs.vals.data());
+    msg.meta.val_len = kvs.vals.size();
+    if (!msg.meta.push) kvs.vals.clear();
     if (kvs.keys.size()) {
       msg.AddData(kvs.keys);
       msg.AddData(kvs.vals);
@@ -644,16 +556,6 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
         msg.AddData(kvs.lens);
       }
     }
-#ifdef USE_PROFILING
-    if (is_profiling_) {
-      std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-      std::lock_guard<std::mutex> lock(log_mu_);
-      if(push)
-        fout << (int)kvs.keys[0] << "\tworker_send_push\t" << ms.count() << "\n";
-      else
-        fout << (int)kvs.keys[0] << "\tworker_send_pull\t" << ms.count() << "\n";
-    }
-#endif
     Postoffice::Get()->van()->Send(msg);
   }
 }
@@ -667,14 +569,6 @@ void KVWorker<Val>::Process(const Message& msg) {
   // store the data for pulling
   int ts = msg.meta.timestamp;
   if (!msg.meta.push && msg.data.size()) {
-#ifdef USE_PROFILING
-    if (is_profiling_) {
-      int key_temp = (uint8_t)msg.data[0].data()[0] + 256 * (uint8_t)msg.data[0].data()[1];
-      std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-      std::lock_guard<std::mutex> lock(log_mu_);
-      fout << key_temp << "\tworker_process_response\t" << ms.count() << "\n";
-    }
-#endif
     CHECK_GE(msg.data.size(), (size_t)2);
     KVPairs<Val> kvs;
     kvs.keys = msg.data[0];
@@ -768,7 +662,9 @@ int KVWorker<Val>::Pull_(
       if (cb) cb();
     });
 
-  KVPairs<Val> kvs; kvs.keys = keys;
+  KVPairs<Val> kvs; 
+  kvs.keys = keys;
+  kvs.vals = *vals;
   Send(ts, false, cmd, kvs);
   return ts;
 }

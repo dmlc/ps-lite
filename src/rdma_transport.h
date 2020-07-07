@@ -135,7 +135,7 @@ struct Endpoint {
     InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
                           kRendezvousReplyContext);
 
-    for (size_t i = 0; i < kRxDepth; ++i) {
+    for (int i = 0; i < kRxDepth; ++i) {
       void *buf;
       aligned_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
@@ -589,7 +589,7 @@ class IPCTransport : public RDMATransport {
     auto base_key = worker_key - seq_num;
     uint64_t offset = byteps_partition_bytes_ * seq_num;
     if (key_shm_addr_.find(base_key) != key_shm_addr_.end()) {
-      return key_shm_addr_[base_key] + offset;
+      return (void*) ((char*) key_shm_addr_[base_key] + offset);
     }
     std::string shm_name(prefix);
     shm_name += std::to_string(base_key);
@@ -607,7 +607,7 @@ class IPCTransport : public RDMATransport {
 
     PS_VLOG(1) << "open Shared Memory: " << shm_name << ", offset=" 
         << offset << ", (in bytes) size=" << total_shm_size;
-    return key_shm_addr_[base_key] + offset;
+    return (void*) ((char*) key_shm_addr_[base_key] + offset);
   }
 
   int ipc_copy_nthreads_;
