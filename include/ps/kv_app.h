@@ -83,7 +83,11 @@ class KVWorker : public SimpleApp {
     slicer_ = std::bind(&KVWorker<Val>::DefaultSlicer, this, _1, _2, _3);
     obj_ = new Customer(app_id, customer_id, std::bind(&KVWorker<Val>::Process, this, _1));
     auto val = Environment::Get()->find("DMLC_ENABLE_RDMA");
-    is_worker_zpull_ = val ? atoi(val) : false;
+    if (val == nullptr || std::string(val) == "0" || std::string(val) == "zmq") {
+      is_worker_zpull_ = false;
+    } else {
+      is_worker_zpull_ = true;
+    }
     if (is_worker_zpull_) PS_VLOG(1) << "Enable worker zero-copy pull";
   }
 
