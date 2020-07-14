@@ -30,8 +30,12 @@ class RDMAVan : public Van {
   }
   ~RDMAVan() {}
 
+  virtual std::string GetType() const {
+    return std::string("rdma");
+  }
+
  protected:  
-  void Start(int customer_id) override {
+  void Start(int customer_id, bool standalone) override {
     start_mu_.lock();
     should_stop_ = false;
 
@@ -69,7 +73,7 @@ class RDMAVan : public Van {
     }
 
     start_mu_.unlock();
-    Van::Start(customer_id);
+    if (!standalone) Van::Start(customer_id, false);
   }
 
   void Stop() override {
@@ -92,7 +96,7 @@ class RDMAVan : public Van {
 
     PS_VLOG(1) << "Clearing endpoints.";
     incoming_.clear();
-    { 
+    {
       std::lock_guard<std::mutex> lk(endpoints_mu_);
       endpoints_.clear();
     }
@@ -227,9 +231,8 @@ class RDMAVan : public Van {
           is_local_[node.id] = is_local_node;
       }
 
-      LOG(INFO) << "Connect to Node " << node.id 
+      LOG(INFO) << "Connect to Node " << node.id
                 << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
-
 
       std::shared_ptr<Transport> t = is_local_node ?
           std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
@@ -328,7 +331,7 @@ class RDMAVan : public Van {
     msg->meta.recver = my_node_.id;
     msg->meta.sender = endpoint->node_id;
 
-    // the second argument is actually deprecated, 
+    // the second argument is actually deprecated,
     // we keep it as is in order to be compatible    
     UnpackMeta(buffer_ctx->buffer, buffer_ctx->meta_len, &msg->meta); 
     int meta_len = GetPackMetaLen(msg->meta);
@@ -653,8 +656,8 @@ class RDMAVan : public Van {
               MessageBuffer *msg_buf =
                   reinterpret_cast<MessageBuffer *>(origin_addr);
 
-              // Before RDMA write, store the remote info so that 
-              // subsequent write does not need repeated rendezvous 
+              // Before RDMA write, store the remote info so that
+              // subsequent write does not need repeated rendezvous
               StoreRemoteAndLocalInfo(msg_buf, remote_addr, rkey, idx);
 
               Message *msg = GetFirstMsg(msg_buf);
@@ -800,7 +803,7 @@ class RDMAVan : public Van {
         std::lock_guard<std::mutex> lk(local_mu_);
         is_local_[remote_ctx->node] = is_local_node;
     }
-    LOG(INFO) << "OnConnect to Node " << remote_ctx->node 
+    LOG(INFO) << "OnConnect to Node " << remote_ctx->node
               << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
 
     std::shared_ptr<Transport> t = is_local_node ?

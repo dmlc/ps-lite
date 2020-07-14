@@ -69,5 +69,4 @@ void Customer::Receiving() {
     }
   }
 }
-
 }  // namespace ps

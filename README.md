@@ -1,5 +1,3 @@
-
-
 This is the communication library for [BytePS](https://github.com/bytedance/byteps). It is designed for high performance RDMA. However, it also supports TCP.
 
 ## Build
@@ -7,10 +5,11 @@ This is the communication library for [BytePS](https://github.com/bytedance/byte
 ```bash
 git clone -b byteps https://github.com/bytedance/ps-lite
 cd ps-lite 
-make -j USE_RDMA=1
+make -j USE_RDMA=1 USE_FABRIC=1
 ```
 
-Remove `USE_RDMA=1` if you don't want to build with RDMA support.
+Remove `USE_RDMA=1` if you don't want to build with RDMA ibverbs support.
+Remove `USE_FABRIC=1` if you don't want to build with RDMA libfabric support for AWS Elastic Fabric Adaptor.
 
 ## Concepts
 
@@ -36,7 +35,7 @@ For the scheduler:
 
 ```
 # common setup
-export DMLC_ENABLE_RDMA=1  
+export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=1
 export DMLC_NUM_SERVER=1 
 export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
@@ -51,7 +50,7 @@ DMLC_ROLE=scheduler ./tests/test_benchmark
 For the server:
 ```
 # common setup
-export DMLC_ENABLE_RDMA=1  
+export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=1
 export DMLC_NUM_SERVER=1 
 export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
@@ -65,7 +64,7 @@ DMLC_ROLE=server ./tests/test_benchmark
 For the worker:
 ```
 # common setup
-export DMLC_ENABLE_RDMA=1  
+export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=1
 export DMLC_NUM_SERVER=1 
 export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
@@ -76,7 +75,10 @@ export DMLC_INTERFACE=eth5        # my RDMA interface
 DMLC_ROLE=worker ./tests/test_benchmark
 ```
 
-If you just want to use TCP, make sure to set `DMLC_ENABLE_RDMA=0` for all processes.
+If you want to use libfabric with Amazon Elastic Fabric Adaptor, make sure to set `DMLC_ENABLE_RDMA=fabric` for all processes. If you are
+using libfabric < 1.10, please also set `FI_EFA_ENABLE_SHM_TRANSFER=0` to avoid a bug in the EFA shm provider.
+
+If you just want to use TCP, make sure to unset `DMLC_ENABLE_RDMA` for all processes.
 
 ### 2. Benchmark with IPC support
 
@@ -88,7 +90,7 @@ For the scheduler:
 (you can launch it on either machine-0 or machine-1)
 ```
 # common setup
-export DMLC_ENABLE_RDMA=1  
+export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=2
 export DMLC_NUM_SERVER=2 
 export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
@@ -103,7 +105,7 @@ For machine-0 and machine-1:
 
 ```
 # common setup
-export DMLC_ENABLE_RDMA=1  
+export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=2
 export DMLC_NUM_SERVER=2 
 export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 

@@ -46,47 +46,27 @@
 
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
+#include "van_common.h"
 
 
 namespace ps {
-
-
-#define DIVUP(x, y) (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
 
 static const int kSGEntry = 1;
 static const int kTimeoutms = 1000;
 static const int kRdmaListenBacklog = 128;
 static const int kMaxHostnameLength = 16;
-static const int kMaxDataFields = 4;
-
-static const int kMaxResolveRetry = 50000;
-static const int kBasePort = 9010;
 
 // should have the same prefix with BytePS shared memory
 static const std::string kShmPrefix("BytePS_ShM_");
 static const std::string kShmPciePrefix("BytePS_Pcie");
 
-template <typename T>
-static inline T align_floor(T v, T align) {
-  return v - (v % align);
-}
+enum WRContextType {
+  kRendezvousStartContext,
+  kRendezvousReplyContext,
+  kWriteContext,
+  kReceiveContext
+};
 
-template <typename T>
-static inline T align_ceil(T v, T align) {
-  return align_floor(v + align - 1, align);
-}
-
-static inline void ib_malloc(void** ptr, size_t size) {
-  size_t page_size = sysconf(_SC_PAGESIZE);
-  void* p;
-  int size_aligned = ROUNDUP(size, page_size);
-  int ret = posix_memalign(&p, page_size, size_aligned);
-  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-  CHECK(p);
-  memset(p, 0, size);
-  *ptr = p;
-}
 
 class MemoryAllocator {
  public:
@@ -112,7 +92,7 @@ class MemoryAllocator {
     size = align_ceil(size, pagesize_);
 
     char *p;
-    ib_malloc((void**) &p, size);
+    aligned_malloc((void**) &p, size);
     CHECK(p);
 
     struct ibv_mr *mr;
@@ -155,9 +135,10 @@ class MemoryAllocator {
   std::unordered_map<char *, struct ibv_mr *> mr_;
 };
 
-enum MessageTypes : uint32_t {
-  kRendezvousStart,
-  kRendezvousReply,
+struct WRContext {
+  WRContextType type;
+  struct ibv_mr *buffer;
+  void *private_data;
 };
 
 struct RendezvousStart {
@@ -174,19 +155,6 @@ struct RendezvousReply {
   uint32_t idx;
 };
 
-enum WRContextType {
-  kRendezvousStartContext,
-  kRendezvousReplyContext,
-  kWriteContext,
-  kReceiveContext
-};
-
-struct WRContext {
-  WRContextType type;
-  struct ibv_mr *buffer;
-  void *private_data;
-};
-
 struct BufferContext {
   char *buffer;
   size_t meta_len;
@@ -200,7 +168,6 @@ typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>>
 struct MessageBuffer {
   size_t inline_len;
   char *inline_buf;
-  WRContext *reserved_context;
   std::vector<SArray<char>> data;
   std::vector<std::pair<MRPtr, size_t>> mrs;
 };
@@ -227,74 +194,6 @@ static_assert(std::is_pod<RequestContext>::value,
 static const size_t kMempoolChunkSize =
     std::max({sizeof(RendezvousStart), sizeof(RendezvousReply)});
 
-template <typename T>
-class AddressPool {
- public:
-  AddressPool() {
-    auto addrpool_size = Environment::Get()->find("BYTEPS_ADDRESS_POOL_SIZE");
-    kMaxEntries = addrpool_size ? atoi(addrpool_size) : kMaxEntries;
-    std::lock_guard<std::mutex> lk(mu_);
-    table_ = new T*[kMaxEntries];
-    // init the queue
-    for (int i = 0; i < kMaxEntries; i++) {
-      indices_.push(i);
-      table_[i] = nullptr;
-    }
-  }
-
-  T *GetAddressAndRelease(uint32_t index) {
-    std::lock_guard<std::mutex> lk(mu_);
-    T *ptr = table_[index];
-    CHECK(ptr);
-    indices_.push(index);
-    table_[index] = nullptr;
-    return ptr;
-  }
-  
-  // TODO: make the address pool size dynamic
-  T *GetAddress(uint32_t index) {
-    std::lock_guard<std::mutex> lk(mu_);
-    return CHECK_NOTNULL(table_[index]);
-  }
-
-  uint32_t StoreAddress(T *ptr) {
-    std::lock_guard<std::mutex> lk(mu_);
-    CHECK(ptr);
-    CHECK(!indices_.empty())
-      << "Address pool size is too small, "
-      << "current size is " << kMaxEntries
-      << ", consider increasing BYTEPS_ADDRESS_POOL_SIZE";
-    uint32_t idx = indices_.front();
-    indices_.pop();
-    CHECK_EQ(table_[idx], nullptr) << idx;
-    table_[idx] = ptr;
-    return idx;
-  }
-
- private:
-  int kMaxEntries = 10240;
-
-  std::mutex mu_;
-  std::queue<uint32_t> indices_;
-  T **table_;
-};
-
-bool IsValidPushpull(const Message &msg) {
-  if (!msg.meta.control.empty()) return false;
-  if (msg.meta.simple_app) return false;
-  return true;
-}
-
-uint64_t DecodeKey(SArray<char> keys) { // just a translation, the decoded key might not be readable when we have multiple servers
-  ps::Key key = 0;
-  uint64_t coef = 1;
-  for (unsigned int i = 0; i < keys.size(); ++i) {
-    key += coef * (uint8_t) keys.data()[i];
-    coef *= 256; // 256=2^8 (uint8_t)
-  }
-  return key;
-}
-
 uint64_t DecodeWorkerKey(uint64_t key) {
   auto kr = ps::Postoffice::Get()->GetServerKeyRanges()[ps::Postoffice::Get()->my_rank()];
   return key - kr.begin();
@@ -308,4 +207,3 @@ int RoundUp(int x, int y) { return DivUp(x, y) * y; }
 
 #endif  // DMLC_USE_RDMA
 #endif  // PS_RDMA_VAN_H_
-

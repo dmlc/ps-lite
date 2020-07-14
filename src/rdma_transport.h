@@ -101,7 +101,7 @@ struct Endpoint {
                              WRContextType type) {
     for (size_t i = 0; i < num; ++i) {
       void *buf;
-      ib_malloc((void**) &buf, kMempoolChunkSize);
+      aligned_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
       CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno) 
@@ -137,7 +137,7 @@ struct Endpoint {
 
     for (int i = 0; i < kRxDepth; ++i) {
       void *buf;
-      ib_malloc((void**) &buf, kMempoolChunkSize);
+      aligned_malloc((void**) &buf, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr =
           ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);

@@ -15,13 +15,9 @@ Postoffice::Postoffice() {
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
-  int enable_rdma = GetEnv("DMLC_ENABLE_RDMA", 0);
-  if (enable_rdma) {
-    LOG(INFO) << "enable RDMA for networking";
-    van_ = Van::Create("rdma");
-  } else {
-    van_ = Van::Create("zmq");
-  }
+  const char* rdma = GetEnv("DMLC_ENABLE_RDMA", "zmq");
+  LOG(INFO) << "Creating Van: " << rdma;
+  van_ = Van::Create(rdma);
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
   val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
@@ -73,7 +69,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
   start_mu_.unlock();
 
   // start van
-  van_->Start(customer_id);
+  van_->Start(customer_id, false);
 
   start_mu_.lock();
   if (init_stage_ == 1) {

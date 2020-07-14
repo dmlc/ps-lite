@@ -40,6 +40,14 @@ template<typename T> class ThreadsafeQueue {
     queue_.pop();
   }
 
+  /**
+   * \brief peek queue size
+   */
+  int Size() {
+    std::unique_lock<std::mutex> lk(mu_);
+    return queue_.size();
+  }
+
  private:
   mutable std::mutex mu_;
   std::queue<T> queue_;
