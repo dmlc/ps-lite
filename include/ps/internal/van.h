@@ -42,12 +42,14 @@ class Van {
    *
    * must call it before calling Send
    *
-   * it initalizes all connections to other nodes.  start the receiving
+   * it initalizes all connections to other nodes. start the receiving
    * threads, which keeps receiving messages. if it is a system
    * control message, give it to postoffice::manager, otherwise, give it to the
    * accoding app.
+   *
+   * if standalone is set, the van will not contact the scheduler at start.
    */
-  virtual void Start(int customer_id);
+  virtual void Start(int customer_id, bool standalone);
 
   /**
    * \brief send a message, It is thread-safe
@@ -79,7 +81,6 @@ class Van {
    */
   inline bool IsReady() { return ready_; }
 
- protected:
   /**
    * \brief connect to a node
    */
@@ -104,6 +105,20 @@ class Van {
    * \return the number of bytes sent
    */
   virtual int SendMsg(Message &msg) = 0;
+
+  /**
+   * \brief set the identity of the node
+   */
+  virtual void SetNode(const Node& node) {
+    my_node_ = node;
+  }
+
+  /**
+   * \brief get the node type {'fabric', 'zeromq', 'rdma'}
+   */
+  virtual std::string GetType() const = 0;
+
+ protected:
 
   /**
    * \brief get the length of pack meta

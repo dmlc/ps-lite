@@ -17,6 +17,9 @@
 #include "./meta.h"
 #include "./network_utils.h"
 #include "./rdma_van.h"
+
+#include "./fabric_van.h"
+
 #include "./resender.h"
 #include "./zmq_van.h"
 #define USE_PROFILING
@@ -70,11 +73,19 @@ Van *Van::Create(const std::string &type) {
   }
 #endif
 
-  if (type == "zmq") {
+  if (type == "zmq" || type == "0") {
     return new ZMQVan();
 #ifdef DMLC_USE_RDMA
-  } else if (type == "rdma") {
+  } else if (type == "ibverbs") {
     return new RDMAVan();
+  } else if (type == "1") {
+    LOG(WARNING) << "DMLC_ENABLE_RDMA=1 will be deprecated. "
+	         << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
+    return new RDMAVan();
+#endif
+#ifdef DMLC_USE_FABRIC
+  } else if (type == "fabric") {
+    return new FabricVan();
 #endif
   } else {
     LOG(FATAL) << "unsupported van type: " << type;
@@ -257,7 +268,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
     const auto &node = ctrl.node[i];
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
       if (getenv("DMLC_RANK") == nullptr || my_node_.id == Meta::kEmpty) {
-        my_node_ = node;
+        SetNode(node);
         std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
 #ifdef _MSC_VER
         _putenv_s("DMLC_RANK", rank.c_str());
@@ -372,10 +383,9 @@ void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes)
   }
 }
 
-void Van::Start(int customer_id) {
+void Van::Start(int customer_id, bool standalone) {
   // get scheduler info
   start_mu_.lock();
-
   if (init_stage == 0) {
     scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
     scheduler_.port = atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
@@ -383,9 +393,10 @@ void Van::Start(int customer_id) {
     scheduler_.id = kScheduler;
     is_scheduler_ = Postoffice::Get()->is_scheduler();
 
+
     // get my node info
     if (is_scheduler_) {
-      my_node_ = scheduler_;
+      SetNode(scheduler_);
     } else {
       auto role = Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER;
       const char *nhost = Environment::Get()->find("DMLC_NODE_HOST");
@@ -407,13 +418,16 @@ void Van::Start(int customer_id) {
       if (pstr) port = atoi(pstr);
       CHECK(!ip.empty()) << "failed to get ip";
       CHECK(port) << "failed to get a port";
-      my_node_.hostname = ip;
-      my_node_.role = role;
-      my_node_.port = port;
+      Node node = my_node_;
+
+      node.hostname = ip;
+      node.role = role;
+      node.port = port;
       // cannot determine my id now, the scheduler will assign it later
       // set it explicitly to make re-register within a same process possible
-      my_node_.id = Node::kEmpty;
-      my_node_.customer_id = customer_id;
+      node.id = Node::kEmpty;
+      node.customer_id = customer_id;
+      SetNode(node);
     }
 
     // bind.
@@ -503,11 +517,11 @@ void Van::Stop() {
 
 int Van::Send(Message &msg) {
   int send_bytes = SendMsg(msg);
-  CHECK_NE(send_bytes, -1);
+  CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
   if (Postoffice::Get()->verbose() >= 2) {
-    PS_VLOG(2) << msg.DebugString();
+    PS_VLOG(2) << this->GetType() << "\tsent: " << msg.DebugString();
   }
   return send_bytes;
 }
@@ -532,7 +546,7 @@ void Van::Receiving() {
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
     if (Postoffice::Get()->verbose() >= 2) {
-      PS_VLOG(2) << msg.DebugString();
+      PS_VLOG(2) << this->GetType() << "\treceived: " << msg.DebugString();
     }
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
@@ -611,8 +625,12 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
       raw_node[node_count].port = n.port;
       bzero(raw_node[node_count].hostname, sizeof(raw_node[node_count].hostname));
       memcpy(raw_node[node_count].hostname, n.hostname.c_str(), n.hostname.size());
+      bzero(raw_node[node_count].endpoint_name, sizeof(raw_node[node_count].endpoint_name));
+      memcpy(raw_node[node_count].endpoint_name, n.endpoint_name, sizeof(raw_node[node_count].endpoint_name));
+      raw_node[node_count].endpoint_name_len = n.endpoint_name_len;
       raw_node[node_count].is_recovery = n.is_recovery;
       raw_node[node_count].customer_id = n.customer_id;
+      raw_node[node_count].aux_id = n.aux_id;
       node_count++;
     }
   }
@@ -660,6 +678,10 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
     n.id = p.id;
     n.is_recovery = p.is_recovery;
     n.customer_id = p.customer_id;
+    n.aux_id = p.aux_id;
+    n.endpoint_name_len = p.endpoint_name_len;
+    bzero(n.endpoint_name, sizeof(n.endpoint_name));
+    memcpy(n.endpoint_name, p.endpoint_name, sizeof(n.endpoint_name));
     meta->control.node.push_back(n);
   }
 

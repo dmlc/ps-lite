@@ -45,10 +45,15 @@ class ZMQVan : public Van {
   ZMQVan() {}
   virtual ~ZMQVan() {}
 
- protected:
-  void Start(int customer_id) override {
+  virtual std::string GetType() const {
+    return std::string("zeromq");
+  }
+
+ public:
+  void Start(int customer_id, bool standalone) {
     // start zmq
     start_mu_.lock();
+    standalone_ = standalone;
     if (context_ == nullptr) {
       context_ = zmq_ctx_new();
       CHECK(context_ != NULL) << "create 0mq context failed";
@@ -64,12 +69,11 @@ class ZMQVan : public Van {
     int byteps_zmq_nthreads = val2 ? atoi(val2) : 4;
     zmq_ctx_set(context_, ZMQ_IO_THREADS, byteps_zmq_nthreads);
     PS_VLOG(1) << "BYTEPS_ZMQ_NTHREADS set to " << byteps_zmq_nthreads;
-
-    Van::Start(customer_id);
+    if (!standalone) Van::Start(customer_id, false);
   }
 
   void Stop() override {
-    PS_VLOG(1) << my_node_.ShortDebugString() << " is stopping";
+    PS_VLOG(1) << "Stopping " << my_node_.ShortDebugString();
     Van::Stop();
     // join all threads
     should_stop_ = true;
@@ -109,9 +113,13 @@ class ZMQVan : public Van {
     unsigned seed = static_cast<unsigned>(time(NULL) + port);
     for (int i = 0; i < max_retry + 1; ++i) {
       auto address = addr + std::to_string(port);
-      if (zmq_bind(receiver_, address.c_str()) == 0) break;
+      int ret = zmq_bind(receiver_, address.c_str());
+      if (ret == 0) break;
       if (i == max_retry) {
         port = -1;
+	int zmq_err = zmq_errno();
+	LOG(FATAL) << "Reached max retry for bind: " << zmq_strerror(zmq_err)
+		   << ". errno = " << zmq_err;
       } else {
         port = 10000 + rand_r(&seed) % 40000;
       }
@@ -135,8 +143,11 @@ class ZMQVan : public Van {
       zmq_close(it->second);
     }
     mu_.unlock();
-    // worker doesn't need to connect to the other workers. same for server
-    if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
+    // worker doesn't need to connect to the other workers if not in standalone mode.
+    // same for server
+    if ((node.role == my_node_.role) && (node.id != my_node_.id) && !standalone_) {
+      PS_VLOG(1) << "Zmq skipped connection to node " << node.DebugString()
+                 << ". My node is " << my_node_.DebugString();
       return;
     }
     void* sender = zmq_socket(context_, ZMQ_DEALER);
@@ -164,6 +175,7 @@ class ZMQVan : public Van {
     }
     std::lock_guard<std::mutex> lk(mu_);
     senders_[id] = sender;
+    PS_VLOG(3) << "Zmq Connected to: " << node.DebugString();
   }
 
   int SendMsg(Message& msg) override {
@@ -233,7 +245,7 @@ class ZMQVan : public Van {
 
     auto it = senders_.find(id);
     if (it == senders_.end()) {
-      LOG(WARNING) << "there is no socket to node " << id;
+      LOG(FATAL) << "there is no socket to node " << id;
       return -1;
     }
 
@@ -415,6 +427,7 @@ class ZMQVan : public Van {
   std::atomic<bool> should_stop_{false};
 
   std::vector<std::thread*> thread_list_;
+  bool standalone_;
 
 };
 }  // namespace ps

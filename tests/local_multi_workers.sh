@@ -5,6 +5,9 @@ if [ $# -lt 3 ]; then
     exit -1;
 fi
 
+# export FI_LOG_LEVEL=Debug
+export FI_EFA_ENABLE_SHM_TRANSFER=0
+
 export DMLC_NUM_SERVER=$1
 shift
 export DMLC_NUM_WORKER=$1

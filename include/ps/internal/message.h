@@ -64,16 +64,24 @@ struct Node {
   /** \brief the empty value */
   static const int kEmpty;
   /** \brief default constructor */
-  Node() : id(kEmpty), port(kEmpty), is_recovery(false) {}
+  Node() : id(kEmpty), port(kEmpty), is_recovery(false), aux_id(-1) {}
   /** \brief node roles */
   enum Role { SERVER, WORKER, SCHEDULER };
   /** \brief get debug string */
   std::string DebugString() const {
     std::stringstream ss;
-    ss << "role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
+    ss << "[role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
        << (id != kEmpty ? ", id=" + std::to_string(id) : "")
-       << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery;
-
+       << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery
+       << ", aux_id=" << aux_id;
+    if (endpoint_name_len > 0) {
+      ss << ", endpoint_name_len=" << endpoint_name_len << ", endpoint_name={";
+      for (size_t i = 0; i < endpoint_name_len; i++) {
+        ss << std::to_string(endpoint_name[i]) + ",";
+      }
+      ss << "}";
+    }
+    ss << "]";
     return ss.str();
   }
   /** \brief get short debug string */
@@ -94,6 +102,12 @@ struct Node {
   int port;
   /** \brief whether this node is created by failover */
   bool is_recovery;
+  /** \brief endpoint name */
+  char endpoint_name[64];
+  /** \brief the length of the endpoint name */
+  size_t endpoint_name_len = 0;
+  /** \brief the auxilary id. currently used for fabric van communication setup */
+  int aux_id;
 };
 /**
  * \brief meta info of a system control message
@@ -107,7 +121,9 @@ struct Control {
   std::string DebugString() const {
     if (empty()) return "";
     std::vector<std::string> cmds = {
-      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT"};
+      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT", "BOOTSTRAP", "ADDR_REQUEST",
+      "ADDR_RESOLVED"
+    };
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
     if (node.size()) {
@@ -120,7 +136,8 @@ struct Control {
     return ss.str();
   }
   /** \brief all commands */
-  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT };
+  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, BOOTSTRAP, ADDR_REQUEST,
+                 ADDR_RESOLVED};
   /** \brief the command */
   Command cmd;
   /** \brief node infos */

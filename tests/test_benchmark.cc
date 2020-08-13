@@ -103,8 +103,8 @@ void push_pull(KVWorker<char> &kv,
                std::vector<SArray<Key> > &server_keys,
                std::vector<SArray<char> > &server_vals, 
                std::vector<SArray<int> > &server_lens,
-               int len, int num_servers, int total_key_num, 
-               int how_many_key_per_server, MODE mode) {
+               int len, int num_servers, int total_key_num,
+               int how_many_key_per_server, MODE mode, int repeat) {
   CHECK_GT(mode, 0);
   switch (mode) {
     case PUSH_PULL: 
@@ -130,7 +130,7 @@ void push_pull(KVWorker<char> &kv,
   unsigned int log_duration = val ? atoi(val) : 10;
   
   int cnt = 0;
-  while (1) {
+  while (cnt < repeat) {
     for (int key = 0; key < total_key_num; key++) {
       auto keys = server_keys[key];
       auto lens = server_lens[key];
@@ -162,9 +162,8 @@ void push_pull(KVWorker<char> &kv,
 
     end = std::chrono::high_resolution_clock::now();
     LL << "Application goodput: " 
-        << 8.0 * len * sizeof(char) * total_key_num * cnt / (end - start).count() 
-        << " Gbps";
-    cnt = 0;
+        << 8.0 * len * sizeof(char) * total_key_num * log_duration / (end - start).count()
+        << " Gbps. count = " << cnt;
     start = std::chrono::high_resolution_clock::now();
   }
 }
@@ -270,7 +269,7 @@ void RunWorker(int argc, char *argv[]) {
     case PUSH_PULL: 
     case PUSH_ONLY: 
     case PULL_ONLY: 
-      push_pull(kv, server_keys, server_vals, server_lens, len, num_servers, total_key_num, how_many_key_per_server, mode);
+      push_pull(kv, server_keys, server_vals, server_lens, len, num_servers, total_key_num, how_many_key_per_server, mode, repeat);
       break;
     default:
       CHECK(0) << "unknown mode " << mode;
