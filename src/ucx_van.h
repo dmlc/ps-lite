@@ -62,39 +62,74 @@ struct UCXRequest {
  UCXBuffer   data;
 };
 
+struct UCXEp {
+  UCXEp() : ep(nullptr), id(-1), connected(false), remote_addr(nullptr) {}
+  UCXEp(ucp_ep_h ep, int node_id) : ep(ep), id(node_id), connected(false),
+                                    remote_addr(nullptr) {}
+  ucp_ep_h                ep;
+  int                     id;
+  bool                    connected;
+  std::condition_variable cv;
+  std::mutex              mu;
+  struct addrinfo         *remote_addr;
+};
+
 class UCXEndpointsPool {
 public:
   UCXEndpointsPool() {
-      errh_enable_ = GetEnv("BYTEPS_UCX_ERRH_ENABLE", 1);
+      errh_enable_   = GetEnv("BYTEPS_UCX_ERRH_ENABLE", 1);
+      reconnect_tmo_ = GetEnv("BYTEPS_UCX_RECONNECT_TMO", 1000);
   }
 
   void Init(ucp_worker_h worker, Node *node) {
     worker_  = worker;
     my_node_ = node;
-    CHECK_STATUS(ucp_worker_set_am_handler(worker_, UCX_AM_NODE_INFO,
-                                           AmRxNodeInfo, this,
+    CHECK_STATUS(ucp_worker_set_am_handler(worker_, UCX_AM_NODE_INFO_REQ,
+                                           AmRxNodeInfoReq, this,
+                                           UCP_AM_FLAG_WHOLE_MSG));
+    CHECK_STATUS(ucp_worker_set_am_handler(worker_, UCX_AM_NODE_INFO_REPLY,
+                                           AmRxNodeInfoReply, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
   }
 
   void Create(const Node &node) {
     ucp_ep_h ep = Find(node.id);
+
     if (ep) {
       // Either duplicate conn request or ep is already connected by peer request
       UCX_LOGE(1, "ep create, exists for node " << node.id);
       return;
     }
 
+    UCX_LOGE(1, "ep create TO: id" << node.id << " hn " << node.hostname <<
+             " port " << node.port);
+
     struct addrinfo *remote_addr;
     CHECK_EQ(getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(),
                          nullptr, &remote_addr),
              0);
 
+    client_eps_[node.id] = std::make_unique<UCXEp>(nullptr, node.id);
+    UCXEp *ucx_ep        = client_eps_[node.id].get();
+    ucx_ep->remote_addr  = remote_addr;
+
+    Create(ucx_ep);
+
+    std::unique_lock<std::mutex> lk(ucx_ep->mu);
+    ucx_ep->cv.wait(lk, [ucx_ep] { return ucx_ep->connected; } );
+
+    UCX_LOGE(1, "ep create: connected to " << node.id);
+  }
+
+  void Create(UCXEp *ucx_ep) {
+    CHECK_EQ(ucx_ep->connected, false);
+
     ucp_ep_params_t ep_params;
     ep_params.field_mask        = UCP_EP_PARAM_FIELD_FLAGS |
                                   UCP_EP_PARAM_FIELD_SOCK_ADDR;
     ep_params.flags             = UCP_EP_PARAMS_FLAGS_CLIENT_SERVER;
-    ep_params.sockaddr.addr     = remote_addr->ai_addr;
-    ep_params.sockaddr.addrlen  = remote_addr->ai_addrlen;
+    ep_params.sockaddr.addr     = ucx_ep->remote_addr->ai_addr;
+    ep_params.sockaddr.addrlen  = ucx_ep->remote_addr->ai_addrlen;
     if (errh_enable_) {
       ep_params.field_mask     |= UCP_EP_PARAM_FIELD_ERR_HANDLER |
                                   UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
@@ -103,16 +138,11 @@ public:
       ep_params.err_mode        = UCP_ERR_HANDLING_MODE_PEER;
     }
 
-    ucs_status_t status = ucp_ep_create(worker_, &ep_params, &ep);
+    ucs_status_t status = ucp_ep_create(worker_, &ep_params, &ucx_ep->ep);
     CHECK_STATUS(status) << "ucp_ep_create failed: " << ucs_status_string(status);
-    mu_.lock();
-    client_eps_[node.id] = ep;
-    mu_.unlock();
 
-    UCX_LOGE(1, "ep create to node id " <<  ep << "|" << node.id);
-    // Send my node id to the server ep of the peer
-    ucs_status_ptr_t req = ucp_am_send_nb(ep, UCX_AM_NODE_INFO, &my_node_->id,
-                                          sizeof(my_node_->id), ucp_dt_make_contig(1),
+    ucs_status_ptr_t req = ucp_am_send_nb(ucx_ep->ep, UCX_AM_NODE_INFO_REQ, &ucx_ep->id,
+                                          sizeof(ucx_ep->id), ucp_dt_make_contig(1),
                                           AmReqCompletedCb, UCP_AM_SEND_REPLY);
     if (UCS_PTR_IS_PTR(req)) {
       ucp_request_free(req);
@@ -143,16 +173,17 @@ public:
   void Cleanup() {
     mu_.lock();
     for (auto& it : client_eps_) {
-      UCX_LOGE(1, "ep close in cleanup: " << it.first << "|"  << it.second);
-      CloseEp(it.second);
+      UCX_LOGE(1, "ep close in cleanup: " << it.first << "|"  << it.second->ep);
+      CloseEp(it.second->ep);
     }
+
     for (auto& it : server_eps_) {
-      UCX_LOGE(1, "ep close in cleanup: " << it);
-      CloseEp(it);
+      UCX_LOGE(1, "ep close in cleanup: " << it->ep);
+      CloseEp(it->ep);
     }
     mu_.unlock();
 
-    UCX_LOGE(1, "closing all eps, active reqs: " << close_ep_reqs_.size());
+    UCX_LOGE(1, "ep close all, active reqs: " << close_ep_reqs_.size());
     while (!close_ep_reqs_.empty()) {
         ucp_worker_progress(worker_);
         ucs_status_t status = ucp_request_check_status(close_ep_reqs_.front());
@@ -166,7 +197,11 @@ public:
   ucp_ep_h Find(int id) {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = client_eps_.find(id);
-    return (it == client_eps_.end()) ? nullptr : it->second;
+    if (it == client_eps_.end()) {
+        return nullptr;
+    }
+
+    return (it->second->connected) ? it->second->ep : nullptr;
   }
 
  private:
@@ -177,18 +212,28 @@ public:
     } else if (UCS_PTR_STATUS(req) != UCS_OK) {
       LOG(ERROR) << "failed to close ep: " << ep;
     }
+
+    UCX_LOGE(2, "close ep " << ep << " with req " << req);
   }
 
   void ErrorHandler(ucp_ep_h ep)
   {
     mu_.lock();
-    auto check  = [ep](const auto &mo) {return mo.second == ep;};
+    auto check  = [ep](const auto &mo) {return mo.second->ep == ep;};
     auto result = std::find_if(client_eps_.begin(), client_eps_.end(), check);
     if (result != client_eps_.end()) {
-      client_eps_.erase(result);
-      UCX_LOGE(1, "ep close errh: " << ep << "|" << result->first);
+        UCXEp *uep = result->second.get();
+        if (!uep->connected) {
+            uep->ep = nullptr;
+            std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_tmo_));
+            Create(uep);
+            UCX_LOGE(1, "ep close errh: " << ep << "|" << result->first
+                     << " Reconnect, close reqs " << close_ep_reqs_.size());
+        } else {
+            UCX_LOGE(1, "ep close errh: " << ep << "|" << result->first
+                     << " peer failure");
+        }
     } else {
-      server_eps_.erase(ep);
       UCX_LOGE(1, "ep close errh: " << ep);
     }
     mu_.unlock();
@@ -208,45 +253,68 @@ public:
     CHECK_STATUS(status) << "node info send failed: " << ucs_status_string(status);
   }
 
-  static ucs_status_t AmRxNodeInfo(void *arg, void *data, size_t length,
-                                   ucp_ep_h reply_ep, unsigned flags) {
+  static ucs_status_t AmRxNodeInfoReq(void *arg, void *data, size_t length,
+                                      ucp_ep_h reply_ep, unsigned flags)
+  {
     CHECK_EQ(length, sizeof(my_node_->id));
     CHECK(reply_ep);
     UCXEndpointsPool *p = reinterpret_cast<UCXEndpointsPool*>(arg);
     int id              = *(reinterpret_cast<int*>(data));
 
-    std::lock_guard<std::mutex> lock(p->mu_);
-    if (id == Node::kEmpty) {
-      // Servers and workers have epmty ids until assigned by the scheduler.
-      // So only scheduler can receive connection request from peer with empty node id.
-      CHECK(Postoffice::Get()->is_scheduler());
-      UCX_LOG_BASE(1, p->my_node_, "ep create, got EMPTY Node id, save " << reply_ep);
-      p->server_eps_.insert(reply_ep);
+    UCX_LOG_BASE(1, p->my_node_, "ep create, got AM id " << id << " my id "
+                 << p->my_node_->id <<", save " << reply_ep);
+
+    const auto se = p->server_eps_.emplace(std::make_unique<UCXEp>(reply_ep, id));
+    UCXEp *e = se.first->get();
+
+    // Send reply to the peer, so it can set its ep to connected state
+    ucs_status_ptr_t req = ucp_am_send_nb(reply_ep, UCX_AM_NODE_INFO_REPLY,
+                                          &e->id, sizeof(e->id),
+                                          ucp_dt_make_contig(1), AmReqCompletedCb,
+                                          UCP_AM_SEND_REPLY);
+    if (UCS_PTR_IS_PTR(req)) {
+      ucp_request_free(req);
     } else {
-      // If connect to the peer with this node id was not called on our van yet,
-      // accept this ep
-      auto it = p->client_eps_.find(id);
-      if (it == p->client_eps_.end()) {
-        p->client_eps_[id] = reply_ep;
-        UCX_LOG_BASE(1, p->my_node_, "ep create, got node id " << id
-                     << ", accept " << reply_ep);
-      } else {
-        p->server_eps_.insert(reply_ep);
-        UCX_LOG_BASE(1, p->my_node_, "ep create, got node id " << id
-                     << ", save " << reply_ep);
-      }
+      CHECK(!UCS_PTR_IS_ERR(req)) << "failed to send node info";
     }
+
     return UCS_OK;
   }
 
-  static const int                  UCX_AM_NODE_INFO = 0;
-  std::unordered_map<int, ucp_ep_h> client_eps_;
-  std::set<ucp_ep_h>                server_eps_;
-  std::queue<void*>                 close_ep_reqs_;
-  std::mutex                        mu_;
-  ucp_worker_h                      worker_;
-  Node                              *my_node_;
-  int                               errh_enable_;
+  static ucs_status_t AmRxNodeInfoReply(void *arg, void *data, size_t length,
+                                        ucp_ep_h reply_ep, unsigned flags)
+  {
+    CHECK_EQ(length, sizeof(my_node_->id));
+    UCXEndpointsPool *p = reinterpret_cast<UCXEndpointsPool*>(arg);
+    int id              = *(reinterpret_cast<int*>(data));
+
+    UCX_LOG_BASE(1, p->my_node_, "ep create, got AM REPLY node id " << id
+                     << " ep " << reply_ep);
+
+    std::lock_guard<std::mutex> lock(p->mu_);
+    auto e = p->client_eps_.find(id);
+    freeaddrinfo(e->second->remote_addr);
+    CHECK_NE(e, p->client_eps_.end());
+
+    {
+      std::lock_guard<std::mutex> lk(e->second->mu);
+      e->second->connected = true;
+    }
+    e->second->cv.notify_one();
+
+    return UCS_OK;
+  }
+
+  static const int                                 UCX_AM_NODE_INFO_REQ   = 0;
+  static const int                                 UCX_AM_NODE_INFO_REPLY = 1;
+  std::unordered_map<int, std::unique_ptr<UCXEp>>  client_eps_;
+  std::unordered_set<std::unique_ptr<UCXEp>>       server_eps_;
+  std::queue<void*>                                close_ep_reqs_;
+  std::mutex                                       mu_;
+  ucp_worker_h                                     worker_;
+  Node                                             *my_node_;
+  int                                              errh_enable_;
+  int                                              reconnect_tmo_;
 };
 
 class UCXVan : public Van {
