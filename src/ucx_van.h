@@ -482,6 +482,7 @@ class UCXVan : public Van {
     CHECK(IsDataMsg(msg));
 
     ucp_tag_t tag       = MakeTag(my_node_.id, UCX_TAG_DATA);
+    tag = (tag << 32) | msg.meta.key;
     ucs_status_ptr_t st = ucp_tag_send_nb(ep, msg.data[1].data(),
                                           msg.data[1].size(), ucp_dt_make_contig(1),
                                           tag, TxReqCompletedCb);
@@ -670,8 +671,10 @@ class UCXVan : public Van {
       recv_buffers_.Push(meta_req->data);
     } else {
       // Add sender id to the tag to ensure message received from the proper node
+      // val_len = 4096000;
       char *buf       = GetRxBuffer(meta->key, val_len, meta->push);
       ucp_tag_t tag   = MakeTag(meta_req->data.sender, UCX_TAG_DATA);
+      tag = (tag << 32) | meta->key;
       UCXRequest *req = (UCXRequest*)ucp_tag_recv_nb(worker_, buf, val_len,
                                                      ucp_dt_make_contig(1), tag,
                                                      std::numeric_limits<uint64_t>::max(),
