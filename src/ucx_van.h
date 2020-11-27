@@ -767,7 +767,7 @@ class UCXVan : public Van {
   ucp_tag_t MakeTag(int node_id, Tags tag, uint64_t key) {
     ucp_tag_t ret = 0;
 
-    assert((ucp_tag_t)node_id & 0xFFFFFFFF80000000 == 0);
+    assert(((ucp_tag_t)node_id & 0xFFFFFFFF80000000) == 0);
     ret = (ucp_tag_t)node_id << 32;
     ret &= ~static_cast<uint64_t>(Tags::UCX_TAG_MASK);
     ret |= static_cast<uint64_t>(tag);
