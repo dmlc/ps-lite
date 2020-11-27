@@ -1,19 +1,19 @@
 # Overview
 
-The parameter server aims for high-performance distributed machine learning
-applications. In this framework, multiple nodes runs over multiple machines to
+The parameter server model supports high-performance distributed machine learning
+applications. In this framework, multiple nodes run over multiple machines to
 solve machine learning problems.
-There are often a single schedule node, and several worker and servers nodes.
+There is often a single scheduler node, and several worker and server nodes.
 
 ![ps arch](https://raw.githubusercontent.com/dmlc/dmlc.github.io/master/img/ps-arch.png)
 
-- **Worker**. A worker node performs the main computations such as reading the data and
+- **Worker**. A worker node performs the main computations of reading data and
   computing the gradient. It communicates with the server nodes via `push` and
   `pull`. For example, it pushes the computed gradient to the servers, or pulls
   the recent model from them.
 
-- **Server.** A server node maintains and updates the model weights. Each node maintains only a part
-  of the model.
+- **Server.** A server node maintains and updates the model weights. Each node
+  maintains only a segment of the model weights.
 
 - **Scheduler.** The scheduler node monitors the aliveness of other nodes. It can
   be also used to send control signals to other nodes and collect their
@@ -27,10 +27,10 @@ Assume we are going to solve the following
 .. math::
   \min_w \sum_{i=1}^n f(x_i, y_i, w)
 ```
-where *(y<sub>i</sub>, x<sub>i</sub>)* are example pairs and *w* is the weight.
+where *(y<sub>i</sub>, x<sub>i</sub>)* are example pairs and *w* denotes model weights.
 
-We consider solve the above problem by minibatch stochastic gradient descent
-(SGD) with batch size *b*. At time *t*, this algorithm first randomly picks up
+We consider solving the above problem by minibatch stochastic gradient descent
+(SGD) with batch size *b*. At step *t*, this algorithm first randomly picks up
 *b* examples, and then updates the weight *w* by
 ```eval_rst
 .. math::
@@ -42,9 +42,8 @@ distributed optimization algorithm in ps-lite.
 
 ### Asynchronous SGD
 
-In the first example, we extend SGD into asynchronous SGD.  We let the servers
-maintain *w*, where server *k* gets the *k*-th segment of *w*, denoted by
-*w<sub>k<\sub>*. Once received gradient from a worker, the server *k* will
+The servers maintain model weights *w*, where server *k* gets the *k*-th segment of *w*, denoted by
+*w<sub>k</sub>*. Once received gradient from a worker, the server *k* will
 update the weight it maintained:
 
 ```c++
@@ -55,33 +54,32 @@ while (Received(&grad)) {
 }
 ```
 where the function `received` returns if received gradient from any worker
-node, and `eta` returns the learning rate at time *t*.
+node, and `eta` returns the learning rate at step *t*.
 
-While for a worker, each time it dose four things
+A worker at each step does four things
 
 ```c++
 Read(&X, &Y);  // read a minibatch X and Y
-Pull(&w);      // pull the recent weight from the servers
+Pull(&w);      // pull the latest weight from the servers
 ComputeGrad(X, Y, w, &grad);  // compute the gradient
 Push(grad);    // push the gradients to the servers
 ```
-where ps-lite will provide function `push` and `pull` which will communicate
+where ps-lite will provide functions `push` and `pull` which will communicate
 with servers with the right part of data.
 
-Note that asynchronous SGD is semantically different the single machine
-version. Since there is no communication between workers, so it is possible that
+Note that asynchronous SGD is semantically different from the single machine
+version. Since there is no communication between workers, it is possible that
 the weight is updated while one worker is calculating the gradients. In other
 words, each worker may used the **delayed** weights. The following figure
-shows the communication with 2 server nodes and 3 worker nodes.
+shows communication between 2 server nodes and 3 worker nodes.
 
 <img src="https://raw.githubusercontent.com/dmlc/web-data/master/ps-lite/async_sgd.png"  width=500 />
 
 
 ### Synchronized SGD
 
-Different to the asynchronous version, now we consider a synchronized version,
-which is semantically identical to the single machine algorithm. We use the
-scheduler to manage the data synchronization
+Unlike asynchronous SGD, synchronized SGD is semantically identical to the single
+machine algorithm. We use the scheduler to manage the data synchronization
 
 ```c++
 for (t = 0, t < num_iteration; ++t) {
@@ -98,17 +96,17 @@ for (t = 0, t < num_iteration; ++t) {
 where `IssueComputeGrad` and `IssueUpdateWeight` issue commands to worker and
 servers, while `WaitAllFinished` wait until all issued commands are finished.
 
-When worker received a command, it executes the following function,
+When a worker receives a command, it executes the following function
 ```c++
 ExecComputeGrad(i, t) {
    Read(&X, &Y);  // read minibatch with b / num_workers examples
-   Pull(&w);      // pull the recent weight from the servers
+   Pull(&w);      // pull the latest weight from the servers
    ComputeGrad(X, Y, w, &grad);  // compute the gradient
    Push(grad);    // push the gradients to the servers
 }
 ```
 which is almost identical to asynchronous SGD but only *b/num_workers* examples
-are processed each time.
+are processed at each step.
 
 While for a server node, it has an additional aggregation step comparing to
 asynchronous SGD
@@ -125,14 +123,14 @@ ExecUpdateWeight(i, t) {
 
 ### Which one to use?
 
-Comparing to a single machine algorithm, the distributed algorithms have two
-additional costs, one is the data communication cost, namely sending data over
-the network; the other one is synchronization cost due to the imperfect load
-balance and performance variance cross machines. These two costs may dominate
-the performance for large scale applications with hundreds of machines and
+Compared to a single machine algorithm, the distributed algorithms have two
+additional costs: one is the data communication cost, namely sending data over
+the network, and the other one is synchronization cost due to the imperfect load
+balance and performance variance across machines. These two costs may dominate
+performance for large scale applications with hundreds of machines and
 terabytes of data.
 
-Assume denotations:
+Notation:
 ```eval_rst
 ======================== ===
 :math:`{f}`              convex function
@@ -166,7 +164,7 @@ What we can see are
 
 ## Further Reads
 
-Distributed optimization algorithm is an active research topic these years. To
+Distributed optimization algorithms are an active research topic in recent years. To
 name some of them
 
 - [Dean, NIPS'13](), [Li, OSDI'14]() The parameter server architecture
