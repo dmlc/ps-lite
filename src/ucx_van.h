@@ -404,7 +404,9 @@ class UCXVan : public Van {
     ucp_cleanup(context_);
 
     for (auto& it : rpool_) {
-      free(it.second.first);
+      for (auto& it2 : it.second) {
+        free(it2.second.first);
+      }
     }
   }
 
@@ -556,7 +558,7 @@ class UCXVan : public Van {
     return *(reinterpret_cast<uint64_t*>(keys.data()));
   }
 
-  char *GetRxBuffer(uint64_t key, size_t size, bool push) {
+  char *GetRxBuffer(uint64_t key, int node_id, size_t size, bool push) {
     if (!push) {
       // Must be receive for pulled data, get the address used for push
       auto addr = w_pool_.find(key);
@@ -564,13 +566,16 @@ class UCXVan : public Van {
       return addr->second;
     }
 
-    auto it = rpool_.find(key);
-    if (it != rpool_.end()) {
-      if (size <= it->second.second) {
-        return it->second.first;
+    if (rpool_.find(key) != rpool_.end()) {
+      auto it = rpool_[key].find(node_id);
+      if (it != rpool_[key].end()) {
+        if (size <= it->second.second) {
+          return it->second.first;
+        } else {
+          // cached buffer is smaller than requested - free it and reallocate
+          free(it->second.first);
+        }
       }
-      // cached buffer is smaller than requested - free it and reallocate
-      free(it->second.first);
     }
 
     char *buf;
@@ -579,7 +584,7 @@ class UCXVan : public Van {
     CHECK(!ret) << "posix_memalign error: " << strerror(ret);
     CHECK(buf);
     memset(buf, 0, size);
-    rpool_[key] = std::make_pair(buf, size);
+    rpool_[key][node_id] = std::make_pair(buf, size);
 
     return buf;
   }
@@ -671,12 +676,14 @@ class UCXVan : public Van {
       recv_buffers_.Push(meta_req->data);
     } else if (meta->option) {
       UCX_LOG(2, " rx meta with data, data len: " << val_len);
-      meta_req->data.buffer = GetRxBuffer(meta->key, val_len, meta->push);
+      meta_req->data.buffer = GetRxBuffer(meta->key, meta_req->data.sender,
+                                          val_len, meta->push);
       memcpy(meta_req->data.buffer, meta_req->data.raw_meta + meta->option, val_len);
       recv_buffers_.Push(meta_req->data);
     } else {
       // Add sender id to the tag to ensure message received from the proper node
-      char *buf       = GetRxBuffer(meta->key, val_len, meta->push);
+      char *buf       = GetRxBuffer(meta->key, meta_req->data.sender,
+                                    val_len, meta->push);
       ucp_tag_t tag   = MakeTag(meta_req->data.sender, Tags::UCX_TAG_DATA,
                                 meta->key);
       UCXRequest *req = (UCXRequest*)ucp_tag_recv_nb(worker_, buf, val_len,
@@ -788,6 +795,7 @@ class UCXVan : public Van {
     req->completed     = false;
   }
 
+  typedef std::unordered_map<int, std::pair<char*, size_t>> MemAddresses;
   ucp_context_h                                     context_;
   ucp_worker_h                                      worker_;
   ucp_listener_h                                    listener_;
@@ -796,7 +804,7 @@ class UCXVan : public Van {
   UCXEndpointsPool                                  ep_pool_;
   std::unordered_map<Key, char*>                    w_pool_;
   std::atomic<bool>                                 should_stop_;
-  std::unordered_map<Key, std::pair<char*, size_t>> rpool_;
+  std::unordered_map<Key, MemAddresses>             rpool_;
   int                                               short_send_thresh_;
 };  // class UCXVan
 
