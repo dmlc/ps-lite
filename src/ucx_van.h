@@ -474,6 +474,7 @@ class UCXVan : public Van {
 
     if (msg.meta.push && msg.meta.request) {
       // Save push data address for later pull
+      std::lock_guard<std::mutex> lock(w_pool_mtx_);
       w_pool_[msg.meta.key] = msg.data[1].data();
     }
 
@@ -562,6 +563,7 @@ class UCXVan : public Van {
   char *GetRxBuffer(uint64_t key, int node_id, size_t size, bool push) {
     if (!push) {
       // Must be receive for pulled data, get the address used for push
+      std::lock_guard<std::mutex> lock(w_pool_mtx_);
       auto addr = w_pool_.find(key);
       CHECK(addr != w_pool_.end());
       return addr->second;
@@ -804,6 +806,7 @@ class UCXVan : public Van {
   ThreadsafeQueue<UCXBuffer>                        recv_buffers_;
   UCXEndpointsPool                                  ep_pool_;
   std::unordered_map<Key, char*>                    w_pool_;
+  std::mutex                                        w_pool_mtx_;
   std::atomic<bool>                                 should_stop_;
   std::unordered_map<Key, MemAddresses>             rpool_;
   int                                               short_send_thresh_;
