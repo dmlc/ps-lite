@@ -331,6 +331,7 @@ class UCXVan : public Van {
     setenv("UCX_IB_NUM_PATHS", "2", 0);
     setenv("UCX_SOCKADDR_CM_ENABLE", "y", 0);
     setenv("UCX_RNDV_THRESH", "8k", 0);
+    setenv("UCX_PROTO_INDIRECT_ID", "off", 0);
     short_send_thresh_ = GetEnv("BYTEPS_UCX_SHORT_THRESH", 4096);
   }
 
