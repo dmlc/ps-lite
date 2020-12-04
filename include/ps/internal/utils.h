@@ -23,7 +23,7 @@ typedef unsigned __int64 uint64_t;
 /*!
  * \brief Get environment variable as int with default.
  * \param key the name of environment variable.
- * \param default_val the default value of environment vriable.
+ * \param default_val the default value of environment variable.
  * \return The value received
  */
 template<typename V>
