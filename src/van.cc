@@ -23,6 +23,7 @@
 
 #include "./resender.h"
 #include "./zmq_van.h"
+#include "./multi_van.h"
 #include "./ucx_van.h"
 #define USE_PROFILING
 
@@ -74,8 +75,10 @@ Van *Van::Create(const std::string &type) {
     }
   }
 #endif
-
-  if (type == "zmq" || type == "0") {
+  if (type == "multivan") {
+    return new MultiVan();
+  }
+  else if (type == "zmq" || type == "0") {
     return new ZMQVan();
 #ifdef DMLC_USE_RDMA
   } else if (type == "ibverbs") {
@@ -150,7 +153,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
           << "\n an example: BYTEPS_ORDERED_HOSTS=10.0.0.1:1234,10.0.0.2:4321";
       std::string sparse_hosts = std::string(getenv("BYTEPS_ORDERED_HOSTS"));
       std::vector<std::string> hosts_list;
-      
+
       size_t pos = 0;
       while ((pos = sparse_hosts.find(",")) != std::string::npos) {
         std::string host = sparse_hosts.substr(0, pos);
@@ -394,17 +397,21 @@ void Van::Start(int customer_id, bool standalone) {
   start_mu_.lock();
   if (init_stage == 0) {
     scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
+    scheduler_.num_ports = 1;
     scheduler_.port = atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
+    scheduler_.ports[0] = scheduler_.port;
+    scheduler_.dev_types[0] = CPU;
+    scheduler_.dev_ids[0] = 0;
     scheduler_.role = Node::SCHEDULER;
     scheduler_.id = kScheduler;
     is_scheduler_ = Postoffice::Get()->is_scheduler();
-
 
     // get my node info
     if (is_scheduler_) {
       SetNode(scheduler_);
     } else {
       auto role = Postoffice::Get()->is_worker() ? Node::WORKER : Node::SERVER;
+      // host
       const char *nhost = Environment::Get()->find("DMLC_NODE_HOST");
       std::string ip;
       if (nhost) ip = std::string(nhost);
@@ -419,16 +426,25 @@ void Van::Start(int customer_id, bool standalone) {
         }
         CHECK(!interface.empty()) << "failed to get the interface";
       }
-      int port = GetAvailablePort();
-      const char *pstr = Environment::Get()->find("PORT");
-      if (pstr) port = atoi(pstr);
-      CHECK(!ip.empty()) << "failed to get ip";
-      CHECK(port) << "failed to get a port";
-      Node node = my_node_;
+      // num_ports
+      const char *npstr = Environment::Get()->find("DMLC_NUM_PORTS");
+      int num_ports = 1;
+      if (npstr) num_ports = atoi(npstr);
+      // ports
+      std::array<int, 32> ports;
+      int num_available_ports = GetAvailablePort(num_ports, &ports);
 
+      const char *pstr = Environment::Get()->find("PORT");
+      if (pstr) ports[0] = atoi(pstr);
+      CHECK(!ip.empty()) << "failed to get ip";
+      CHECK_EQ(num_available_ports, num_ports) << "failed to get "
+                                               << num_ports << " ports";
+      Node node = my_node_;
       node.hostname = ip;
       node.role = role;
-      node.port = port;
+      node.num_ports = num_ports;
+      node.ports = ports;
+      node.port = ports[0];
       // cannot determine my id now, the scheduler will assign it later
       // set it explicitly to make re-register within a same process possible
       node.id = Node::kEmpty;
@@ -579,8 +595,8 @@ void Van::Receiving() {
 }
 
 int Van::GetPackMetaLen(const Meta &meta) {
-  return sizeof(RawMeta) + meta.body.size() +
-         meta.data_type.size() * sizeof(int) +
+  auto data_type_size = meta.data_type.size() * sizeof(int);
+  return sizeof(RawMeta) + meta.body.size() + data_type_size + 
          meta.control.node.size() * sizeof(RawNode);
 }
 
@@ -594,8 +610,9 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   RawMeta *raw = (RawMeta*)*meta_buf;
   bzero(raw, sizeof(RawMeta));
   char *raw_body = *meta_buf + sizeof(RawMeta);
+  auto data_type_len = meta.data_type.size();
   int *raw_data_type = (int*)(raw_body + meta.body.size());
-  RawNode *raw_node = (RawNode*)(raw_data_type + meta.data_type.size());
+  RawNode *raw_node = (RawNode*)(raw_data_type + data_type_len);
 
   // convert into raw buffer
   raw->head = meta.head;
@@ -615,6 +632,10 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
     data_type_count++;
   }
   raw->data_type_size = meta.data_type.size();
+  raw->src_dev_type = meta.src_dev_type;
+  raw->src_dev_id = meta.src_dev_id;
+  raw->dst_dev_type = meta.dst_dev_type;
+  raw->dst_dev_id = meta.dst_dev_id;
   auto ctrl = &(raw->control);
   if (!meta.control.empty()) {
     ctrl->cmd = meta.control.cmd;
@@ -629,6 +650,13 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
       raw_node[node_count].id = n.id;
       raw_node[node_count].role = n.role;
       raw_node[node_count].port = n.port;
+      raw_node[node_count].num_ports = n.num_ports;
+      bzero(raw_node[node_count].ports, 32 * sizeof(int));
+      memcpy(raw_node[node_count].ports, n.ports.data(), 32 * sizeof(int));
+      bzero(raw_node[node_count].dev_types, 32 * sizeof(int));
+      memcpy(raw_node[node_count].dev_types, n.dev_types.data(), 32 * sizeof(int));
+      bzero(raw_node[node_count].dev_ids, 32 * sizeof(int));
+      memcpy(raw_node[node_count].dev_ids, n.dev_ids.data(), 32 * sizeof(int));
       bzero(raw_node[node_count].hostname, sizeof(raw_node[node_count].hostname));
       memcpy(raw_node[node_count].hostname, n.hostname.c_str(), n.hostname.size());
       bzero(raw_node[node_count].endpoint_name, sizeof(raw_node[node_count].endpoint_name));
@@ -655,7 +683,8 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   RawMeta *raw = (RawMeta*)meta_buf;
   const char *raw_body = meta_buf + sizeof(RawMeta);
   const int *raw_data_type = (const int*)(raw_body + raw->body_size);
-  const RawNode *raw_node = (RawNode*)(raw_data_type + raw->data_type_size);
+  auto data_type_len = raw->data_type_size;
+  const RawNode *raw_node = (RawNode*)(raw_data_type + data_type_len);
 
   // to meta
   meta->head = raw->head;
@@ -670,7 +699,10 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   for (int i = 0; i < raw->data_type_size; ++i) {
     meta->data_type[i] = static_cast<DataType>(raw_data_type[i]);
   }
-
+  meta->src_dev_type = static_cast<DeviceType>(raw->src_dev_type);
+  meta->src_dev_id = raw->src_dev_id;
+  meta->dst_dev_type = static_cast<DeviceType>(raw->dst_dev_type);
+  meta->dst_dev_id = raw->dst_dev_id;
   auto ctrl = &(raw->control);
   meta->control.cmd = static_cast<Control::Command>(ctrl->cmd);
   meta->control.barrier_group = ctrl->barrier_group;
@@ -680,6 +712,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
     Node n;
     n.role = static_cast<Node::Role>(p.role);
     n.port = p.port;
+    n.num_ports = p.num_ports;
     n.hostname = p.hostname;
     n.id = p.id;
     n.is_recovery = p.is_recovery;
@@ -688,6 +721,12 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
     n.endpoint_name_len = p.endpoint_name_len;
     bzero(n.endpoint_name, sizeof(n.endpoint_name));
     memcpy(n.endpoint_name, p.endpoint_name, sizeof(n.endpoint_name));
+    bzero(n.ports.data(), 32 * sizeof(int));
+    memcpy(n.ports.data(), p.ports, 32 * sizeof(int));
+    bzero(n.dev_types.data(), 32 * sizeof(int));
+    memcpy(n.dev_types.data(), p.dev_types, 32 * sizeof(int));
+    bzero(n.dev_ids.data(), 32 * sizeof(int));
+    memcpy(n.dev_ids.data(), p.dev_ids, 32 * sizeof(int));
     meta->control.node.push_back(n);
   }
 

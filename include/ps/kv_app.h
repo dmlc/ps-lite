@@ -379,6 +379,12 @@ class KVServer : public SimpleApp {
    * \param res the kv pairs that will send back to the worker
    */
   void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>());
+  
+  /**
+   * specify the recver's buffer for target keys
+   */
+  void RegisterRecvBuffer(int worker_id, SArray<Key>& keys, const SArray<Val>& vals,
+                          const SArray<int>& lens = {}, int cmd = 0);
 
  private:
   /** \brief internal receive handle */
@@ -424,6 +430,26 @@ struct KVServerDefaultHandle {
 
 
 ///////////////////////////////////////////////////////////////////////////////
+
+template <typename Val>
+void KVServer<Val>::RegisterRecvBuffer(int worker_id, SArray<Key>& keys,
+                                       const SArray<Val>& vals,
+                                       const SArray<int>& lens,
+                                       int cmd) {
+  Message msg;
+  msg.meta.request = true;
+  msg.meta.push = true;
+  msg.meta.head = cmd;
+  msg.meta.sender = worker_id;
+  if (keys.size()) {
+    msg.AddData(keys);
+    msg.AddData(vals);
+    if (lens.size()) {
+      msg.AddData(lens);
+    }
+  }
+  Postoffice::Get()->van()->RegisterRecvBuffer(msg);
+}
 
 template <typename Val>
 void KVServer<Val>::Process(const Message& msg) {

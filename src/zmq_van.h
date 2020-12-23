@@ -74,7 +74,7 @@ class ZMQVan : public Van {
 
   void Stop() override {
     PS_VLOG(1) << "Stopping " << my_node_.ShortDebugString();
-    Van::Stop();
+    if (!standalone_) Van::Stop();
     // join all threads
     should_stop_ = true;
     for (auto t : thread_list_) t->join();
@@ -95,7 +95,9 @@ class ZMQVan : public Van {
     context_ = nullptr;
   }
 
-  int Bind(const Node& node, int max_retry) override {
+  int Bind(Node& node, int max_retry) override {
+    CHECK_EQ(my_node_.num_ports, 1)
+      << "zmq van does not support multiple ports";
     receiver_ = zmq_socket(context_, ZMQ_ROUTER);
     int option = 1;
     CHECK(!zmq_setsockopt(receiver_, ZMQ_ROUTER_MANDATORY, &option, sizeof(option)))
@@ -149,6 +151,9 @@ class ZMQVan : public Van {
       PS_VLOG(1) << "Zmq skipped connection to node " << node.DebugString()
                  << ". My node is " << my_node_.DebugString();
       return;
+    } else {
+      PS_VLOG(1) << "Zmq connecting to node " << node.DebugString()
+                 << ". My node is " << my_node_.DebugString();
     }
     void* sender = zmq_socket(context_, ZMQ_DEALER);
     CHECK(sender != NULL)
@@ -221,13 +226,18 @@ class ZMQVan : public Van {
       size_t size = zmq_msg_size(zmsg);
       recv_bytes += size;
 
-
       SArray<char> data;
       // zero copy
-      data.reset(buf, size, [zmsg, size](void *) {
-        zmq_msg_close(zmsg);
-        delete zmsg;
-      });
+      data.reset(buf, size, 
+        [zmsg, size](void *) {
+          zmq_msg_close(zmsg);
+          delete zmsg;
+        },
+        msg->meta.src_dev_type,
+        msg->meta.src_dev_id,
+        msg->meta.dst_dev_type,
+        msg->meta.dst_dev_id
+      );
       msg->data.push_back(data);
     }
 

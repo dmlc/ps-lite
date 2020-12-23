@@ -164,7 +164,9 @@ class FabricVan : public Van {
     fi_freeinfo(info_);
   }
 
-  int Bind(const Node &node, int max_retry) override {
+  int Bind(Node& node, int max_retry) override {
+    CHECK_EQ(my_node_.num_ports, 1)
+      << "fabric van does not support multiple ports";
     std::lock_guard<std::mutex> lk(endpoints_mu_);
     int my_port = zmq_->Bind(node, max_retry);
     PS_VLOG(3) << "Done zmq->Bind. My port is " << my_port;

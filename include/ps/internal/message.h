@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <sstream>
+#include <array>
 #include "ps/sarray.h"
 namespace ps {
 /** \brief data type */
@@ -15,12 +16,14 @@ enum DataType {
   UINT8, UINT16, UINT32, UINT64,
   FLOAT, DOUBLE, OTHER
 };
+
 /** \brief data type name */
 static const char* DataTypeName[] = {
   "CHAR", "INT8", "INT16", "INT32", "INT64",
   "UINT8", "UINT16", "UINT32", "UINT64",
   "FLOAT", "DOUBLE", "OTHER"
 };
+
 /**
  * \brief compare if V and W are the same type
  */
@@ -73,7 +76,18 @@ struct Node {
     ss << "[role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
        << (id != kEmpty ? ", id=" + std::to_string(id) : "")
        << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery
-       << ", aux_id=" << aux_id;
+       << ", aux_id=" << aux_id << ", num_ports=" << num_ports;
+    if (num_ports > 1) {
+      ss << ", ports=[";
+      for (int i = 0; i < num_ports; ++i) {
+        ss << ports[i] << ",";
+      }
+      ss << "], devices=[";
+      for (int i = 0; i < num_ports; ++i) {
+        ss << DeviceTypeName[dev_types[i]] << "[" << dev_ids[i] << "],";
+      }
+      ss << "]";
+    }
     if (endpoint_name_len > 0) {
       ss << ", endpoint_name_len=" << endpoint_name_len << ", endpoint_name={";
       for (size_t i = 0; i < endpoint_name_len; i++) {
@@ -98,7 +112,15 @@ struct Node {
   int customer_id;
   /** \brief hostname or ip */
   std::string hostname;
+  /** \brief number of ports */
+  int num_ports;
   /** \brief the port this node is binding */
+  std::array<int, 32> ports;
+  /** \brief the types of devices this node is binding */
+  std::array<int, 32> dev_types;
+  /** \brief the ids of devices this node is binding */
+  std::array<int, 32> dev_ids;
+  /** \brief the same port as ports[0] */
   int port;
   /** \brief whether this node is created by failover */
   bool is_recovery;
@@ -109,6 +131,7 @@ struct Node {
   /** \brief the auxilary id. currently used for fabric van communication setup */
   int aux_id;
 };
+
 /**
  * \brief meta info of a system control message
  */
@@ -179,7 +202,7 @@ struct Meta {
     if (control.empty() && !simple_app) ss << ", key=" << key; // valid data msg
     if (body.size()) ss << ", body=" << body;
     if (data_type.size()) {
-      ss << ", data_type={";
+      ss << ", dtype={";
       for (auto d : data_type) ss << " " << DataTypeName[static_cast<int>(d)];
       ss << " }";
     }
@@ -208,6 +231,14 @@ struct Meta {
   std::string body;
   /** \brief data type of message.data[i] */
   std::vector<DataType> data_type;
+  /** \brief src device type of message.data[i] */
+  DeviceType src_dev_type = UNK;
+  /** \brief src device id of message.data[i] */
+  int src_dev_id = -1;
+  /** \brief dst device type of message.data[i] */
+  DeviceType dst_dev_type = UNK;
+  /** \brief dst device id of message.data[i] */
+  int dst_dev_id = -1;
   /** \brief system control message */
   Control control;
   /** \brief the byte size */
@@ -239,13 +270,23 @@ struct Message {
     SArray<char> bytes(val);
     meta.data_size += bytes.size();
     data.push_back(bytes);
+    // the data/value array
+    if (data.size() == 2) {
+      meta.src_dev_type = val.src_device_type_;
+      meta.src_dev_id = val.src_device_id_;
+      meta.dst_dev_type = val.dst_device_type_;
+      meta.dst_dev_id = val.dst_device_id_;
+    }
   }
   std::string DebugString() const {
     std::stringstream ss;
     ss << meta.DebugString();
     if (data.size()) {
-      ss << " Body:";
-      for (const auto& d : data) ss << " data_size=" << d.size();
+      ss << " Body: {";
+      for (const auto& d : data) {
+        ss << d.DebugString() << ", ";
+      }
+      ss << "}";
     }
     return ss.str();
   }

@@ -417,7 +417,9 @@ class UCXVan : public Van {
     }
   }
 
-  int Bind(const Node &node, int max_retry) override {
+  int Bind(Node& node, int max_retry) override {
+    CHECK_EQ(my_node_.num_ports, 1)
+      << "ucx van does not support multiple ports";
     auto val = Environment::Get()->find("DMLC_NODE_HOST");
     struct sockaddr_in addr = {};
     if (val) {

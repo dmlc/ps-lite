@@ -16,8 +16,16 @@ struct RawNode {
   int id;
   // hostname or ip
   char hostname[64];
-  // the port this node is binding
+  // number of ports
+  int num_ports;
+  // all the ports this node is binding
+  int ports[32];
+  // the port this node is binding (ports[0])
   int port;
+  // the type of devices
+  int dev_types[32];
+  // the id of devices
+  int dev_ids[32];
   // whether this node is created by failover
   bool is_recovery;
   // the locally unique id of an customer
@@ -55,6 +63,14 @@ struct RawMeta {
   int timestamp;
   // data type of message.data[i]
   int data_type_size;
+  /** \brief src device type of message.data[i] */
+  int src_dev_type;
+  /** \brief src device id of message.data[i] */
+  int src_dev_id;
+  /** \brief dst device type of message.data[i] */
+  int dst_dev_type;
+  /** \brief dst device id of message.data[i] */
+  int dst_dev_id;
   // the locally unique id of an customer
   int customer_id;
   // whether or not a push message

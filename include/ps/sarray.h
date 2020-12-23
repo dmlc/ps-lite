@@ -11,7 +11,13 @@
 #include "ps/internal/utils.h"
 #include "ps/range.h"
 namespace ps {
-
+enum DeviceType {
+  UNK, CPU, GPU
+};
+/** \brief device type name */
+static const char* DeviceTypeName[] = {
+  "UNK", "CPU", "GPU"
+};
 /**
  * \brief Shared array
  *
@@ -77,6 +83,11 @@ class SArray {
     CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
     capacity_ = arr.capacity() * sizeof(W) / sizeof(V);
     ptr_ = std::shared_ptr<V>(arr.ptr(), reinterpret_cast<V*>(arr.data()));
+    // copy device info
+    src_device_type_ = arr.src_device_type_;
+    src_device_id_ = arr.src_device_id_;
+    dst_device_type_ = arr.dst_device_type_;
+    dst_device_id_ = arr.dst_device_id_;
   }
 
   /**
@@ -95,6 +106,36 @@ class SArray {
       reset(data, size, [](V* data){ delete [] data; });
     } else {
       reset(data, size, [](V* data) { });
+    }
+  }
+
+
+  /**
+   * \brief construct from a c-array with device info
+   *
+   * Zero-copy constructor, namely just copy the pointer
+   *
+   * \param data the source data
+   * \param size the length
+   * \param src_device_type the type of the device this data currently resides
+   * \param src_device_id the id of the device this data currently resides
+   * \param dst_device_type the type of the device this data targets at the receiver's
+   * \param dst_device_id the id of the device this data targets at the receiver's
+   * \param deletable whether or not can call `delete [] data` when the reference
+   * count goes 0
+   */
+
+  SArray(V* data, size_t size, DeviceType src_device_type, int src_device_id,
+         DeviceType dst_device_type, int dst_device_id, bool deletable = false) {
+    if (deletable) {
+      CHECK(src_device_type == CPU);
+      reset(data, size, [](V* data){ delete [] data; }, 
+           src_device_type, src_device_id,
+           dst_device_type, dst_device_id);
+    } else {
+      reset(data, size, [](V* data) { },
+            src_device_type, src_device_id,
+            dst_device_type, dst_device_id);
     }
   }
 
@@ -159,8 +200,14 @@ class SArray {
    * @brief Reset the current data pointer with a deleter
    */
   template <typename Deleter>
-  void reset(V* data, size_t size, Deleter del) {
+  void reset(V* data, size_t size, Deleter del,
+             DeviceType src_device_type=CPU, int src_device_id=0,
+             DeviceType dst_device_type=CPU, int dst_device_id=0) {
     size_ = size; capacity_ = size; ptr_.reset(data, del);
+    src_device_type_ = src_device_type;
+    src_device_id_ = src_device_id;
+    dst_device_type_ = dst_device_type;
+    dst_device_id_ = dst_device_id;
   }
 
   /**
@@ -250,13 +297,30 @@ class SArray {
     ret.ptr_ = std::shared_ptr<V>(ptr_, data() + begin);
     ret.size_ = end - begin;
     ret.capacity_ = end - begin;
+    ret.src_device_type_ = src_device_type_;
+    ret.src_device_id_ = src_device_id_;
+    ret.dst_device_type_ = dst_device_type_;
+    ret.dst_device_id_ = dst_device_id_;
     return ret;
   }
 
+  std::string DebugString() const {
+    std::stringstream ss;
+    ss << "[data_size=" << size() << " "
+       << DeviceTypeName[src_device_type_] << "[" << src_device_id_ << "]->"
+       << DeviceTypeName[dst_device_type_] << "[" << dst_device_id_ << "]]";
+    return ss.str();
+  }
  private:
   size_t size_ = 0;
   size_t capacity_ = 0;
   std::shared_ptr<V> ptr_;
+ 
+ public:
+  DeviceType src_device_type_ = CPU;
+  int src_device_id_ = 0;
+  DeviceType dst_device_type_ = CPU;
+  int dst_device_id_ = 0;
 };
 
 

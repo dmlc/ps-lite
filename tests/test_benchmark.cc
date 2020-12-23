@@ -11,7 +11,7 @@
 
 using namespace ps;
 
-enum MODE {
+enum MODE { 
     PUSH_THEN_PULL = 0,
     PUSH_PULL = 1,
     PUSH_ONLY = 2, 
@@ -19,6 +19,7 @@ enum MODE {
 };
 std::unordered_map<uint64_t, KVPairs<char> > mem_map;
 bool debug_mode_ = false;
+int num_ports = 1;
 
 void aligned_memory_alloc(void** ptr, size_t size) {
   size_t page_size = sysconf(_SC_PAGESIZE);
@@ -38,6 +39,11 @@ void float_sum(float *dst, float *src, size_t len) {
   }
 }
 
+uint64_t DecodeKey(ps::Key key) {
+  auto kr = ps::Postoffice::Get()->GetServerKeyRanges()[ps::MyRank()];
+  return key - kr.begin();
+}
+
 template <typename Val>
 void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer<Val> *server) {
   uint64_t key = req_data.keys[0];
@@ -46,7 +52,12 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
     CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
         << "key=" << key << ", " << req_data.vals.size() << ", " << req_data.lens[0];
 
-
+    // CHECK the device id
+    // src device: (key + my_rank) % num_ports
+    // dst device: key % num_ports
+    auto key_decoded = DecodeKey(key);
+    auto expected_device = key_decoded % num_ports;
+    CHECK_EQ(req_data.vals.dst_device_id_, expected_device);
     if (mem_map.find(key) == mem_map.end()) {
       size_t len = (size_t) req_data.vals.size();
 
@@ -185,7 +196,9 @@ void RunWorker(int argc, char *argv[]) {
   auto v = Environment::Get()->find("NUM_KEY_PER_SERVER");
   const int how_many_key_per_server = v ? atoi(v) : 40;
   const int total_key_num = num_servers * how_many_key_per_server;
-
+  // src device: (key + my_rank) % num_ports
+  // dst device: key % num_ports
+  auto my_rank = ps::Postoffice::Get()->my_rank();
   std::vector<SArray<char> > server_vals;
   std::vector<SArray<Key> > server_keys;
   std::vector<SArray<int> > server_lens;
@@ -193,8 +206,12 @@ void RunWorker(int argc, char *argv[]) {
     void* ptr;
     aligned_memory_alloc(&ptr, len);
     SArray<char> vals;
-    vals.reset((char*) ptr, len * sizeof(char), [](void *){});
+    vals.reset((char*) ptr, len * sizeof(char), [](void *){},
+               CPU, (key + my_rank) % num_ports,
+               CPU, key % num_ports);
     server_vals.push_back(vals);
+    // We assume values reside on device key % num_ports
+    LOG(INFO) << "Initialized val[" << key << "]: " << server_vals.back().DebugString();
   }
 
   // init push, do not count this into time cost
@@ -274,13 +291,15 @@ void RunWorker(int argc, char *argv[]) {
     default:
       CHECK(0) << "unknown mode " << mode;
   }
-
-
 }
 
 int main(int argc, char *argv[]) {
   // disable multi-threaded processing first
   setenv("ENABLE_SERVER_MULTIPULL", "0", 1);
+  const char *npstr = Environment::Get()->find("DMLC_NUM_PORTS");
+  if (npstr) num_ports = atoi(npstr);
+  LOG(INFO) << num_ports << " ports per node";
+
   // start system
   Start(0);
   // setup server nodes
