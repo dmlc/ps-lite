@@ -194,6 +194,16 @@ class MultiVan : public Van {
     return van->SendMsg(van_msg);
   }
 
+  void RegisterRecvBuffer(Message &msg) {
+    Message van_msg = msg;
+    CHECK_EQ(msg.data.size(), 3);
+    int src_idx = msg.data[1].src_device_id_;
+    int dst_idx = msg.data[1].dst_device_id_;
+    van_msg.meta.sender = EncodeManagedID(msg.meta.sender, src_idx);
+    auto van = vans_[dst_idx];
+    van->RegisterRecvBuffer(van_msg);
+  }
+
   int RecvMsg(Message *msg) override {
     msg->data.clear();
     MultiVanBufferContext ctx;
@@ -211,6 +221,7 @@ class MultiVan : public Van {
     for (int i = 0; i < num_ports_; ++i) {
       Node one_node = node;
       one_node.id = EncodeManagedID(node.id, i);
+      PS_VLOG(3) << "Child " << i << " id=" << one_node.id;
       one_node.num_ports = 1;
       one_node.ports[0] = node.ports[i];
       one_node.port = node.ports[i];

@@ -441,13 +441,12 @@ void KVServer<Val>::RegisterRecvBuffer(int worker_id, SArray<Key>& keys,
   msg.meta.push = true;
   msg.meta.head = cmd;
   msg.meta.sender = worker_id;
-  if (keys.size()) {
-    msg.AddData(keys);
-    msg.AddData(vals);
-    if (lens.size()) {
-      msg.AddData(lens);
-    }
-  }
+  CHECK(keys.size());
+  msg.AddData(keys);
+  msg.AddData(vals);
+  CHECK(lens.size());
+  msg.AddData(lens);
+  auto key_ptr = reinterpret_cast<Key*>(msg.data[0].data());
   Postoffice::Get()->van()->RegisterRecvBuffer(msg);
 }
 

@@ -34,7 +34,7 @@ class RDMAVan : public Van {
     return std::string("rdma");
   }
 
- protected:  
+ protected:
   void Start(int customer_id, bool standalone) override {
     start_mu_.lock();
     should_stop_ = false;

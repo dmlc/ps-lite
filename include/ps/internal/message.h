@@ -282,11 +282,14 @@ struct Message {
     std::stringstream ss;
     ss << meta.DebugString();
     if (data.size()) {
-      ss << " Body: {";
+      ss << " Body: { ";
+      ss << DeviceTypeName[meta.src_dev_type] << "(" << meta.src_dev_id << ")->"
+         << DeviceTypeName[meta.dst_dev_type] << "(" << meta.dst_dev_id << ") "
+         << "data_size=[";
       for (const auto& d : data) {
-        ss << d.DebugString() << ", ";
+        ss << d.size() << ",";
       }
-      ss << "}";
+      ss << "] }";
     }
     return ss.str();
   }
