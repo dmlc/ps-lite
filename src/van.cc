@@ -511,7 +511,7 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   *buf_size = pb.ByteSize();
   *meta_buf = new char[*buf_size + 1];
   CHECK(pb.SerializeToArray(*meta_buf, *buf_size))
-      << "failed to serialize protbuf";
+      << "failed to serialize protobuf";
 }
 
 void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
