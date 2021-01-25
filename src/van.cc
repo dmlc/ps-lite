@@ -675,10 +675,10 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->addr = meta.addr;
   raw->val_len = meta.val_len;
   raw->option = meta.option;
+  raw->sid = meta.sid;
 }
 
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
-
   RawMeta *raw = (RawMeta*)meta_buf;
   const char *raw_body = meta_buf + sizeof(RawMeta);
   const int *raw_data_type = (const int*)(raw_body + raw->body_size);
@@ -734,6 +734,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->addr = raw->addr;
   meta->val_len = raw->val_len;
   meta->option = raw->option;
+  meta->sid = raw->sid;
 }
 
 void Van::Heartbeat() {

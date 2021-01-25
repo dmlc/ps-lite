@@ -196,7 +196,8 @@ struct Meta {
       ss << ", app_id=" << app_id
          << ", customer_id=" << customer_id
          << ", simple_app=" << simple_app
-         << ", push=" << push;
+         << ", push=" << push
+         << ", sid=" << sid;
     }
     if (head != kEmpty) ss << ", head=" << head;
     if (control.empty() && !simple_app) ss << ", key=" << key; // valid data msg
@@ -206,7 +207,7 @@ struct Meta {
       for (auto d : data_type) ss << " " << DataTypeName[static_cast<int>(d)];
       ss << " }";
     }
-    if (!control.empty() || simple_app) ss << ". THIS IS NOT DATA MSG!";
+    if (!control.empty() || simple_app) ss << ". NOT DATA MSG!";
     return ss.str();
   }
   /** \brief an int head */
@@ -251,6 +252,8 @@ struct Meta {
   int val_len;
   /** \brief the optional 4-bytes field */
   int option;
+  /** \brief the sequence id (used by ucx) */
+  int sid;
 };
 /**
  * \brief messages that communicated amaong nodes.

@@ -87,6 +87,8 @@ struct RawMeta {
   int val_len;
   // the option field
   int option;
+  // the sequence id
+  int sid;
 
   // body
   // data_type

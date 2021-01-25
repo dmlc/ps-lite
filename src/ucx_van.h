@@ -33,7 +33,7 @@ std::mutex g_log_mutex;
  do { \
    if (_prio <= Postoffice::Get()->verbose()) { \
      std::lock_guard<std::mutex> lock(g_log_mutex); \
-     LOG(INFO) << (_my_node)->ShortDebugString() << " " << _x << std::endl; \
+     LOG(INFO) << (_my_node)->ShortDebugString() << " " << _x; \
    } \
  } while(0)
 
@@ -47,6 +47,10 @@ std::mutex g_log_mutex;
     (_req)->completed     = false; \
     ucp_request_free(_req); \
   } while(0)
+
+const int UCX_OPTION_META = -1;
+const int UCX_OPTION_DATA = -2;
+const int MAX_SID_COUNT = 1 << 31;
 
 class UCXVan;
 
@@ -339,9 +343,12 @@ class UCXVan : public Van {
     setenv("UCX_RNDV_THRESH", "8k", 0);
     setenv("UCX_PROTO_INDIRECT_ID", "off", 0);
     short_send_thresh_ = GetEnv("BYTEPS_UCX_SHORT_THRESH", 4096);
+    force_request_order_ = GetEnv("BYTEPS_UCX_FORCE_REQ_ORDER", 0);
   }
 
-  ~UCXVan() {}
+  ~UCXVan() {
+    LOG(INFO) << "~UCXVan";
+  }
 
   virtual std::string GetType() const {
     return std::string("ucx");
@@ -391,6 +398,7 @@ class UCXVan : public Van {
 
     ep_pool_.Init(worker_, &my_node_);
     polling_thread_.reset(new std::thread(&UCXVan::PollUCX, this));
+    reorder_thread_.reset(new std::thread(&UCXVan::ReorderMsg, this));
 
     start_mu_.unlock();
 
@@ -403,6 +411,8 @@ class UCXVan : public Van {
     should_stop_ = true;
     polling_thread_->join();
     polling_thread_.reset();
+    reorder_thread_->join();
+    reorder_thread_.reset();
 
     ep_pool_.Cleanup();
 
@@ -469,28 +479,37 @@ class UCXVan : public Van {
       return -1;
     }
 
-    msg.meta.val_len = 0;
-    msg.meta.option  = 0;
+    msg.meta.option = UCX_OPTION_META;
     if (IsValidPushpull(msg)) {
       if (msg.meta.request) {
         msg.meta.key = DecodeKey(msg.data[0]);
+        // sequence id
+        std::lock_guard<std::mutex> lk(sid_mtx_);
+        int sid = next_send_sids_[id] % MAX_SID_COUNT;
+        next_send_sids_[id] = sid + 1;
+        msg.meta.sid = sid;
       }
       if (IsDataMsg(msg)) {
         msg.meta.val_len = msg.data[1].size();
+        msg.meta.option = UCX_OPTION_DATA;
+      } else if (!msg.meta.push && msg.meta.request) {
+        // Save pull data address
+        std::lock_guard<std::mutex> lock(w_pool_mtx_);
+        CHECK(msg.meta.addr != 0);
+        w_pool_[msg.meta.key] = (char*) msg.meta.addr;
       }
     }
 
-    if (msg.meta.push && msg.meta.request) {
-      // Save push data address for later pull
-      std::lock_guard<std::mutex> lock(w_pool_mtx_);
-      w_pool_[msg.meta.key] = msg.data[1].data();
-    }
-
     int len = SendMeta(ep, msg);
+    // meta only
+    if (msg.meta.option == UCX_OPTION_META) {
+      return len;
+    }
+    // meta with data
     if (len == GetPackMetaLen(msg.meta) + msg.meta.val_len) {
       return len + msg.meta.data_size; // No data, or data was bundled with meta
     }
-
+    // data
     CHECK(IsDataMsg(msg));
 
     ucp_tag_t tag       = MakeTag(my_node_.id, Tags::UCX_TAG_DATA, msg.meta.key);
@@ -506,10 +525,61 @@ class UCXVan : public Van {
     return len + msg.meta.data_size;
   }
 
+  bool IsPushpullRequest(const RawMeta* raw) {
+    CHECK(raw != nullptr);
+    auto ctrl = &(raw->control);
+    Control::Command cmd = static_cast<Control::Command>(ctrl->cmd);
+    if (cmd != Control::EMPTY) return false;
+    if (raw->simple_app) return false;
+    return raw->request;
+  }
+
+  void ReorderMsg() {
+    while (!should_stop_.load()) {
+      UCXBuffer buf;
+      recv_buffers_.WaitAndPop(&buf);
+      RawMeta *raw = (RawMeta*) buf.raw_meta;
+      // XXX assume a single reorder thread, so we do not need to acquire mutex
+      // std::lock_guard<std::mutex> lk(sid_mtx_);
+      if (!IsPushpullRequest(raw) || !force_request_order_) {
+        // for non-pushpull messages, we dont check the sid
+        ordered_recv_buffers_.Push(buf);
+        continue;
+      }
+      int sid = raw->sid;
+      CHECK(sid >= 0) << "invalid sid " << sid;
+      int sender = buf.sender;
+      CHECK(sender >= 0) << "invalid sender " << sender;
+      int next_sid = next_recv_sids_[sender];
+      // check if this is the next sid
+      auto& buffs = recv_sid_buffers_[sender];
+      if (sid == next_sid) {
+        ordered_recv_buffers_.Push(buf);
+        // also clears any existing bufs
+        int count = 0;
+        while (true) {
+          next_sid = (next_sid + 1) % MAX_SID_COUNT;
+          if (buffs.find(next_sid) != buffs.end()) {
+            count++;
+            ordered_recv_buffers_.Push(buffs[next_sid]);
+            buffs.erase(next_sid);
+          } else {
+            break;
+          }
+        }
+        if (count > 0) PS_VLOG(4) << "out-of-order count = " << count;
+        next_recv_sids_[sender] = next_sid;
+      } else {
+        PS_VLOG(4) << "out-of-order msg arrived. sid=" << sid;
+        buffs[sid] = buf;
+      }
+    }
+  }
+
   int RecvMsg(Message *msg) override {
     msg->data.clear();
     UCXBuffer buf;
-    recv_buffers_.WaitAndPop(&buf);
+    ordered_recv_buffers_.WaitAndPop(&buf);
 
     // note size(2d param) is not really used by UnpackMeta
     UnpackMeta(buf.raw_meta, -1, &msg->meta);
@@ -519,8 +589,9 @@ class UCXVan : public Van {
     msg->meta.sender = buf.sender;
     msg->meta.recver = my_node_.id;
 
+    // for pull request, we still need to set the key
     if (!IsValidPushpull(*msg) || (msg->meta.push && !msg->meta.request)) {
-      CHECK_EQ(msg->meta.val_len, 0);
+      CHECK_EQ(msg->meta.option, UCX_OPTION_META);
       return total_len;
     }
 
@@ -681,11 +752,11 @@ class UCXVan : public Van {
   void PostRecvData(UCXRequest *meta_req) {
     RawMeta *meta = reinterpret_cast<RawMeta*>(meta_req->data.raw_meta);
     int val_len   = meta->val_len;
-    if (val_len == 0) {
-      UCX_LOG(2, " rx just meta, sender " << meta_req->data.sender);
+    if (val_len == 0 || meta->option == UCX_OPTION_META) {
+      UCX_LOG(2, " rx just meta, sender " << meta_req->data.sender << " val_len: " << val_len);
       CHECK_EQ(meta_req->data.buffer, nullptr);
       recv_buffers_.Push(meta_req->data);
-    } else if (meta->option) {
+    } else if (meta->option > 0) {
       UCX_LOG(2, " rx meta with data, data len: " << val_len);
       meta_req->data.buffer = GetRxBuffer(meta->key, meta_req->data.sender,
                                           val_len, meta->push);
@@ -779,24 +850,24 @@ class UCXVan : public Van {
   /**
    * from the left to the right:
    * 1 bit for UCX_TAG_META/UCX_TAG_DATA
-   * 31 bits for the sender node_id
-   * 32 bits for the key
+   * 15 bits for the sender node_id
+   * 48 bits for the key
    */
   ucp_tag_t MakeTag(int node_id, Tags tag, uint64_t key) {
     ucp_tag_t ret = 0;
 
-    assert(((ucp_tag_t)node_id & 0xFFFFFFFF80000000) == 0);
-    ret = (ucp_tag_t)node_id << 32;
+    assert(((ucp_tag_t)node_id & 0xFFFFFFFFFFFF8000) == 0);
+    ret = (ucp_tag_t)node_id << 48;
     ret &= ~static_cast<uint64_t>(Tags::UCX_TAG_MASK);
     ret |= static_cast<uint64_t>(tag);
-    ret |= (key & 0xFFFFFFFF);
+    ret |= (key & 0xFFFFFFFFFFFF);
 
     return ret;
   }
 
   int NodeIdFromTag(ucp_tag_t tag) {
     tag &= ~static_cast<uint64_t>(Tags::UCX_TAG_MASK);
-    return (int)(tag >> 32);
+    return (int)(tag >> 48);
   }
 
   static void RequestInit(void *request) {
@@ -818,6 +889,16 @@ class UCXVan : public Van {
   std::atomic<bool>                                 should_stop_;
   std::unordered_map<Key, MemAddresses>             rpool_;
   int                                               short_send_thresh_;
+  // send/recv sequence id
+  std::unordered_map<int, int>                      next_send_sids_;
+  std::unordered_map<int, int>                      next_recv_sids_;
+  std::mutex                                        sid_mtx_;
+  // buffers for message whose callback is invoked early
+  std::unordered_map<int, std::unordered_map<int, UCXBuffer>> recv_sid_buffers_;
+  ThreadsafeQueue<UCXBuffer>                        ordered_recv_buffers_;
+  std::unique_ptr<std::thread>                      reorder_thread_;
+  int                                               force_request_order_;
+
 };  // class UCXVan
 
 };  // namespace ps

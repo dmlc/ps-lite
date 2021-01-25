@@ -25,6 +25,12 @@ INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread -lrt
 
+ifeq ($(USE_CUDA), 1)
+LIBS += -lcudart -L$(CUDA_HOME)/lib64
+CFLAGS += -DDMLC_USE_CUDA
+INCPATH += -I$(CUDA_HOME)/include
+endif
+
 ifeq ($(USE_RDMA), 1)
 LIBS += -lrdmacm -libverbs
 CFLAGS += -DDMLC_USE_RDMA
