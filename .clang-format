@@ -1,0 +1,6 @@
+---
+BasedOnStyle: Google
+---
+# To format your code, run `clang-format -i -style=file my-van.cc`
+Language: Cpp
+ColumnLimit: 80

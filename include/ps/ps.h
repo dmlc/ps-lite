@@ -46,6 +46,20 @@ inline void Start(int customer_id, const char *argv0 = nullptr) {
 inline void StartAsync(int customer_id, const char *argv0 = nullptr) {
   Postoffice::Get()->Start(customer_id, argv0, false);
 }
+
+/**
+ * \brief start the system
+ *
+ * This function will NOT block.
+ * \param customer_id the customer id
+ * \param preferred_rank the preferred rank. -1 means no preference and the rank will be assigned by
+          the scheduler. If the rank is non-negative, the preferred rank will be assigned accordingly.
+ * \param argv0 the program name, used for logging
+ */
+inline void StartAsyncWithRank(int customer_id, int preferred_rank, const char *argv0 = nullptr) {
+  Postoffice::Get()->StartWithRank(customer_id, preferred_rank, argv0, false);
+}
+
 /**
  * \brief terminate the system
  *

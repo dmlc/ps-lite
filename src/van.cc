@@ -8,6 +8,7 @@
 #include <fstream>
 #include <string.h>
 #include <sstream>
+#include <set>
 
 #include "ps/base.h"
 #include "ps/internal/customer.h"
@@ -175,27 +176,71 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
                 });
     } else {
       // sort the nodes according their ip and port
+      // no need to sort for p2p communication case, but sort might be good for later usage
       std::sort(nodes->control.node.begin(), nodes->control.node.end(),
                [](const Node &a, const Node &b) {
                  return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
                });
     }
 
+    bool with_preferred_rank = false;
+    for (auto &node: nodes->control.node) {
+      if (node.aux_id != -1) {
+        LOG(INFO) << "Preferred rank detected for node " << node.DebugString();
+        with_preferred_rank = true;
+      }
+    }
+
+    // make sure ranks starts from 0 to num_servers and num_worker.
+    if (with_preferred_rank) {
+      std::unordered_set<int> server_ranks;
+      std::unordered_set<int> worker_ranks;
+      for (auto &node: nodes->control.node){
+        if (node.role == Node::SERVER) {
+          CHECK_EQ(server_ranks.find(node.aux_id), server_ranks.end())
+            << "rank must be unique: " << node.DebugString();
+          server_ranks.insert(node.aux_id);
+        } else if (node.role==Node::WORKER) {
+          CHECK_EQ(worker_ranks.find(node.aux_id), worker_ranks.end())
+            << "rank must be unique: " << node.DebugString();
+          worker_ranks.insert(node.aux_id);
+        } else{
+          LOG(FATAL) << "unrecognized node role " << node.DebugString();
+        }
+      }
+
+      // check continousity
+      int num_servers = Postoffice::Get()->num_servers();
+      for (int i = 0; i < num_servers; ++i) {
+        CHECK(server_ranks.find(i) != server_ranks.end()) << i;
+      }
+      CHECK(server_ranks.size() == num_servers);
+
+      int num_workers = Postoffice::Get()->num_workers();
+      for (int i = 0; i < num_workers; ++i) {
+        CHECK(worker_ranks.find(i) != worker_ranks.end()) << i;
+      }
+      CHECK(worker_ranks.size() == num_workers);
+    }
+
+
     // assign node rank
     for (auto &node : nodes->control.node) {
       std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
+      int id = -1;
+      if (node.role == Node::SERVER) {
+        id = Postoffice::ServerRankToID(with_preferred_rank ? node.aux_id : num_servers_);
+      } else {
+        id = Postoffice::WorkerRankToID(with_preferred_rank ? node.aux_id : num_workers_);
+      }
       if (connected_nodes_.find(node_host_ip) == connected_nodes_.end()) {
         CHECK_EQ(node.id, Node::kEmpty);
-        int id = node.role == Node::SERVER ? Postoffice::ServerRankToID(num_servers_)
-                                           : Postoffice::WorkerRankToID(num_workers_);
         PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
         node.id = id;
         Connect(node);
         Postoffice::Get()->UpdateHeartbeat(node.id, t);
         connected_nodes_[node_host_ip] = id;
       } else {
-        int id = node.role == Node::SERVER ? Postoffice::ServerRankToID(num_servers_)
-                                           : Postoffice::WorkerRankToID(num_workers_);
         shared_node_mapping_[id] = connected_nodes_[node_host_ip];
         node.id = connected_nodes_[node_host_ip];
       }
@@ -214,7 +259,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
         Send(back);
       }
     }
-    PS_VLOG(1) << "the scheduler is connected to " << num_workers_ << " workers and "
+    PS_VLOG(1) << "The scheduler is connected to " << num_workers_ << " workers and "
                << num_servers_ << " servers";
     ready_ = true;
   } else if (!recovery_nodes->control.node.empty()) {
@@ -237,6 +282,8 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       back.meta.timestamp = timestamp_++;
       Send(back);
     }
+  } else {
+    PS_VLOG(2) << "AddNode: " << nodes->control.node.size() << " / " << num_nodes;
   }
 }
 
@@ -473,6 +520,7 @@ void Van::Start(int customer_id, bool standalone) {
     // let the scheduler know myself
     Message msg;
     Node customer_specific_node = my_node_;
+    customer_specific_node.aux_id = Postoffice::Get()->preferred_rank();
     customer_specific_node.customer_id = customer_id;
     msg.meta.recver = kScheduler;
     msg.meta.control.cmd = Control::ADD_NODE;

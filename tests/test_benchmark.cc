@@ -463,7 +463,16 @@ int main(int argc, char *argv[]) {
   skip_dev_id_check = env2bool("SKIP_DEV_ID_CHECK", false);
 
   // start system
-  Start(0);
+  int my_rank = env2int("DMLC_PREFERRED_RANK", -1);
+  if (my_rank == -1) {
+    Start(0);
+  } else {
+    StartAsyncWithRank(0, my_rank);
+    ps::Postoffice::Get()->Barrier(0, kWorkerGroup + kServerGroup + kScheduler);
+    int assigned_rank = ps::Postoffice::Get()->my_rank();
+    CHECK(assigned_rank == my_rank) << assigned_rank << " v.s. " << my_rank;
+  }
+
   // setup server nodes
   StartServer(argc, argv);
   // run worker nodes
