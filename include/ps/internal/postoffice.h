@@ -29,10 +29,10 @@ class Postoffice {
    *
    * This function will block until every nodes are started.
    * \param argv0 the program name, used for logging.
+   * \param preferred_rank the preferred rank. -1 means no preference and the rank will be assigned by
+      the scheduler. If the rank is non-negative, the preferred rank will be assigned accordingly.
    * \param do_barrier whether to block until every nodes are started.
    */
-  void Start(int customer_id, const char* argv0, const bool do_barrier);
-  
   void StartWithRank(int customer_id, int preferred_rank, const char* argv0, const bool do_barrier);
   /**
    * \brief terminate the system
@@ -169,6 +169,7 @@ class Postoffice {
   Postoffice();
   ~Postoffice() { delete van_; }
 
+  void Start(int customer_id, const char* argv0, const bool do_barrier);
   void InitEnvironment();
   Van* van_;
   mutable std::mutex mu_;

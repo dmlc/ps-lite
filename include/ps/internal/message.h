@@ -130,7 +130,7 @@ struct Node {
   size_t endpoint_name_len = 0;
   /** \brief the auxilary id. currently used for fabric van communication setup */
   /** also used for the rank assignment phase for p2p communication**/
-  int aux_id;
+  int aux_id = -1;
 };
 
 /**

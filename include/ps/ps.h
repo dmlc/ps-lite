@@ -35,7 +35,7 @@ inline int MyRank() { return Postoffice::Get()->my_rank(); }
  * \param argv0 the program name, used for logging
  */
 inline void Start(int customer_id, const char *argv0 = nullptr) {
-  Postoffice::Get()->Start(customer_id, argv0, true);
+  Postoffice::Get()->StartWithRank(customer_id, -1, argv0, true);
 }
 /**
  * \brief start the system
@@ -44,7 +44,7 @@ inline void Start(int customer_id, const char *argv0 = nullptr) {
  * \param argv0 the program name, used for logging
  */
 inline void StartAsync(int customer_id, const char *argv0 = nullptr) {
-  Postoffice::Get()->Start(customer_id, argv0, false);
+  Postoffice::Get()->StartWithRank(customer_id, -1, argv0, false);
 }
 
 /**
