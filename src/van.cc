@@ -475,7 +475,11 @@ void Van::Start(int customer_id, bool standalone) {
       // num_ports
       const char *npstr = Environment::Get()->find("DMLC_NUM_PORTS");
       int num_ports = 1;
-      if (npstr) num_ports = atoi(npstr);
+      if (npstr) {
+        num_ports = atoi(npstr);
+      } else {
+        PS_VLOG(1) << " DMLC_NUM_PORTS doesn't exist, using 1 by default.";
+      }
       // ports
       std::array<int, 32> ports;
       int num_available_ports = GetAvailablePort(num_ports, &ports);

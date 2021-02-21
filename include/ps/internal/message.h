@@ -257,7 +257,7 @@ struct Meta {
   int sid;
 };
 /**
- * \brief messages that communicated amaong nodes.
+ * \brief messages that communicated among nodes.
  */
 struct Message {
   /** \brief the meta info of this message */

@@ -470,10 +470,12 @@ public:
   }
 
 private:
+  // rx buffer pool: node_id -> buffer
   typedef std::unordered_map<int, UCXAddress>       MemAddresses;
   ThreadsafeQueue<UCXBuffer>                        recv_buffers_;
   ThreadsafeQueue<UCXBuffer>                        ordered_recv_buffers_;
   std::unordered_map<Key, char*>                    w_pool_;
+  // rx buffer pool: key -> pool of node_ids
   std::unordered_map<Key, MemAddresses>             rpool_;
   std::mutex                                        w_pool_mtx_;
 };
@@ -800,13 +802,30 @@ class UCXVan : public Van {
   int Bind(Node &node, int max_retry) override {
     contexts_.reserve(node.num_ports);
 
+    int num_cpu_dev   = GetEnv("DMLC_NUM_CPU_DEV", 1);
+    int num_gpu_dev   = GetEnv("DMLC_NUM_GPU_DEV", 0);
+
+    // CHECK_EQ(num_cpu_dev + num_gpu_dev, node.num_ports);
+    PS_VLOG(1) << " num_cpu_dev "
+      << num_cpu_dev << " num_gpu_dev " << num_gpu_dev
+      << " node.num_ports " << node.num_ports;
+
+    std::vector<std::pair<int, int>> devs;
+    for (int i = 0; i < num_cpu_dev; ++i) {
+      devs.push_back(std::make_pair(CPU, i));
+    }
+    for (int i = 0; i < num_gpu_dev; ++i) {
+      devs.push_back(std::make_pair(GPU, i));
+    }
+
     UCX_LOG(1, "Start/Bind UCX Van, num ports " << node.num_ports);
 
     // Create separate UCX context for every device. If device is GPU, set the
     // corresponding cuda device before UCX context creation. This way UCX will
     // automatically select the most optimal NICs for using with this device.
     for (int i = 0; i < node.num_ports; ++i) {
-      node.dev_ids[i] = i;
+      node.dev_types[i] = devs[i].first;
+      node.dev_ids[i] = devs[i].second;
       int dev_id = node.dev_ids[i];
       CHECK_GE(dev_id, 0);
 
@@ -1073,7 +1092,7 @@ class UCXVan : public Van {
   }
 
   void PollUCX() {
-   UCX_LOG(2, "polling " << contexts_.size());
+   PS_VLOG(2) << "polling " << contexts_.size() << " ucp_contexts";
     while (!should_stop_.load()) {
       for (const auto& it : contexts_) {
         it.second->Poll();

@@ -447,6 +447,7 @@ void KVServer<Val>::RegisterRecvBuffer(int worker_id, SArray<Key>& keys,
   CHECK(lens.size());
   msg.AddData(lens);
   auto key_ptr = reinterpret_cast<Key*>(msg.data[0].data());
+  msg.meta.key = *key_ptr;
   Postoffice::Get()->van()->RegisterRecvBuffer(msg);
 }
 
@@ -579,6 +580,8 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
   if ((size_t)skipped == sliced.size()) {
     RunCallback(timestamp);
   }
+  DeviceType src_dev_type, dst_dev_type;
+  int src_dev_id, dst_dev_id;
   for (size_t i = 0; i < sliced.size(); ++i) {
     auto& s = sliced[i];
     if (!s.first) continue;
@@ -593,13 +596,25 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
     auto& kvs = s.second;
     msg.meta.addr = reinterpret_cast<uint64_t>(kvs.vals.data());
     msg.meta.val_len = kvs.vals.size();
-    if (!msg.meta.push) kvs.vals.clear();
+    if (!msg.meta.push) {
+      src_dev_type = kvs.vals.src_device_type_;
+      src_dev_id = kvs.vals.src_device_id_;
+      dst_dev_type = kvs.vals.dst_device_type_;
+      dst_dev_id = kvs.vals.dst_device_id_;
+      kvs.vals.clear();
+    }
     if (kvs.keys.size()) {
       msg.AddData(kvs.keys);
       msg.AddData(kvs.vals);
       if (kvs.lens.size()) {
         msg.AddData(kvs.lens);
       }
+    }
+    if (!msg.meta.push) {
+      msg.meta.src_dev_type = src_dev_type;
+      msg.meta.src_dev_id = src_dev_id;
+      msg.meta.dst_dev_type = dst_dev_type;
+      msg.meta.dst_dev_id = dst_dev_id;
     }
     Postoffice::Get()->van()->Send(msg);
   }
