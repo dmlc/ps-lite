@@ -57,7 +57,7 @@ all: ps test
 include make/deps.mk
 
 clean:
-	rm -rf build $(TEST) tests/*.d tests/*.dSYM
+	rm -rf build deps $(TEST) tests/*.d tests/*.dSYM
 
 lint:
 	python tests/lint.py ps all include/ps src

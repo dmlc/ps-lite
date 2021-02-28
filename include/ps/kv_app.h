@@ -596,11 +596,12 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
     auto& kvs = s.second;
     msg.meta.addr = reinterpret_cast<uint64_t>(kvs.vals.data());
     msg.meta.val_len = kvs.vals.size();
+
+    src_dev_type = kvs.vals.src_device_type_;
+    src_dev_id = kvs.vals.src_device_id_;
+    dst_dev_type = kvs.vals.dst_device_type_;
+    dst_dev_id = kvs.vals.dst_device_id_;
     if (!msg.meta.push) {
-      src_dev_type = kvs.vals.src_device_type_;
-      src_dev_id = kvs.vals.src_device_id_;
-      dst_dev_type = kvs.vals.dst_device_type_;
-      dst_dev_id = kvs.vals.dst_device_id_;
       kvs.vals.clear();
     }
     if (kvs.keys.size()) {
