@@ -330,7 +330,11 @@ class RDMATransport : public Transport {
     // further, it does not send keys and lens since these meta already carries these info 
     struct ibv_sge my_sge;
     my_sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[0].first->addr);
-    my_sge.length = msg_buf->mrs[0].second;
+    // support variable data length
+    CHECK(msg.data.size() == 3);
+    // the data size sent this time must be no larger than the one we registered the first time
+    CHECK(msg.data[1].size() <= msg_buf->mrs[0].second);
+    my_sge.length = msg.data[1].size();
     my_sge.lkey = msg_buf->mrs[0].first->lkey;
 
     // this rdma-write will not trigger any signal both remotely and locally
@@ -412,14 +416,13 @@ class RDMATransport : public Transport {
   virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) {
     CHECK(msg->meta.push && msg->meta.request);
     CHECK_EQ(buffer_ctx->data_num, 3);
-    uint32_t len = buffer_ctx->data_len[1];
     char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
-    
+
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
 
+    uint32_t len = msg->meta.val_len;
     SArray<char> vals;
     vals.reset(cur, len, [](void *) {});  // no need to delete
-
     SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
 
     msg->data.push_back(keys);
