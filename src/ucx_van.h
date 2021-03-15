@@ -905,7 +905,6 @@ class UCXVan : public Van {
   int SendMsg(Message &msg) override {
     int id           = msg.meta.recver;
     int src_dev_id   = msg.meta.src_dev_id;
-    msg.meta.val_len = 0;
     msg.meta.option  = 0;
     CHECK_NE(id, Meta::kEmpty);
 
@@ -928,6 +927,9 @@ class UCXVan : public Van {
         CHECK(msg.meta.addr != 0);
         rx_pool_->CacheLocalAddress(msg.meta.key, (char*)msg.meta.addr);
       }
+    } else {
+     // val_len should be non-zero for pull request.
+     msg.meta.val_len = 0;
     }
 
     int len = SendMeta(src_dev_id, msg);
