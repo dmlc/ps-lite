@@ -134,12 +134,13 @@ public:
                   nullptr, &remote_addr),
                0);
 
-      std::lock_guard<std::mutex> lock(mu_);
+      mu_.lock();
       int dev_id          = node.dev_ids[i];
       uint64_t id         = EpId(node.id, dev_id);
       client_eps_[id]     = std::make_unique<UCXEp>(nullptr, id);
       ucx_ep              = client_eps_[id].get();
       ucx_ep->remote_addr = remote_addr;
+      mu_.unlock();
 
       Create(ucx_ep);
     }
@@ -264,8 +265,10 @@ public:
     auto client_check = [ep](const auto &mo) {return mo.second->ep == ep;};
     auto client_it    = std::find_if(client_eps_.begin(), client_eps_.end(),
                                      client_check);
-    if (client_it != client_eps_.end()) {
-      UCXEp *uep = client_it->second.get();
+    UCXEp *uep = (client_it != client_eps_.end()) ? client_it->second.get() : nullptr;
+    mu_.unlock();
+
+    if (uep != nullptr) {
       if (!uep->connected) {
         uep->ep = nullptr;
         std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_tmo_));
@@ -275,9 +278,12 @@ public:
       } else {
         UCX_LOGE(1, "ep close errh: " << ep << "|" << client_it->first
                  << " peer failure");
+        mu_.lock();
         client_eps_.erase(client_it);
+        mu_.unlock();
       }
     } else {
+      mu_.lock();
       auto server_check = [ep](const auto &mo) {return mo->ep == ep;};
       auto server_it    = std::find_if(server_eps_.begin(), server_eps_.end(),
                                        server_check);
@@ -285,9 +291,9 @@ public:
       if (server_it != server_eps_.end()) {
         server_eps_.erase(server_it);
       }
+      mu_.unlock();
       UCX_LOGE(1, "ep close errh: " << ep);
     }
-    mu_.unlock();
     CloseEp(ep);
   }
 
@@ -323,8 +329,10 @@ public:
     UCX_LOG_BASE(1, p->my_node_, "ep create, got AM id " << id << " my id "
                  << p->my_node_->id <<", save " << reply_ep);
 
+    p->mu_.lock();
     const auto se = p->server_eps_.emplace(std::make_unique<UCXEp>(reply_ep, id));
     UCXEp *e = se.first->get();
+    p->mu_.unlock();
 
     // Send reply to the peer, so it can set its ep to connected state
     ucs_status_ptr_t req = ucp_am_send_nb(reply_ep, UCX_AM_NODE_INFO_REPLY,
@@ -354,13 +362,14 @@ public:
         UCX_LOG_BASE(1, p->my_node_, "Key " << it->first );
     }
 
-    std::lock_guard<std::mutex> lock(p->mu_);
+    p->mu_.lock();
     auto e = p->client_eps_.find(id);
     CHECK_NE(e, p->client_eps_.end());
-    freeaddrinfo(e->second->remote_addr);
+    p->mu_.unlock();
 
     {
       std::lock_guard<std::mutex> lk(e->second->mu);
+      freeaddrinfo(e->second->remote_addr);
       e->second->connected = true;
     }
     e->second->cv.notify_one();
