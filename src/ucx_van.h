@@ -576,13 +576,8 @@ public:
     ucp_tag_recv_info_t info;
     int cnt = 0;
 
-    // Poll all underlying transports(IB, shm, tcp, etc). Need to take a lock
-    // here to avoid interference with recv flow. Progress should not be run
-    // while RX thread just completed ucp_tag_recv_nb(), but has not initialized
-    // receive request yet (see PostRecvData).
-    rx_mu_.lock();
+    // Poll all underlying transports(IB, shm, tcp, etc).
     cnt = ucp_worker_progress(worker_);
-    rx_mu_.unlock();
     if (cnt == 0) {
       return;
     }
@@ -607,7 +602,7 @@ public:
   }
 
   ucs_status_ptr_t Send(Message &msg, void *buf, size_t count, ucp_datatype_t dt,
-                        Tags tag) {
+                        void *user_data, Tags tag) {
     int id         = msg.meta.recver;
     int dst_dev_id = msg.meta.dst_dev_id;
     ucp_ep_h ep    = ep_pool_.Find(id, dst_dev_id);
@@ -618,18 +613,12 @@ public:
 
     if (ep == nullptr) return UCS_STATUS_PTR(UCS_ERR_NOT_CONNECTED);
 
-    send_param.op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK;
-    if (tag == ps::Tags::UCX_TAG_META) {
-        // Initialize completion callback for sending meta data to free the tx
-        // buffer. It is not needed for real data, because tx buffer is managed
-        // by PS-Lite.
-        send_param.op_attr_mask |= UCP_OP_ATTR_FIELD_USER_DATA;
-        send_param.cb.send       = TxMetaCompletedCb;
-        send_param.user_data     = buf;
-    } else {
-        CHECK_EQ(tag,  ps::Tags::UCX_TAG_DATA);
-        send_param.cb.send       = TxDataCompletedCb;
-    }
+    send_param.op_attr_mask  = UCP_OP_ATTR_FIELD_CALLBACK |
+                               UCP_OP_ATTR_FIELD_DATATYPE |
+                               UCP_OP_ATTR_FIELD_USER_DATA;
+    send_param.datatype      = dt;
+    send_param.cb.send       = TxReqCompletedCb;
+    send_param.user_data     = user_data;
 
     return ucp_tag_send_nbx(ep, buf, count, stag, &send_param);
   }
@@ -667,7 +656,7 @@ private:
   void PostRecvData(UCXRequest *meta_req) {
     RawMeta *meta = reinterpret_cast<RawMeta*>(meta_req->data.raw_meta);
     int val_len   = meta->val_len;
-    if ((val_len == 0) || (meta->option == UCX_OPTION_META)) {
+    if (meta->option == UCX_OPTION_META) {
       UCX_LOGE(2, " rx just meta, sender " << meta_req->data.sender
                << " val_len: " << val_len);
       CHECK_EQ(meta_req->data.buffer, nullptr);
@@ -679,13 +668,12 @@ private:
       memcpy(meta_req->data.buffer, meta_req->data.raw_meta + meta->option, val_len);
       rx_pool_->Push(meta_req->data);
     } else {
+      CHECK_EQ(meta->option, UCX_OPTION_DATA);
       // Add sender id to the tag to ensure message received from the proper node
-
       char *buf       = rx_pool_->GetRxBuffer(meta->key, meta_req->data.sender,
                                               val_len, meta->push);
       ucp_tag_t tag   = MakeTag(meta_req->data.sender, Tags::UCX_TAG_DATA,
                                 meta->key);
-      rx_mu_.lock();
       UCXRequest *req = (UCXRequest*)ucp_tag_recv_nb(worker_, buf, val_len,
                                                      ucp_dt_make_contig(1), tag,
                                                      std::numeric_limits<uint64_t>::max(),
@@ -699,7 +687,6 @@ private:
         rx_pool_->Push(req->data);
         UCX_REQUEST_FREE(req);
       }
-      rx_mu_.unlock();
     }
     // if request is not completed in-place, it will be handled
     // in RxDataCompletedCb callback
@@ -709,14 +696,12 @@ private:
 
   UCXRequest* PostRecvMeta(ucp_tag_message_h msg, ucp_tag_recv_info_t *info) {
     char *rmeta     = new char[info->length];
-    rx_mu_.lock();
     UCXRequest *req = (UCXRequest*)ucp_tag_msg_recv_nb(worker_, rmeta, info->length,
                                                        ucp_dt_make_contig(1), msg,
                                                        RxMetaCompletedCb);
     req->ctx           = this;
     req->data.raw_meta = rmeta;
     req->data.sender   = NodeIdFromTag(info->sender_tag);
-    rx_mu_.unlock();
     UCX_LOGE(2, " rx meta, sender " << req->data.sender << " tag "
              << info->sender_tag << " compl " << req->completed);
     return req;
@@ -764,22 +749,14 @@ private:
     UCX_REQUEST_FREE(req); // can release request back to UCX now
   }
 
-  static void TxMetaCompletedCb(void *request, ucs_status_t status, void *user_data)
+  static void TxReqCompletedCb(void *request, ucs_status_t status, void *user_data)
   {
     UCXRequest *req = reinterpret_cast<UCXRequest*>(request);
-
-    CHECK_STATUS(status) << "TX meta request completed with " << ucs_status_string(status);
-
-    delete [] user_data;
-
-    UCX_REQUEST_FREE(req);
-  }
-
-  static void TxDataCompletedCb(void *request, ucs_status_t status, void *user_data)
-  {
-    UCXRequest *req = reinterpret_cast<UCXRequest*>(request);
+    char *send_buf  = static_cast<char*>(user_data);
 
     CHECK_STATUS(status) << "TX request completed with " << ucs_status_string(status);
+
+    delete [] send_buf;
 
     UCX_REQUEST_FREE(req);
   }
@@ -792,7 +769,6 @@ private:
   Node                                              *my_node_;
   UCXVan                                            *van_;
   UCXRecvPool                                       *rx_pool_;
-  std::mutex                                        rx_mu_;
 };
 
 class UCXVan : public Van {
@@ -914,7 +890,6 @@ class UCXVan : public Van {
   int SendMsg(Message &msg) override {
     int id           = msg.meta.recver;
     int src_dev_id   = msg.meta.src_dev_id;
-    msg.meta.option  = 0;
     CHECK_NE(id, Meta::kEmpty);
 
     msg.meta.option = UCX_OPTION_META;
@@ -955,7 +930,7 @@ class UCXVan : public Van {
 
     ucs_status_ptr_t st = ContextById(src_dev_id)->Send(msg, msg.data[1].data(),
                                                         msg.data[1].size(),
-                                                        ucp_dt_make_contig(1),
+                                                        ucp_dt_make_contig(1), NULL,
                                                         ps::Tags::UCX_TAG_DATA);
     if (UCS_PTR_IS_ERR(st)) {
       LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
@@ -1000,7 +975,7 @@ class UCXVan : public Van {
     }
 
     UCX_LOG(2, "before Send");
-    ucs_status_ptr_t st = ContextById(src_dev_id)->Send(msg, buf, count, dt,
+    ucs_status_ptr_t st = ContextById(src_dev_id)->Send(msg, buf, count, dt, meta_buf,
                                                         ps::Tags::UCX_TAG_META);
     UCX_LOG(2, "after Send");
     if (!UCS_PTR_IS_PTR(st)) {
