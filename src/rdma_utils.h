@@ -51,6 +51,10 @@
 
 namespace ps {
 
+
+#define DIVUP(x, y) (((x)+(y)-1)/(y))
+#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
+
 static const int kSGEntry = 1;
 static const int kTimeoutms = 1000;
 static const int kRdmaListenBacklog = 128;
@@ -195,7 +199,7 @@ static const size_t kMempoolChunkSize =
     std::max({sizeof(RendezvousStart), sizeof(RendezvousReply)});
 
 uint64_t DecodeWorkerKey(uint64_t key) {
-  auto kr = ps::Postoffice::Get()->GetServerKeyRanges()[ps::Postoffice::Get()->my_rank()];
+  auto kr = ps::Postoffice::GetServer()->GetServerKeyRanges()[ps::Postoffice::GetServer()->my_rank()];
   return key - kr.begin();
 }
 

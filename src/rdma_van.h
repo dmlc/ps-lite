@@ -25,7 +25,7 @@ namespace ps {
 
 class RDMAVan : public Van {
  public:
-  RDMAVan() {
+  RDMAVan(Postoffice* postoffice) : Van(postoffice), postoffice_(postoffice) {
     CHECK_EQ(ibv_fork_init(), 0) << strerror(errno);
   }
   ~RDMAVan() {}
@@ -33,6 +33,8 @@ class RDMAVan : public Van {
   virtual std::string GetType() const {
     return std::string("rdma");
   }
+
+  Postoffice* postoffice_;
 
  protected:
   void Start(int customer_id, bool standalone) override {
@@ -233,12 +235,12 @@ class RDMAVan : public Van {
           is_local_[node.id] = is_local_node;
       }
 
-      LOG(INFO) << "Connect to Node " << node.id
+      LOG(INFO) << "Connect to Node " << node.id 
                 << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
 
       std::shared_ptr<Transport> t = is_local_node ?
-          std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
-          std::make_shared<RDMATransport>(endpoint, mem_allocator_.get());
+          std::make_shared<IPCTransport>(endpoint, mem_allocator_.get(), postoffice_) :
+          std::make_shared<RDMATransport>(endpoint, mem_allocator_.get(), postoffice_);
       endpoint->SetTransport(t);
 
       freeaddrinfo(remote_addr);
@@ -384,7 +386,7 @@ class RDMAVan : public Van {
           << "\t recver=" << msg.meta.recver
           << "\t tensor_len=" << msg_buf->mrs[0].second
           << "\t remote_idx=" << std::get<2>(remote_tuple)
-          << "\t remote_addr=" << std::get<0>(remote_tuple) 
+          << "\t remote_addr=" << (void *) std::get<0>(remote_tuple) 
           << std::flush;
     } else if (msg.meta.push && !msg.meta.request) { 
       // server, push response
@@ -392,7 +394,7 @@ class RDMAVan : public Van {
           << "\t timestamp=" << msg.meta.timestamp 
           << "\t recver=" << msg.meta.recver
           << "\t remote_idx=" << std::get<2>(remote_tuple)
-          << "\t remote_addr=" << std::get<0>(remote_tuple)
+          << "\t remote_addr=" << (void *) std::get<0>(remote_tuple)
           << std::flush;
     } else if (!msg.meta.push && msg.meta.request) { 
       // worker, pull request
@@ -400,7 +402,7 @@ class RDMAVan : public Van {
           << "\t timestamp=" << msg.meta.timestamp 
           << "\t recver=" << msg.meta.recver
           << "\t remote_idx=" << std::get<2>(remote_tuple)
-          << "\t remote_addr=" << std::get<0>(remote_tuple)
+          << "\t remote_addr=" << (void *) std::get<0>(remote_tuple)
           << std::flush;
     } else if (!msg.meta.push && !msg.meta.request) { 
       // server, pull response
@@ -409,7 +411,7 @@ class RDMAVan : public Van {
           << "\t recver=" << msg.meta.recver
           << "\t tensor_len=" << msg.meta.val_len
           << "\t idx=" << "none"
-          << "\t remote_addr=" << msg.meta.addr
+          << "\t remote_addr=" << (void *) msg.meta.addr
           << std::flush;
     }
 
@@ -614,7 +616,8 @@ class RDMAVan : public Van {
         CHECK(wc[i].status == IBV_WC_SUCCESS)
             << "Failed status \n"
             << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
-            << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err;
+            << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err
+            << " postoffice ptr: " << (void *) postoffice_;
             
         WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
         Endpoint *endpoint =
@@ -805,12 +808,12 @@ class RDMAVan : public Van {
         std::lock_guard<std::mutex> lk(local_mu_);
         is_local_[remote_ctx->node] = is_local_node;
     }
-    LOG(INFO) << "OnConnect to Node " << remote_ctx->node
+    LOG(INFO) << "OnConnect to Node " << remote_ctx->node 
               << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
 
     std::shared_ptr<Transport> t = is_local_node ?
-        std::make_shared<IPCTransport>(endpoint, mem_allocator_.get()) :
-        std::make_shared<RDMATransport>(endpoint, mem_allocator_.get());
+        std::make_shared<IPCTransport>(endpoint, mem_allocator_.get(), postoffice_) :
+        std::make_shared<RDMATransport>(endpoint, mem_allocator_.get(), postoffice_);
     endpoint->SetTransport(t);
 
     RequestContext ctx;

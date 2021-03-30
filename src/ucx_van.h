@@ -773,14 +773,25 @@ private:
 
 class UCXVan : public Van {
  public:
-  UCXVan() {
-    setenv("UCX_USE_MT_MUTEX", "y", 0);
-    setenv("UCX_IB_NUM_PATHS", "2", 0);
-    setenv("UCX_SOCKADDR_CM_ENABLE", "y", 0);
-    setenv("UCX_RNDV_THRESH", "8k", 0);
-    short_send_thresh_   = GetEnv("BYTEPS_UCX_SHORT_THRESH", 0);
+
+  UCXVan(Postoffice* postoffice) : Van(postoffice), postoffice_(postoffice) {
+    short_send_thresh_   = GetEnv("BYTEPS_UCX_SHORT_THRESH", 4096);
     force_request_order_ = GetEnv("BYTEPS_UCX_FORCE_REQ_ORDER", 0);
+    if (!getenv("UCX_USE_MT_MUTEX")) {
+      LOG(FATAL) << "UCX_USE_MT_MUTEX is not set. Please export UCX_USE_MT_MUTEX=y";
+    }
+    if (!getenv("UCX_SOCKADDR_CM_ENABLE")) {
+      LOG(FATAL) << "UCX_SOCKADDR_CM_ENABLE is not set. Please export UCX_SOCKADDR_CM_ENABLE=y";
+    }
+    if (!getenv("UCX_RNDV_THRESH")) {
+      LOG(WARNING) << "UCX_RNDV_THRESH is not set. We recommend export UCX_RNDV_THRESH=8k";
+    }
+    if (!getenv("UCX_IB_TRAFFIC_CLASS")) {
+      LOG(WARNING) << "UCX_IB_TRAFFIC_CLASS is not set. RDMA traffic class may be incorrect";
+    }
   }
+
+  Postoffice* postoffice_;
 
   ~UCXVan() {
     LOG(INFO) << "~UCXVan";
@@ -841,6 +852,8 @@ class UCXVan : public Van {
     // Create separate UCX context for every device. If device is GPU, set the
     // corresponding cuda device before UCX context creation. This way UCX will
     // automatically select the most optimal NICs for using with this device.
+    CHECK(devs.size() == node.num_ports)
+      << "num_cpu_dev + num_gpu_dev != num_ports";
     for (int i = 0; i < node.num_ports; ++i) {
       node.dev_types[i] = devs[i].first;
       node.dev_ids[i] = devs[i].second;

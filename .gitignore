@@ -1,4 +1,6 @@
 build
+.bundle
+bundle_lib
 deps
 *.pb.*
 .*
@@ -14,4 +16,8 @@ tests/test_*
 cmake-build-debug/
 CMakeFiles/
 recommonmark/
+
+test_benchmark
+stress_test_benchmark
 !/tests/*.cc
+test

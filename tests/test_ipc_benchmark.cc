@@ -166,7 +166,7 @@ int AllocateServer(int seed, int total_key_num) {
 }
 
 void RunWorker(int argc, char *argv[]) {
-  if (!IsWorker()) return;
+  if (IsServer() || IsScheduler()) return;
   KVWorker<char> kv(0, 0);
   auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
 
@@ -246,13 +246,17 @@ int main(int argc, char *argv[]) {
   setenv("BYTEPS_LOCAL_SIZE", "1", 1);
   setenv("BYTEPS_ENABLE_IPC", "1", 1);
   // start system
-  Start(0);
+  const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  std::string role_str(val);
+  Node::Role role = GetRole(role_str);
+  int rank = -1; // -1 means no preferred rank
+  StartPS(0, role, rank, true);
   // setup server nodes
   StartServer();
   // run worker nodes
   RunWorker(argc, argv);
   // stop system
-  Finalize(0, true);
+  Finalize(0, role, true);
   // release shm
   for (auto &it : _key_shm_addr) {
     munmap(it.second, _key_shm_size[it.first]);

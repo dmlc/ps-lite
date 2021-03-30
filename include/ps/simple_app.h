@@ -37,7 +37,7 @@ class SimpleApp {
    * @param customer_id the customer_id, should be node-locally unique
    * is communicated
    */
-  explicit SimpleApp(int app_id, int customer_id);
+  explicit SimpleApp(int app_id, int customer_id, Postoffice* postoffice);
 
   /** \brief deconstructor */
   virtual ~SimpleApp() { delete obj_; obj_ = nullptr; }
@@ -113,6 +113,7 @@ class SimpleApp {
 
   /** \brief ps internal object */
   Customer* obj_;
+  Postoffice* postoffice_;
 
  private:
   /** \brief request handle */
@@ -123,9 +124,10 @@ class SimpleApp {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-inline SimpleApp::SimpleApp(int app_id, int customer_id) : SimpleApp() {
+inline SimpleApp::SimpleApp(int app_id, int customer_id, Postoffice* postoffice) : SimpleApp() {
+  postoffice_ = postoffice;
   using namespace std::placeholders;
-  obj_ = new Customer(app_id, customer_id, std::bind(&SimpleApp::Process, this, _1));
+  obj_ = new Customer(app_id, customer_id, std::bind(&SimpleApp::Process, this, _1), postoffice_);
 }
 
 inline int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
@@ -141,9 +143,9 @@ inline int SimpleApp::Request(int req_head, const std::string& req_body, int rec
   msg.meta.customer_id = obj_->customer_id();
 
   // send
-  for (int r : Postoffice::Get()->GetNodeIDs(recv_id)) {
+  for (int r : postoffice_->GetNodeIDs(recv_id)) {
     msg.meta.recver = r;
-    Postoffice::Get()->van()->Send(msg);
+    postoffice_->van()->Send(msg);
   }
   return ts;
 }
@@ -161,7 +163,7 @@ inline void SimpleApp::Response(const SimpleData& req, const std::string& res_bo
   msg.meta.recver = req.sender;
 
   // send
-  Postoffice::Get()->van()->Send(msg);
+  postoffice_->van()->Send(msg);
 }
 
 

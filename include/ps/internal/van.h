@@ -17,6 +17,8 @@
 #include "ps/internal/message.h"
 namespace ps {
 class Resender;
+class Postoffice;
+
 /**
  * \brief Van sends messages to remote nodes
  *
@@ -30,10 +32,10 @@ class Van {
    * \brief create Van
    * \param type zmq, socket, ...
    */
-  static Van *Create(const std::string &type);
+  static Van *Create(const std::string &type, Postoffice* postoffice);
 
   /** \brief constructer, do nothing. use \ref Start for real start */
-  Van() {}
+  Van(Postoffice* postoffice) : postoffice_(postoffice) {}
 
   /**\brief deconstructer, do nothing. use \ref Stop for real stop */
   virtual ~Van() {}
@@ -148,6 +150,8 @@ class Van {
   Node my_node_;
   bool is_scheduler_;
   std::mutex start_mu_;
+
+  Postoffice* postoffice_;
 
  private:
   /** thread function for receving */

@@ -42,7 +42,7 @@ inline void FreeData(void* data, void* hint) {
  */
 class ZMQVan : public Van {
  public:
-  ZMQVan() {}
+  ZMQVan(Postoffice* postoffice) : Van(postoffice) {}
   virtual ~ZMQVan() {}
 
   virtual std::string GetType() const {

@@ -22,6 +22,7 @@
 
 namespace ps {
 
+class Postoffice;
 class Transport;
 
 struct Endpoint {
@@ -196,14 +197,13 @@ class Transport {
 
 class RDMATransport : public Transport {
  public:
-  explicit RDMATransport(Endpoint *endpoint, MemoryAllocator *allocator) {
+  explicit RDMATransport(Endpoint *endpoint, MemoryAllocator *allocator, Postoffice* postoffice) {
     endpoint_ = CHECK_NOTNULL(endpoint);
     allocator_ = CHECK_NOTNULL(allocator);
     pagesize_ = sysconf(_SC_PAGESIZE);
 
-    auto val = Environment::Get()->find("DMLC_ROLE");
-    std::string role(val);
-    is_server_ = (role=="server");
+    postoffice_ = postoffice;
+    is_server_ = postoffice_->is_server();
   };
 
   ~RDMATransport() {};
@@ -462,12 +462,15 @@ class RDMATransport : public Transport {
   MemoryAllocator *allocator_;
   bool is_server_;
 
+  Postoffice* postoffice_;
+
 }; // class Transport
 
 class IPCTransport : public RDMATransport {
  public:
 
-  explicit IPCTransport(Endpoint *endpoint, MemoryAllocator *allocator) : RDMATransport(endpoint, allocator) {
+  explicit IPCTransport(Endpoint *endpoint, MemoryAllocator *allocator, Postoffice* postoffice)
+  : RDMATransport(endpoint, allocator, postoffice) {
     auto val = Environment::Get()->find("BYTEPS_IPC_COPY_NUM_THREADS");
     ipc_copy_nthreads_ = val ? atoi(val) : 4;
     for (int i = 0; i < ipc_copy_nthreads_; ++i) {

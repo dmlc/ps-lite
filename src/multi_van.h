@@ -58,7 +58,9 @@ public:
 // It supports multiple CPU devices and multiple ports.
 class MultiVan : public Van {
  public:
-  MultiVan() { }
+  MultiVan(Postoffice* postoffice) : Van(postoffice), postoffice_(postoffice) { }
+
+  Postoffice* postoffice_;
 
   ~MultiVan() { PS_VLOG(1) << "~MultiVan"; }
 
@@ -84,7 +86,7 @@ class MultiVan : public Van {
 
     // van creation
     for (int i = 0; i < num_ports_; ++i) {
-      auto van = Van::Create("zmq");
+      auto van = Van::Create("zmq", postoffice_);
       van->Start(customer_id, true);
       vans_.push_back(van);
     }

@@ -45,6 +45,10 @@ endif
 ifeq ($(USE_UCX), 1)
 LIBS += -lucp -luct -lucs -lucm
 CFLAGS += -DDMLC_USE_UCX
+	ifdef UCX_PATH
+	LIBS += -L$(UCX_PATH)/lib
+	INCPATH += -I$(UCX_PATH)/include
+	endif
 endif
 
 ifdef ASAN
@@ -57,7 +61,7 @@ all: ps test
 include make/deps.mk
 
 clean:
-	rm -rf build deps $(TEST) tests/*.d tests/*.dSYM
+	rm -rf build $(TEST) tests/*.d tests/*.dSYM
 
 lint:
 	python tests/lint.py ps all include/ps src

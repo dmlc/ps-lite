@@ -22,6 +22,9 @@ namespace ps {
  * It has its own receiving thread which is able to process any message received
  * from a remote node with `msg.meta.customer_id` equal to this customer's id
  */
+
+class Postoffice;
+
 class Customer {
  public:
   /**
@@ -37,7 +40,7 @@ class Customer {
    * \param customer_id the locally unique id indicating the customer of a postoffice
    * \param recv_handle the functino for processing a received message
    */
-  Customer(int app_id, int customer_id, const RecvHandle& recv_handle);
+  Customer(int app_id, int customer_id, const RecvHandle& recv_handle, Postoffice* postoffice);
 
   /**
    * \brief desconstructor
@@ -99,6 +102,8 @@ class Customer {
   int customer_id_;
 
   RecvHandle recv_handle_;
+  Postoffice* postoffice_;
+
   ThreadsafeQueue<Message> recv_queue_;
   std::unique_ptr<std::thread> recv_thread_;
 

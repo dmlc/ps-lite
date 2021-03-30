@@ -69,7 +69,7 @@ struct Node {
   /** \brief default constructor */
   Node() : id(kEmpty), port(kEmpty), is_recovery(false), aux_id(-1) {}
   /** \brief node roles */
-  enum Role { SERVER, WORKER, SCHEDULER };
+  enum Role { SERVER, WORKER, SCHEDULER, JOINT };
   /** \brief get debug string */
   std::string DebugString() const {
     std::stringstream ss;
