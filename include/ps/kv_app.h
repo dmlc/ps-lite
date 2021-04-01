@@ -48,6 +48,12 @@ struct KVPairs {
  * \brief A worker node that can \ref Push (\ref Pull) key-value pairs to (from) server
  * nodes
  *
+ * 1. Basic synchronization functions: \ref ps::KVWorker::Push, 
+ * \ref ps::KVWorker::Pull, and \ref ps::KVWorker::Wait
+ * 
+ * 2. Zero-copy versions: \ref ps::KVWorker::ZPush, 
+ * \ref ps::KVWorker::ZPull
+ *
  * \tparam Val the type of value, which should be primitive types such as
  * int32_t and float
  */
@@ -140,6 +146,12 @@ class KVWorker : public SimpleApp {
    * It's a non-blocking call. The actual pulling is finished,
    * namely \a vals (and \a lens) is filled with pulled values, only
    * if \ref Wait returns or the callback is called.
+   * 
+   * Note that \a vals can be larger than the length of the pulled values. 
+   * \a lens is the actual length of the pulled values. The reliable way to 
+   * read a valid message is to read \a lens bytes. If you ensure that the 
+   * data size of a key does not change during push or pull, you can verify 
+   * it by checking whether \a lens of the key is equal to the fixed size.  
    *
    * @param keys a list of keys, must be unique and sorted in increasing order
    * @param vals the buffer for the pulled values. It can be 0 size.
@@ -686,7 +698,7 @@ int KVWorker<Val>::AddPullCB(
       if (vals->empty()) {
         vals->resize(total_val);
       } else {
-        CHECK_EQ(vals->size(), total_val);
+        CHECK_GE(vals->size(), total_val);
       }
       Val* p_vals = vals->data();
       int *p_lens = nullptr;
