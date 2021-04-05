@@ -206,8 +206,8 @@ class ZMQVan : public Van {
       } else if (i == 1) {
         // task
         UnpackMeta(buf, size, &(msg->meta));
-        zmq_msg_close(zmsg);
         bool more = zmq_msg_more(zmsg);
+        zmq_msg_close(zmsg);
         delete zmsg;
         if (!more) break;
       } else {
