@@ -73,11 +73,14 @@ class SArray {
    * \tparam W the value type of the source array
    * \param arr the source array
    */
-  template <typename W> void operator=(const SArray<W>& arr) {
+  template <typename W>
+  SArray<V>& operator=(const SArray<W>& arr) {
+    if (this == &arr) return;
     size_ = arr.size() * sizeof(W) / sizeof(V);
     CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
     capacity_ = arr.capacity() * sizeof(W) / sizeof(V);
     ptr_ = std::shared_ptr<V>(arr.ptr(), reinterpret_cast<V*>(arr.data()));
+    return *this;
   }
 
   /**
