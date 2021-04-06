@@ -46,9 +46,10 @@ std::mutex g_log_mutex;
 
 #define UCX_REQUEST_FREE(_req) \
   do { \
-    (_req)->data.buffer   = nullptr; \
-    (_req)->data.raw_meta = nullptr; \
-    (_req)->completed     = false; \
+    (_req)->data.buffer      = nullptr; \
+    (_req)->data.raw_meta    = nullptr; \
+    (_req)->data.should_stop = false; \
+    (_req)->completed        = false; \
     ucp_request_free(_req); \
   } while(0)
 
@@ -69,6 +70,7 @@ struct UCXBuffer {
   char       *raw_meta;
   char       *buffer;
   int        sender;
+  bool       should_stop = false;
 };
 
 struct UCXRequest {
@@ -678,10 +680,11 @@ private:
                                                      ucp_dt_make_contig(1), tag,
                                                      std::numeric_limits<uint64_t>::max(),
                                                      RxDataCompletedCb);
-      req->data.raw_meta = meta_req->data.raw_meta;
-      req->data.sender   = meta_req->data.sender;
-      req->data.buffer   = buf;
-      req->ctx           = this;
+      req->data.raw_meta    = meta_req->data.raw_meta;
+      req->data.sender      = meta_req->data.sender;
+      req->data.buffer      = buf;
+      req->data.should_stop = false;
+      req->ctx              = this;
       UCX_LOGE(2, "rx meta, post recv for data, len " << val_len << ", tag " << tag);
       if (req->completed) {
         rx_pool_->Push(req->data);
@@ -699,19 +702,21 @@ private:
     UCXRequest *req = (UCXRequest*)ucp_tag_msg_recv_nb(worker_, rmeta, info->length,
                                                        ucp_dt_make_contig(1), msg,
                                                        RxMetaCompletedCb);
-    req->ctx           = this;
-    req->data.raw_meta = rmeta;
-    req->data.sender   = NodeIdFromTag(info->sender_tag);
+    req->ctx              = this;
+    req->data.raw_meta    = rmeta;
+    req->data.sender      = NodeIdFromTag(info->sender_tag);
+    req->data.should_stop = false;
     UCX_LOGE(2, " rx meta, sender " << req->data.sender << " tag "
              << info->sender_tag << " compl " << req->completed);
     return req;
   }
 
   static void RequestInit(void *request) {
-    UCXRequest *req    = reinterpret_cast<UCXRequest*>(request);
-    req->data.buffer   = nullptr;
-    req->data.raw_meta = nullptr;
-    req->completed     = false;
+    UCXRequest *req       = reinterpret_cast<UCXRequest*>(request);
+    req->data.buffer      = nullptr;
+    req->data.raw_meta    = nullptr;
+    req->data.should_stop = false;
+    req->completed        = false;
   }
 
   // UCX Callbacks
@@ -816,6 +821,10 @@ class UCXVan : public Van {
     PS_VLOG(1) << my_node_.ShortDebugString() << " is stopping";
     Van::Stop();
     should_stop_ = true;
+    // push a `STOP` buff to the recv pool
+    UCXBuffer buff;
+    buff.should_stop = true;
+    rx_pool_->Push(buff);
     reorder_thread_->join();
     reorder_thread_.reset();
     polling_thread_->join();
@@ -1060,6 +1069,8 @@ class UCXVan : public Van {
     while (!should_stop_.load()) {
       UCXBuffer buf;
       rx_pool_->Pop(&buf);
+      // stop the reordering thread if needed
+      if (buf.should_stop) break;
       RawMeta *raw = (RawMeta*) buf.raw_meta;
       // XXX assume a single reorder thread, so we do not need to acquire mutex
       // std::lock_guard<std::mutex> lk(sid_mtx_);
