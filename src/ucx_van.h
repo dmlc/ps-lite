@@ -496,13 +496,16 @@ private:
 // using UCXEndpointsPool class.
 class UCXContext {
 public:
-  UCXContext(UCXRecvPool *rx_pool, int idx) :
-    src_dev_idx_(idx), rx_pool_(rx_pool) {}
+  UCXContext(UCXRecvPool *rx_pool, int idx, int type) :
+    src_dev_idx_(idx), src_dev_type_(type), rx_pool_(rx_pool) {}
 
   void Init(Node *my_node, UCXVan *van) {
     ucp_config_t *config;
     ucs_status_t status = ucp_config_read("PSLITE", NULL, &config);
     CHECK_STATUS(status) << "ucp_config_read failed: " << ucs_status_string(status);
+
+    // Set proper GPU device id before initialazing GPU context
+    SetGpuDeviceId();
 
     // Initialize UCX context
     ucp_params_t ctx_params;
@@ -578,6 +581,9 @@ public:
     ucp_tag_recv_info_t info;
     int cnt = 0;
 
+    // Set relevant for this worker device id for possible CUDA copy/IPC transfers
+    SetGpuDeviceId();
+
     // Poll all underlying transports(IB, shm, tcp, etc).
     cnt = ucp_worker_progress(worker_);
     if (cnt == 0) {
@@ -615,6 +621,9 @@ public:
 
     if (ep == nullptr) return UCS_STATUS_PTR(UCS_ERR_NOT_CONNECTED);
 
+    // Set relevant for this worker device id for possible CUDA copy/IPC transfers
+    SetGpuDeviceId();
+
     send_param.op_attr_mask  = UCP_OP_ATTR_FIELD_CALLBACK |
                                UCP_OP_ATTR_FIELD_DATATYPE |
                                UCP_OP_ATTR_FIELD_USER_DATA;
@@ -632,6 +641,20 @@ public:
   }
 
 private:
+  void SetGpuDeviceId() {
+#if DMLC_USE_CUDA
+    if (src_dev_type_ == GPU) {
+      cudaError_t cerr = cudaSetDevice(src_dev_idx_);
+
+      if (cudaSuccess != cerr) {
+        LOG(ERROR) << "Failed to set device " << src_dev_idx_ << ": " << cerr;
+      }
+    }
+#else
+    CHECK_NE(src_dev_type_, GPU) << "Please build with USE_CUDA=1";
+#endif
+  }
+
   /**
    * from the left to the right:
    * 1 bit for UCX_TAG_META/UCX_TAG_DATA
@@ -771,6 +794,7 @@ private:
   ucp_worker_h                                      worker_;
   ucp_listener_h                                    listener_;
   int                                               src_dev_idx_;
+  int                                               src_dev_type_;
   Node                                              *my_node_;
   UCXVan                                            *van_;
   UCXRecvPool                                       *rx_pool_;
@@ -869,18 +893,8 @@ class UCXVan : public Van {
       int dev_id = node.dev_ids[i];
       CHECK_GE(dev_id, 0);
 
-#if DMLC_USE_CUDA
-      if (node.dev_types[i] == GPU) {
-        cudaError_t cerr = cudaSetDevice(dev_id);
-
-        if (cudaSuccess != cerr) {
-          LOG(ERROR) << "Failed to set device " << dev_id << ": " << cerr;
-        }
-      }
-#else
-      CHECK_NE(node.dev_types[i], GPU) << "Please build with USE_CUDA=1";
-#endif
-      contexts_[dev_id] = std::make_unique<UCXContext>(rx_pool_.get(), dev_id);
+      contexts_[dev_id] = std::make_unique<UCXContext>(rx_pool_.get(), dev_id,
+                                                       node.dev_types[i]);
       contexts_[dev_id]->Init(&my_node_, this);
       contexts_[dev_id]->Listen(node.ports[i]);
       UCX_LOG(1, "Create ctx[" << i << "]: dev id " << dev_id << ", port "
