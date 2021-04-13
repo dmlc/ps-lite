@@ -107,13 +107,20 @@ public:
       reconnect_tmo_ = GetEnv("BYTEPS_UCX_RECONNECT_TMO", 1000);
   }
 
-  void Init(ucp_worker_h worker, Node *node) {
-    worker_  = worker;
-    my_node_ = node;
-    CHECK_STATUS(ucp_worker_set_am_handler(worker_, UCX_AM_NODE_INFO_REQ,
+  void Init(ucp_worker_h tx_worker, ucp_worker_h rx_worker, Node *node) {
+    tx_worker_ = tx_worker;
+    rx_worker_ = rx_worker;
+    my_node_   = node;
+    CHECK_STATUS(ucp_worker_set_am_handler(rx_worker_, UCX_AM_NODE_INFO_REQ,
                                            AmRxNodeInfoReq, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
-    CHECK_STATUS(ucp_worker_set_am_handler(worker_, UCX_AM_NODE_INFO_REPLY,
+    CHECK_STATUS(ucp_worker_set_am_handler(rx_worker_, UCX_AM_NODE_INFO_REPLY,
+                                           AmRxNodeInfoReply, this,
+                                           UCP_AM_FLAG_WHOLE_MSG));
+    CHECK_STATUS(ucp_worker_set_am_handler(tx_worker_, UCX_AM_NODE_INFO_REQ,
+                                           AmRxNodeInfoReq, this,
+                                           UCP_AM_FLAG_WHOLE_MSG));
+    CHECK_STATUS(ucp_worker_set_am_handler(tx_worker_, UCX_AM_NODE_INFO_REPLY,
                                            AmRxNodeInfoReply, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
   }
@@ -175,7 +182,8 @@ public:
       ep_params.err_mode        = UCP_ERR_HANDLING_MODE_PEER;
     }
 
-    ucs_status_t status = ucp_ep_create(worker_, &ep_params, &ucx_ep->ep);
+    // Initiate ep creation on tx worker
+    ucs_status_t status = ucp_ep_create(tx_worker_, &ep_params, &ucx_ep->ep);
     CHECK_STATUS(status) << "ucp_ep_create failed: " << ucs_status_string(status);
 
     UCX_LOGE(1, "ep created " << ucx_ep->ep << " id: " << ucx_ep->id);
@@ -204,8 +212,11 @@ public:
       ep_params.err_handler.arg = this;
     }
 
+    // This is request for connection establishment from the client side.
+    // Confirm connection on the receive worker, so that we would get all
+    // incoming data on it.
     ucp_ep_h ep;
-    ucs_status_t status = ucp_ep_create(worker_, &ep_params, &ep);
+    ucs_status_t status = ucp_ep_create(rx_worker_, &ep_params, &ep);
     CHECK_STATUS(status) << "failed to create ep by request " << ucs_status_string(status);
     UCX_LOGE(1, "ep created by request: " << ep);
     // Wait for node id to arrive in AmRxNodeInfo, then add to the server_eps set
@@ -226,7 +237,10 @@ public:
 
     UCX_LOGE(1, "ep close all, active reqs: " << close_ep_reqs_.size());
     while (!close_ep_reqs_.empty()) {
-      ucp_worker_progress(worker_);
+      // There should not be concurrent access to rx_worker, because polling
+      // thread is supposed to be joined already.
+      ucp_worker_progress(rx_worker_);
+      ucp_worker_progress(tx_worker_);
       ucs_status_t status = ucp_request_check_status(close_ep_reqs_.front());
       if (status != UCS_INPROGRESS) {
           ucp_request_free(close_ep_reqs_.front());
@@ -387,7 +401,8 @@ public:
   std::unordered_set<std::unique_ptr<UCXEp>>           server_eps_;
   std::queue<void*>                                    close_ep_reqs_;
   std::mutex                                           mu_;
-  ucp_worker_h                                         worker_;
+  ucp_worker_h                                         tx_worker_;
+  ucp_worker_h                                         rx_worker_;
   Node                                                 *my_node_;
   int                                                  errh_enable_;
   int                                                  reconnect_tmo_;
@@ -525,28 +540,22 @@ public:
     ucp_config_release(config);
     CHECK_STATUS(status) << "ucp_init failed: " << ucs_status_string(status);
 
-    // Create UCP worker
-    ucp_worker_params_t w_params;
-    w_params.field_mask  = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
-    w_params.thread_mode = UCS_THREAD_MODE_MULTI;
-    status               = ucp_worker_create(context_, &w_params, &worker_);
-    CHECK_STATUS(status) << "ucp_worker_create failed: " << ucs_status_string(status);
+    // Create UCP workers:
+    // - Send worker is created with multi-threading support, because it is used
+    //   by ps-lite sending thread and UCX Van TX polling thread.
+    // - Recv worker is created without multi-thread support, because it is only
+    //   accessed/used by the UCX Van RX polling thread.
+    tx_worker_ = CreateWorker(true);
+    rx_worker_ = CreateWorker(false);
 
-    // Check that UCX is compiled with multi-thread support
-    ucp_worker_attr_t attr;
-    attr.field_mask = UCP_WORKER_ATTR_FIELD_THREAD_MODE;
-    status          = ucp_worker_query(worker_, &attr);
-    CHECK_STATUS(status) << "ucp_worker_query failed: " << ucs_status_string(status);
-    CHECK_EQ(attr.thread_mode, UCS_THREAD_MODE_MULTI)
-             << "Single threaded UCX is not supported, build UCX with multi-thread support";
-
-    ep_pool_.Init(worker_, my_node);
+    ep_pool_.Init(tx_worker_, rx_worker_, my_node);
     my_node_ = my_node;
     van_     = van;
   }
 
   // Create UCX listener object, so the remote side could connect by the given
-  // address.
+  // address. Listener is created on receive worker, because senders are supposed
+  // to connect to it.
   void Listen(int port) {
     auto val = Environment::Get()->find("DMLC_NODE_HOST");
     struct sockaddr_in addr = {};
@@ -566,7 +575,7 @@ public:
     params.sockaddr.addrlen = sizeof(addr);
     params.conn_handler.cb  = ConnHandlerCb;
     params.conn_handler.arg = this;
-    ucs_status_t status     = ucp_listener_create(worker_, &params, &listener_);
+    ucs_status_t status     = ucp_listener_create(rx_worker_, &params, &listener_);
     CHECK_STATUS(status) << "ucp_listener_create failed: " << ucs_status_string(status);
 
     UCX_LOGE(1, "bound to " << addr.sin_addr.s_addr << " port: " << port);
@@ -576,7 +585,7 @@ public:
       ep_pool_.Create(node);
   }
 
-  void Poll() {
+  void PollRx() {
     ucp_tag_message_h msg;
     ucp_tag_recv_info_t info;
     int cnt = 0;
@@ -585,7 +594,7 @@ public:
     SetGpuDeviceId();
 
     // Poll all underlying transports(IB, shm, tcp, etc).
-    cnt = ucp_worker_progress(worker_);
+    cnt = ucp_worker_progress(rx_worker_);
     if (cnt == 0) {
       return;
     }
@@ -593,7 +602,7 @@ public:
     // Check whether any meta data or push/pull request arrived
     do {
       // only match the highest bit of tag.
-      msg = ucp_tag_probe_nb(worker_,
+      msg = ucp_tag_probe_nb(rx_worker_,
                              static_cast<ucp_tag_t>(Tags::UCX_TAG_META),
                              static_cast<ucp_tag_t>(Tags::UCX_TAG_MASK),
                              1, &info);
@@ -607,6 +616,10 @@ public:
         }
       }
     } while (msg != NULL);
+  }
+
+  void PollTx() {
+    ucp_worker_progress(tx_worker_);
   }
 
   ucs_status_ptr_t Send(Message &msg, void *buf, size_t count, ucp_datatype_t dt,
@@ -624,19 +637,20 @@ public:
     // Set relevant for this worker device id for possible CUDA copy/IPC transfers
     SetGpuDeviceId();
 
-    send_param.op_attr_mask  = UCP_OP_ATTR_FIELD_CALLBACK |
-                               UCP_OP_ATTR_FIELD_DATATYPE |
-                               UCP_OP_ATTR_FIELD_USER_DATA;
-    send_param.datatype      = dt;
-    send_param.cb.send       = TxReqCompletedCb;
-    send_param.user_data     = user_data;
+    send_param.op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
+                              UCP_OP_ATTR_FIELD_DATATYPE |
+                              UCP_OP_ATTR_FIELD_USER_DATA;
+    send_param.datatype     = dt;
+    send_param.cb.send      = TxReqCompletedCb;
+    send_param.user_data    = user_data;
 
     return ucp_tag_send_nbx(ep, buf, count, stag, &send_param);
   }
 
   void Cleanup() {
     ucp_listener_destroy(listener_);
-    ucp_worker_destroy(worker_);
+    ucp_worker_destroy(tx_worker_);
+    ucp_worker_destroy(rx_worker_);
     ucp_cleanup(context_);
   }
 
@@ -653,6 +667,28 @@ private:
 #else
     CHECK_NE(src_dev_type_, GPU) << "Please build with USE_CUDA=1";
 #endif
+  }
+
+  ucp_worker_h CreateWorker(bool multi_thread) {
+    ucp_worker_h worker;
+    ucp_worker_params_t w_params;
+
+    w_params.field_mask  = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
+    w_params.thread_mode = multi_thread ? UCS_THREAD_MODE_MULTI : UCS_THREAD_MODE_SINGLE;
+    ucs_status_t status  = ucp_worker_create(context_, &w_params, &worker);
+    CHECK_STATUS(status) << "ucp_worker_create failed: " << ucs_status_string(status);
+
+    if (multi_thread) {
+      // Check that UCX is compiled with multi-thread support
+      ucp_worker_attr_t attr;
+      attr.field_mask = UCP_WORKER_ATTR_FIELD_THREAD_MODE;
+      status          = ucp_worker_query(worker, &attr);
+      CHECK_STATUS(status) << "ucp_worker_query failed: " << ucs_status_string(status);
+      CHECK_EQ(attr.thread_mode, UCS_THREAD_MODE_MULTI)
+               << "Single threaded UCX is not supported, build UCX with multi-thread support";
+    }
+
+    return worker;
   }
 
   /**
@@ -699,7 +735,7 @@ private:
                                               val_len, meta->push);
       ucp_tag_t tag   = MakeTag(meta_req->data.sender, Tags::UCX_TAG_DATA,
                                 meta->key);
-      UCXRequest *req = (UCXRequest*)ucp_tag_recv_nb(worker_, buf, val_len,
+      UCXRequest *req = (UCXRequest*)ucp_tag_recv_nb(rx_worker_, buf, val_len,
                                                      ucp_dt_make_contig(1), tag,
                                                      std::numeric_limits<uint64_t>::max(),
                                                      RxDataCompletedCb);
@@ -722,7 +758,7 @@ private:
 
   UCXRequest* PostRecvMeta(ucp_tag_message_h msg, ucp_tag_recv_info_t *info) {
     char *rmeta     = new char[info->length];
-    UCXRequest *req = (UCXRequest*)ucp_tag_msg_recv_nb(worker_, rmeta, info->length,
+    UCXRequest *req = (UCXRequest*)ucp_tag_msg_recv_nb(rx_worker_, rmeta, info->length,
                                                        ucp_dt_make_contig(1), msg,
                                                        RxMetaCompletedCb);
     req->ctx              = this;
@@ -791,7 +827,8 @@ private:
 
   UCXEndpointsPool                                  ep_pool_;
   ucp_context_h                                     context_;
-  ucp_worker_h                                      worker_;
+  ucp_worker_h                                      tx_worker_;
+  ucp_worker_h                                      rx_worker_;
   ucp_listener_h                                    listener_;
   int                                               src_dev_idx_;
   int                                               src_dev_type_;
@@ -846,13 +883,15 @@ class UCXVan : public Van {
     Van::Stop();
     should_stop_ = true;
     // push a `STOP` buff to the recv pool
-    UCXBuffer buff;
+    UCXBuffer buff   = {};
     buff.should_stop = true;
     rx_pool_->Push(buff);
     reorder_thread_->join();
     reorder_thread_.reset();
-    polling_thread_->join();
-    polling_thread_.reset();
+    polling_rx_thread_->join();
+    polling_rx_thread_.reset();
+    polling_tx_thread_->join();
+    polling_tx_thread_.reset();
 
     for (const auto& it : contexts_) {
         it.second->Cleanup();
@@ -901,7 +940,8 @@ class UCXVan : public Van {
               << node.ports[i]);
     }
 
-    polling_thread_.reset(new std::thread(&UCXVan::PollUCX, this));
+    polling_tx_thread_.reset(new std::thread(&UCXVan::PollTxUCX, this));
+    polling_rx_thread_.reset(new std::thread(&UCXVan::PollRxUCX, this));
     reorder_thread_.reset(new std::thread(&UCXVan::ReorderMsg, this));
 
     return node.ports[0];
@@ -1145,16 +1185,26 @@ class UCXVan : public Van {
     return *(reinterpret_cast<uint64_t*>(keys.data()));
   }
 
-  void PollUCX() {
-   PS_VLOG(2) << "polling " << contexts_.size() << " ucp_contexts";
+  void PollTxUCX() {
+   PS_VLOG(2) << "polling TX " << contexts_.size() << " ucp_contexts";
     while (!should_stop_.load()) {
       for (const auto& it : contexts_) {
-        it.second->Poll();
+        it.second->PollTx();
       }
     }
   }
 
-  std::unique_ptr<std::thread>                         polling_thread_;
+  void PollRxUCX() {
+   PS_VLOG(2) << "polling RX " << contexts_.size() << " ucp_contexts";
+    while (!should_stop_.load()) {
+      for (const auto& it : contexts_) {
+        it.second->PollRx();
+      }
+    }
+  }
+
+  std::unique_ptr<std::thread>                         polling_tx_thread_;
+  std::unique_ptr<std::thread>                         polling_rx_thread_;
   std::atomic<bool>                                    should_stop_;
   std::unordered_map<int, std::unique_ptr<UCXContext>> contexts_;
   std::unique_ptr<UCXRecvPool>                         rx_pool_;
