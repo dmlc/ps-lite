@@ -113,7 +113,8 @@ void Van::ProcessTerminateCommand() {
 void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *recovery_nodes) {
   recovery_nodes->control.cmd = Control::ADD_NODE;
   time_t t = time(NULL);
-  size_t num_nodes = postoffice_->num_servers() + postoffice_->num_workers();
+  // consider all worker and server instances
+  size_t num_nodes = postoffice_->num_server_instances() + postoffice_->num_worker_instances();
   if (nodes->control.node.size() == num_nodes) {
     bool mixed_mode = 
         getenv("BYTEPS_ENABLE_MIXED_MODE") 
@@ -211,13 +212,13 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       }
 
       // check continousity
-      int num_servers = Postoffice::Get()->num_servers();
+      int num_servers = Postoffice::Get()->num_server_instances();
       for (int i = 0; i < num_servers; ++i) {
         CHECK(server_ranks.find(i) != server_ranks.end()) << i;
       }
       CHECK(server_ranks.size() == (size_t) num_servers);
 
-      int num_workers = Postoffice::Get()->num_workers();
+      int num_workers = Postoffice::Get()->num_worker_instances();
       for (int i = 0; i < num_workers; ++i) {
         CHECK(worker_ranks.find(i) != worker_ranks.end()) << i;
       }
@@ -284,14 +285,14 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       Send(back);
     }
   } else {
-    PS_VLOG(1) << "AddNode: " << nodes->control.node.size() << " / " << num_nodes;
+    PS_VLOG(1) << "AddNode: " << nodes->control.node.size() << "/" << num_nodes + 1;
   }
 }
 
 void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
                         Meta* nodes, Meta* recovery_nodes) {
   auto& ctrl = msg->meta.control;
-  size_t num_nodes = postoffice_->num_servers() + postoffice_->num_workers();
+  size_t num_nodes = postoffice_->num_server_instances() + postoffice_->num_worker_instances();
   // assign an id
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
@@ -325,12 +326,6 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
     if (my_node_.hostname == node.hostname && my_node_.port == node.port) {
       if (getenv("DMLC_RANK") == nullptr || my_node_.id == Meta::kEmpty) {
         SetNode(node);
-        std::string rank = std::to_string(Postoffice::IDtoRank(node.id));
-#ifdef _MSC_VER
-        _putenv_s("DMLC_RANK", rank.c_str());
-#else
-        setenv("DMLC_RANK", rank.c_str(), true);
-#endif
       }
     }
   }
@@ -353,7 +348,7 @@ void Van::ProcessHearbeat(Message *msg) {
   }
 }
 
-void Van::ProcessBarrierCommand(Message *msg) {
+void Van::ProcessInstanceBarrierCommand(Message *msg) {
   auto &ctrl = msg->meta.control;
   if (msg->meta.request) {
     if (barrier_count_.empty()) {
@@ -368,7 +363,7 @@ void Van::ProcessBarrierCommand(Message *msg) {
       res.meta.request = false;
       res.meta.app_id = msg->meta.app_id;
       res.meta.customer_id = msg->meta.customer_id;
-      res.meta.control.cmd = Control::BARRIER;
+      res.meta.control.cmd = Control::INSTANCE_BARRIER;
       for (int r : postoffice_->GetNodeIDs(group)) {
         int recver_id = r;
         if (shared_node_mapping_.find(r) == shared_node_mapping_.end()) {
@@ -377,6 +372,54 @@ void Van::ProcessBarrierCommand(Message *msg) {
           CHECK_GT(Send(res), 0);
         }
       }
+    }
+  } else {
+    postoffice_->Manage(*msg);
+  }
+}
+
+// process the (group) barrier command
+void Van::ProcessBarrierCommand(Message *msg) {
+  // For group-level barrier, we only respond to the requesters
+  auto &ctrl = msg->meta.control;
+  if (msg->meta.request) {
+    int node_group = ctrl.barrier_group;
+    group_barrier_requests_[node_group].push_back(msg->meta.sender);
+    PS_VLOG(1) << "Barrier count for " << node_group << " : "
+               << group_barrier_requests_[node_group].size();
+
+    // Note: special handling for the scheduler thread,
+    // since the scheduler always has just one instance,
+    // while the worker/server may have multiple instances
+    int group_size = postoffice_->group_size();
+    int num_instances = static_cast<int>(postoffice_->GetNodeIDs(node_group).size());
+    size_t num_expected_requests;
+    if (node_group == kScheduler) {
+      // scheduler only
+      num_expected_requests = 1;
+    } else if (node_group & kScheduler) {
+      // scheduler, workers and/or servers
+      num_expected_requests = (num_instances - 1) / group_size + 1;
+    } else {
+      num_expected_requests = num_instances / group_size;
+    }
+    group_barrier_requests_[node_group].push_back(msg->meta.sender);
+    if (group_barrier_requests_[node_group].size() == num_expected_requests) {
+      Message res;
+      res.meta.request = false;
+      res.meta.app_id = msg->meta.app_id;
+      res.meta.customer_id = msg->meta.customer_id;
+      res.meta.control.cmd = Control::BARRIER;
+      // response to the requesters
+      for (int r : group_barrier_requests_[node_group]) {
+        int recver_id = r;
+        if (shared_node_mapping_.find(r) == shared_node_mapping_.end()) {
+          res.meta.recver = recver_id;
+          res.meta.timestamp = timestamp_++;
+          CHECK_GT(Send(res), 0);
+        }
+      }
+      group_barrier_requests_[node_group].clear();
     }
   } else {
     postoffice_->Manage(*msg);
@@ -525,7 +568,7 @@ void Van::Start(int customer_id, bool standalone) {
     // let the scheduler know myself
     Message msg;
     Node customer_specific_node = my_node_;
-    customer_specific_node.aux_id = Postoffice::Get()->preferred_rank();
+    customer_specific_node.aux_id = postoffice_->preferred_rank();
     customer_specific_node.customer_id = customer_id;
     msg.meta.recver = kScheduler;
     msg.meta.control.cmd = Control::ADD_NODE;
@@ -594,7 +637,7 @@ int Van::Send(Message &msg) {
   CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
-  PS_VLOG(2) << this->GetType() << "\tsent: " << msg.DebugString();
+  PS_VLOG(2) << this->GetType() << " " << my_node_.id << "\tsent: " << msg.DebugString();
   return send_bytes;
 }
 
@@ -617,7 +660,7 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    PS_VLOG(2) << this->GetType() << "\treceived: " << msg.DebugString();
+    PS_VLOG(2) << this->GetType() << " " << my_node_.id << "\treceived: " << msg.DebugString();
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
 
@@ -631,6 +674,8 @@ void Van::Receiving() {
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER) {
         ProcessBarrierCommand(&msg);
+      } else if (ctrl.cmd == Control::INSTANCE_BARRIER) {
+        ProcessInstanceBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);
       } else {
@@ -687,7 +732,7 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   auto ctrl = &(raw->control);
   if (!meta.control.empty()) {
     ctrl->cmd = meta.control.cmd;
-    if (meta.control.cmd == Control::BARRIER) {
+    if (meta.control.cmd == Control::BARRIER || meta.control.cmd == Control::INSTANCE_BARRIER) {
       ctrl->barrier_group = meta.control.barrier_group;
     } else if (meta.control.cmd == Control::ACK) {
       ctrl->msg_sig = meta.control.msg_sig;

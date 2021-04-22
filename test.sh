@@ -26,6 +26,8 @@ export UCX_MAX_RNDV_RAILS=${UCX_MAX_RNDV_RAILS:-2}
 export DMLC_ENABLE_RDMA=${DMLC_ENABLE_RDMA:-1}        # enable rdma
 export DMLC_ENABLE_UCX=${DMLC_ENABLE_UCX:-1}          # enable ucx
 export PS_VERBOSE=${PS_VERBOSE:-1}
+export DMLC_RANK=${DMLC_RANK:=0}
+export DMLC_GROUP_SIZE=${DMLC_GROUP_SIZE:=1}
 
 # export UCX_MEMTYPE_CACHE=n
 # export UCX_RNDV_SCHEME=put_zcopy
@@ -50,7 +52,9 @@ export SKIP_DEV_ID_CHECK=${SKIP_DEV_ID_CHECK:-1}
 # export UCX_IB_GPU_DIRECT_RDMA=no
 
 export BYTEPS_ENABLE_IPC=0
-export BENCHMARK_NTHREAD=${BENCHMARK_NTHREAD:-1}
+export BENCHMARK_NTHREAD=${BENCHMARK_NTHREAD:=$DMLC_GROUP_SIZE}
+export GDB=" gdb -ex run --args "
+export GDB=" "
 
 if [ $1 == "local" ] # no other args
 then
@@ -60,14 +64,14 @@ then
     export UCX_RDMA_CM_SOURCE_ADDRESS=${NODE_ONE_IP}
 
     DMLC_ROLE=scheduler $BINARY $ARGS &
-    DMLC_ROLE=server $BINARY $ARGS
+    DMLC_ROLE=server $GDB $BINARY $ARGS
 elif [ $1 == "remote" ]
 then
     echo "This is the remote node."
     export DMLC_NODE_HOST=${NODE_TWO_IP}
     export UCX_RDMA_CM_SOURCE_ADDRESS=${NODE_TWO_IP}
 
-    DMLC_ROLE=worker $BINARY $ARGS
+    DMLC_ROLE=worker $GDB $BINARY $ARGS
 else
     echo "Please specify either local or remote."
 fi

@@ -25,8 +25,9 @@ inline bool IsScheduler() { return Postoffice::Get()->is_scheduler(); }
  *
  * Each worker will have a unique rank within [0, NumWorkers()). So are
  * servers. This function is available only after \ref Start has been called.
+ * The rank is group-level instead of instance-level.
  */
-inline int MyRank() { return Postoffice::Get()->my_rank(); }
+inline int MyRank() { return Postoffice::Get()->my_rank() / Postoffice::Get()->group_size(); }
 /**
  * \brief start the system
  *
@@ -49,30 +50,127 @@ inline Node::Role GetRole(const std::string role_str) {
   }
   return role;
 }
+
 /**
- * \brief start the system
+ * \brief start the system for one worker/server/scheduler instance
  *
- * This function will NOT block.
- * \param customer_id the customer id
- * \param preferred_rank the preferred rank. -1 means no preference and the rank will be assigned by
-          the scheduler. If the rank is non-negative, the preferred rank will be assigned accordingly.
- * \param argv0 the program name, used for logging
+ * \param instance_idx the offset of the instance in the instance group
  */
-inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier, const char *argv0 = nullptr) {
+inline void _StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
+                     const char *argv0, int instance_idx) {
   if (role == Node::WORKER) {
-    Postoffice::GetWorker()->Start(customer_id, role, rank, do_barrier, argv0);
+    Postoffice::GetWorker(instance_idx)->Start(customer_id, role, rank, do_barrier, argv0);
   } else if (role == Node::SERVER || role == Node::SCHEDULER) {
-    Postoffice::GetServer()->Start(customer_id, role, rank, do_barrier, argv0);
+    Postoffice::GetServer(instance_idx)->Start(customer_id, role, rank, do_barrier, argv0);
   } else {
     // Joint PS: one worker, one server
-    std::thread thread_s(StartPS, customer_id, Node::SERVER, rank, do_barrier, argv0);
+    std::thread thread_s(_StartPS, customer_id, Node::SERVER, rank, do_barrier, argv0, instance_idx);
     LOG(INFO) << "Postoffice server started.";
 
-    std::thread thread_w(StartPS, customer_id, Node::WORKER, rank, do_barrier, argv0);
+    std::thread thread_w(_StartPS, customer_id, Node::WORKER, rank, do_barrier, argv0, instance_idx);
     LOG(INFO) << "Postoffice worker started.";
 
     thread_s.join();
     thread_w.join();
+  }
+}
+
+/**
+ * \brief start the system for a group of worker/server/scheduler instances, based on instance-level ranks
+ *
+ * \param worker_ranks the **instance-level** ranks of the worker instances to start
+ * \param server_ranks the **instance-level** ranks of the server instances to start
+ */
+inline void _StartPSGroup(int customer_id, std::vector<int> worker_ranks,
+                          std::vector<int> server_ranks, bool do_barrier, const char *argv0 = nullptr) {
+  std::vector<std::thread> threads;
+  for (size_t i = 0; i < worker_ranks.size(); ++i) {
+    threads.emplace_back(_StartPS, customer_id, Node::WORKER, worker_ranks[i], do_barrier, argv0, i);
+    LOG(INFO) << "Postoffice worker rank " << worker_ranks[i] << " started.";
+  }
+  for (size_t i = 0; i < server_ranks.size(); ++i) {
+    threads.emplace_back(_StartPS, customer_id, Node::SERVER, server_ranks[i], do_barrier, argv0, i);
+    LOG(INFO) << "Postoffice server rank " << server_ranks[i] << " started.";
+  }
+  for (auto &t : threads) {
+    t.join();
+  }
+}
+
+/**
+ * \brief start the system. This can be called only ONCE
+ *
+ * \param customer_id the customer id
+ * \param role the node group / role: worker, server, scheduler, joint. joint role means
+               both having worker and server
+ * \param rank the rank. -1 means no preference and the rank will be assigned by the scheduler.
+ * \param do_barrier do a barrier to make sure every rank calls StartPS
+ * \param argv0 the program name, used for logging
+ */
+inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
+                    const char *argv0 = nullptr) {
+  auto val = Environment::Get()->find("DMLC_GROUP_SIZE");
+  int group_size = val ? atoi(val) : 1;
+
+  Postoffice::Init(role);
+  if (group_size == 1 || role == Node::SCHEDULER) {
+    int instance_idx = 0;
+    _StartPS(customer_id, role, rank, do_barrier, argv0, instance_idx);
+  } else {
+    CHECK(rank >= 0 && group_size > 0) << group_size;
+    std::vector<int> worker_ranks;
+    std::vector<int> server_ranks;
+    // start PS workers and servers as a group
+    if (role == Node::WORKER || role == Node::JOINT) {
+      for (int i = 0; i < group_size; ++i) {
+        int rank_i = rank * group_size + i;
+        worker_ranks.push_back(rank_i);
+      }
+    }
+    if (role == Node::SERVER || role == Node::JOINT) {
+      for (int i = 0; i < group_size; ++i) {
+        int rank_i = rank * group_size + i;
+        server_ranks.push_back(rank_i);
+      }
+    }
+    _StartPSGroup(customer_id, worker_ranks, server_ranks, do_barrier, argv0);
+  }
+}
+
+inline void _Finalize(int customer_id, Node::Role role, const bool do_barrier = true, int index = 0) {
+  if (role == Node::WORKER) {
+    Postoffice::GetWorker(index)->Finalize(customer_id, do_barrier);
+  } else if (role == Node::SERVER || role == Node::SCHEDULER) {
+    Postoffice::GetServer(index)->Finalize(customer_id, do_barrier);
+  } else {
+    // Joint PS: one worker, one server
+    std::thread thread_s(&Postoffice::Finalize, Postoffice::GetServer(index), customer_id, do_barrier);
+    LOG(INFO) << "Finalize Postoffice server.";
+
+    std::thread thread_w(&Postoffice::Finalize, Postoffice::GetWorker(index), customer_id, do_barrier);
+    LOG(INFO) << "Finalize Postoffice worker.";
+
+    thread_s.join();
+    thread_w.join();
+  }
+}
+
+inline void _FinalizeGroup(int customer_id, Node::Role role, int group_size, bool do_barrier) {
+  std::vector<std::thread> threads;
+  if (role == Node::JOINT || role == Node::WORKER) {
+    for (int i = 0; i < group_size; ++i) {
+      threads.emplace_back(&Postoffice::Finalize, Postoffice::GetWorker(i), customer_id, do_barrier);
+      LOG(INFO) << "Finalize worker instance " << i;
+    }
+  }
+  if (role == Node::JOINT || role == Node::SERVER) {
+    for (int i = 0; i < group_size; ++i) {
+      threads.emplace_back(&Postoffice::Finalize, Postoffice::GetServer(i), customer_id, do_barrier);
+      LOG(INFO) << "Finalize server instance " << i;
+    }
+  }
+  for (auto &t : threads) {
+    t.join();
   }
 }
 
@@ -83,22 +181,16 @@ inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
  * \param do_barrier whether to block until every node is finalized, default true.
  */
 inline void Finalize(int customer_id, Node::Role role, const bool do_barrier = true) {
-  if (role == Node::WORKER) {
-    Postoffice::GetWorker()->Finalize(customer_id, do_barrier);
-  } else if (role == Node::SERVER || role == Node::SCHEDULER) {
-    Postoffice::GetServer()->Finalize(customer_id, do_barrier);
+  auto val = Environment::Get()->find("DMLC_GROUP_SIZE");
+  int group_size = val ? atoi(val) : 1;
+  if (group_size == 1 || role == Node::SCHEDULER) {
+    int instance_idx = 0;
+    _Finalize(customer_id, role, do_barrier, instance_idx);
   } else {
-    // Joint PS: one worker, one server
-    std::thread thread_s(&Postoffice::Finalize, Postoffice::GetServer(), customer_id, do_barrier);
-    LOG(INFO) << "Finalize Postoffice server.";
-
-    std::thread thread_w(&Postoffice::Finalize, Postoffice::GetWorker(), customer_id, do_barrier);
-    LOG(INFO) << "Finalize Postoffice worker.";
-
-    thread_s.join();
-    thread_w.join();
+    _FinalizeGroup(customer_id, role, group_size, do_barrier);
   }
 }
+
 /**
  * \brief Register a callback to the system which is called after Finalize()
  *

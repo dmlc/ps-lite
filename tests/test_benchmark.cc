@@ -31,7 +31,7 @@ enum MODE {
 std::unordered_map<uint64_t, KVPairs<char> > mem_map;
 
 // A map for the registered buffers
-std::unordered_map<int, std::unordered_map<ps::Key, SArray<char>>> registered_buffs;
+std::unordered_map<int64_t, std::unordered_map<ps::Key, SArray<char>>> registered_buffs;
 
 bool debug_mode_ = false;
 int num_ports = 1;
@@ -168,9 +168,11 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
     }
     if (enable_recv_buffer) {
       int worker_id = req_meta.sender;
-      CHECK(registered_buffs.find(worker_id) != registered_buffs.end())
-        << worker_id;
-      auto& buffs = registered_buffs[worker_id];
+      int64_t pair_id = server->instance_idx_;
+      pair_id = (pair_id << 32) + worker_id;
+      CHECK(registered_buffs.find(pair_id) != registered_buffs.end())
+        << worker_id << " " << server->instance_idx_ << " " << pair_id;
+      auto& buffs = registered_buffs[pair_id];
       CHECK(buffs.find(key_decoded) != buffs.end()) << key_decoded;
       auto registered = buffs[key_decoded].data();
       CHECK(registered == recved) << (long long) registered << " v.s. "
@@ -263,46 +265,54 @@ void GenerateLens(int total_key_num, int len, std::vector<SArray<int>>* server_l
 }
 
 
-void StartServer(int argc, char *argv[]) {
+void StartServer(int argc, char *argv[], int group_size) {
   if (!IsServer()) return;
   debug_mode_ = Environment::Get()->find("DEBUG_MODE") ? true : false;
 
-  auto server = new KVServer<char>(0);
-  server->set_request_handle(EmptyHandler<char>);
-  RegisterExitCallback([server]() { delete server; });
+  std::vector<KVServer<char>*> servers;
+  for (int i = 0; i < group_size; ++i) {
+    auto server = new KVServer<char>(0, false, i);
+    server->set_request_handle(EmptyHandler<char>);
+    servers.push_back(server);
+  }
 
   if (!enable_recv_buffer) return;
   int num_workers = Postoffice::Get()->num_workers();
   int num_servers = Postoffice::Get()->num_servers();
   auto my_rank = ps::Postoffice::Get()->my_rank();
   LOG(INFO) << "Registering buffers for server rank=" << my_rank
-    << ", num_servers=" << num_servers;
-  auto v = Environment::Get()->find("NUM_KEY_PER_SERVER");  
+            << ", num_servers=" << num_servers;
+  auto v = Environment::Get()->find("NUM_KEY_PER_SERVER");
   const int how_many_key_per_server = v ? atoi(v) : 40;
   const int total_key_num = num_servers * how_many_key_per_server;
   int len = (argc > 1) ? atoi(argv[1]) : 1024000;
+  // We generate different val buffs for each server instance to avoid conflicts
+  for (int instance_idx = 0; instance_idx < group_size; ++instance_idx) {
+    auto server = servers[instance_idx];
+    for (int worker_rank = 0; worker_rank < num_workers; worker_rank++) {
+      std::vector<SArray<char>> server_vals;
+      std::vector<SArray<Key>> server_keys;
+      std::vector<SArray<int>> server_lens;
+      GenerateVals(total_key_num, worker_rank, len, num_ports, &server_vals);
+      GenerateKeys(total_key_num, &server_keys);
+      GenerateLens(total_key_num, len, &server_lens);
+      for (int key = 0; key < total_key_num; ++key) {
+        if (my_rank == (key % num_servers)) {
+          server->RegisterRecvBufferWithRank(worker_rank, server_keys[key],
+                                             server_vals[key], server_lens[key]);
+          int64_t pair_id = instance_idx;
+          int worker_id = ps::Postoffice::Get()->WorkerRankToID(worker_rank);
+          pair_id = (pair_id << 32) + worker_id;
+          registered_buffs[pair_id][key] = server_vals[key];
 
-  for (int worker_rank = 0; worker_rank < num_workers; worker_rank++) {
-    std::vector<SArray<char>> server_vals;
-    std::vector<SArray<Key>> server_keys;
-    std::vector<SArray<int>> server_lens;
-    GenerateVals(total_key_num, worker_rank, len, num_ports, &server_vals);
-    GenerateKeys(total_key_num, &server_keys);
-    GenerateLens(total_key_num, len, &server_lens);
-    for (int key = 0; key < total_key_num; ++key) {
-      if (my_rank == (key % num_servers)) {
-        int worker_id = ps::Postoffice::Get()->WorkerRankToID(worker_rank);
-        server->RegisterRecvBuffer(worker_id, server_keys[key], server_vals[key],
-                                   server_lens[key]);
-        registered_buffs[worker_id][key] = server_vals[key];
+          mem_map[key].keys = server_keys[key];
+          mem_map[key].vals = server_vals[key];
+          mem_map[key].lens = server_lens[key];
 
-        mem_map[key].keys = server_keys[key];
-        mem_map[key].vals = server_vals[key];
-        mem_map[key].lens = server_lens[key];
-
-        LOG(INFO) << "Registered buffer for worker_rank=" << worker_rank
-          << " worker_id " << worker_id << " key " << key << " ptr "
-          << (long long) server_vals[key].data();
+          LOG(INFO) << "Server instance " << instance_idx << " registered buffer for worker_rank="
+                    << worker_rank << " key " << key << " ptr "
+                    << (long long) server_vals[key].data();
+        }
       }
     }
   }
@@ -376,9 +386,11 @@ void push_pull(KVWorker<char>* kv,
     if (cnt % log_duration != 0) continue;
 
     end = std::chrono::high_resolution_clock::now();
+    auto latency = (end - start).count();
+
     LL << "[" << tid << "]\tApplication goodput: "
-        << 8.0 * len * sizeof(char) * total_key_num * cnt / (end - start).count() 
-        << " Gbps";
+        << 8.0 * len * sizeof(char) * total_key_num * cnt / latency
+        << " Gbps.\tAvg latency = " << latency / cnt / total_key_num / 1000.0 << " ns per key";
     cnt = 0;
     start = std::chrono::high_resolution_clock::now();
   }
@@ -413,6 +425,7 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid) {
   // place a barrier to make sure the server has all the buffers registered.
   if (enable_recv_buffer) {
     ps::Postoffice::Get()->Barrier(0, kWorkerGroup + kServerGroup);
+    LOG(INFO) << "Server recv buff registration is DONE.";
   }
 
   // init push, do not count this into time cost
@@ -506,9 +519,10 @@ int main(int argc, char *argv[]) {
   }
 
   // start system
-  int my_rank = env2int("DMLC_PREFERRED_RANK", -1);
+  int my_rank = env2int("DMLC_RANK", -1);
+  int group_size = env2int("DMLC_GROUP_SIZE", -1);
   StartPS(0, role, my_rank, true);
-  
+
   // check rank
   if (my_rank != -1) {
     int assigned_rank = ps::Postoffice::Get()->my_rank();
@@ -516,15 +530,17 @@ int main(int argc, char *argv[]) {
   }
 
   // setup server nodes
-  StartServer(argc, argv);
+  StartServer(argc, argv, group_size);
   // run worker nodes
   if (!IsServer() && !IsScheduler()) {
     const int nthread = env2int("BENCHMARK_NTHREAD", 1);
     LOG(INFO) << "number of threads for the same worker = " << nthread;
-    KVWorker<char> kv(0, 0);
+    std::vector<KVWorker<char>*> kvs;
     std::vector<std::thread> threads;
     for (int i = 0; i < nthread; ++i) {
-      threads.emplace_back(RunWorker, argc, argv, &kv, threads.size());
+      KVWorker<char>* kv = new KVWorker<char>(0, 0, i);
+      kvs.emplace_back(kv);
+      threads.emplace_back(RunWorker, argc, argv, kv, threads.size());
     }
     for (int i = 0; i < nthread; ++i) {
       threads[i].join();

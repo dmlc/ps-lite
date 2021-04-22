@@ -30,8 +30,11 @@ Customer::~Customer() {
 }
 
 int Customer::NewRequest(int recver) {
+  CHECK(recver == kServerGroup) << recver;
   std::lock_guard<std::mutex> lk(tracker_mu_);
-  int num = postoffice_->GetNodeIDs(recver).size();
+  // for push/pull requests, the worker only communication with one instance from
+  // each server instance group
+  int num = postoffice_->GetNodeIDs(recver).size() / postoffice_->group_size();
   tracker_.push_back(std::make_pair(num, 0));
   return tracker_.size() - 1;
 }

@@ -171,13 +171,19 @@ class Van {
   std::atomic<bool> ready_{false};
   std::atomic<size_t> send_bytes_{0};
   size_t recv_bytes_ = 0;
+  // number of server instances
   int num_servers_ = 0;
+  // number of worker instances
   int num_workers_ = 0;
   /** the thread for receiving messages */
   std::unique_ptr<std::thread> receiver_thread_;
   /** the thread for sending heartbeat */
   std::unique_ptr<std::thread> heartbeat_thread_;
+  // the count of instance barrier requests, used for instance-level barrier
   std::vector<int> barrier_count_;
+  // the id of (group) barrier request senders, used for group-level barrier
+  std::unordered_map<int, std::vector<int>> group_barrier_requests_;
+
   /** msg resender */
   Resender *resender_ = nullptr;
   int drop_rate_ = 0;
@@ -201,9 +207,14 @@ class Van {
   void ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes);
 
   /**
-   * \brief processing logic of Barrier message (run on each node)
+   * \brief processing logic of group-level Barrier message (run on each postoffice instance group)
    */
   void ProcessBarrierCommand(Message *msg);
+
+  /**
+  * \brief processing logic of instance-level Barrier message (run on each postoffice instance)
+  */
+  void ProcessInstanceBarrierCommand(Message *msg);
 
   /**
    * \brief processing logic of AddNode message (run on each node)

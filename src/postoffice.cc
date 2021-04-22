@@ -11,13 +11,40 @@
 
 namespace ps {
 
-Postoffice* Postoffice::po_server_ = nullptr;
 Postoffice* Postoffice::po_scheduler_ = nullptr;
-Postoffice* Postoffice::po_worker_ = nullptr;
-std::mutex Postoffice::singleton_mu_;
+std::mutex Postoffice::init_mu_;
+std::vector<Postoffice*> Postoffice::po_worker_group_;
+std::vector<Postoffice*> Postoffice::po_server_group_;
+bool Postoffice::initialized_ = false;
 
-Postoffice::Postoffice() {
+void Postoffice::Init(ps::Node::Role role) {
+  std::lock_guard<std::mutex> lk(init_mu_);
+  if (initialized_) return;
+
+  int group_size = 1;
+  auto val = Environment::Get()->find("DMLC_GROUP_SIZE");
+  if (val) group_size = atoi(val);
+  CHECK(group_size >= 1);
+
+  if (role == ps::Node::SCHEDULER) {
+    po_scheduler_ = new Postoffice(0);
+  }
+  if (role == ps::Node::WORKER || role == ps::Node::JOINT) {
+    for (int i = 0; i < group_size; ++i) {
+      po_worker_group_.push_back(new Postoffice(i));
+    }
+  }
+  if (role == ps::Node::SERVER || role == ps::Node::JOINT) {
+    for (int i = 0; i < group_size; ++i) {
+      po_server_group_.push_back(new Postoffice(i));
+    }
+  }
+  initialized_ = true;
+}
+
+Postoffice::Postoffice(int instance_idx) {
   env_ref_ = Environment::_GetSharedRef();
+  instance_idx_ = instance_idx;
 }
 
 void Postoffice::InitEnvironment() {
@@ -31,6 +58,9 @@ void Postoffice::InitEnvironment() {
     LOG(INFO) << "Creating Van: " << van_type;
     van_ = Van::Create(van_type, this);
   }
+  val = Environment::Get()->find("DMLC_GROUP_SIZE");
+  group_size_ = val ? atoi(val) : 1;
+  LOG(INFO) << "DMLC_GROUP_SIZE=" << group_size_;
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
   val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
@@ -83,8 +113,8 @@ void Postoffice::Start(int customer_id, const Node::Role role, int rank,
       dmlc::InitLogging("ps-lite\0");
     }
 
-    // init node info.
-    for (int i = 0; i < num_workers_; ++i) {
+    // init node info, for every worker/server instance
+    for (int i = 0; i < num_workers_ * group_size_; ++i) {
       int id = WorkerRankToID(i);
       for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
                     kWorkerGroup + kScheduler,
@@ -93,7 +123,7 @@ void Postoffice::Start(int customer_id, const Node::Role role, int rank,
       }
     }
 
-    for (int i = 0; i < num_servers_; ++i) {
+    for (int i = 0; i < num_servers_ * group_size_; ++i) {
       int id = ServerRankToID(i);
       for (int g : {id, kServerGroup, kWorkerGroup + kServerGroup,
                     kServerGroup + kScheduler,
@@ -120,12 +150,18 @@ void Postoffice::Start(int customer_id, const Node::Role role, int rank,
     init_stage_++;
   }
   start_mu_.unlock();
-  // do a barrier here
-  if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  // do a barrier with all instances
+  if (do_barrier) {
+    bool instance_barrier = true;
+    DoBarrier(customer_id, kWorkerGroup + kServerGroup + kScheduler, instance_barrier);
+  }
 }
 
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
-  if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  if (do_barrier) {
+    bool instance_barrier = true;
+    DoBarrier(customer_id, kWorkerGroup + kServerGroup + kScheduler, instance_barrier);
+  }
   if (customer_id == 0) {
     num_workers_ = 0;
     num_servers_ = 0;
@@ -181,9 +217,15 @@ Customer* Postoffice::GetCustomer(int app_id, int customer_id, int timeout) cons
   }
   return obj;
 }
-
-void Postoffice::Barrier(int customer_id, int node_group) {
-  if (GetNodeIDs(node_group).size() <= 1) return;
+/**
+ * \param customer_id the customer id
+ * \param node_group any combination of kScheduler, kWorkerGroup, kServerGroup
+ * \param instance_barrier whether to do a barrier with every instances, or every instance group
+ */
+void Postoffice::DoBarrier(int customer_id, int node_group, bool instance_barrier) {
+  int node_group_size = static_cast<int>(GetNodeIDs(node_group).size());
+  if (instance_barrier && node_group_size <= 1) return;
+  if (!instance_barrier && node_group_size <= group_size_) return;
   auto role = van_->my_node().role;
   if (role == Node::SCHEDULER) {
     CHECK(node_group & kScheduler);
@@ -197,7 +239,7 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   Message req;
   req.meta.recver = kScheduler;
   req.meta.request = true;
-  req.meta.control.cmd = Control::BARRIER;
+  req.meta.control.cmd = instance_barrier ? Control::INSTANCE_BARRIER : Control::BARRIER;
   req.meta.app_id = 0;
   req.meta.customer_id = customer_id;
   req.meta.control.barrier_group = node_group;
@@ -206,6 +248,11 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   barrier_cond_.wait(ulk, [this, customer_id] {
       return barrier_done_[0][customer_id];
     });
+}
+
+void Postoffice::Barrier(int customer_id, int node_group) {
+  // only do group-level barrier in the public API
+  DoBarrier(customer_id, node_group, false);
 }
 
 const std::vector<Range>& Postoffice::GetServerKeyRanges() {
@@ -224,7 +271,8 @@ const std::vector<Range>& Postoffice::GetServerKeyRanges() {
 void Postoffice::Manage(const Message& recv) {
   CHECK(!recv.meta.control.empty());
   const auto& ctrl = recv.meta.control;
-  if (ctrl.cmd == Control::BARRIER && !recv.meta.request) {
+  bool is_barrier = ctrl.cmd == Control::BARRIER || ctrl.cmd == Control::INSTANCE_BARRIER;
+  if (is_barrier && !recv.meta.request) {
     barrier_mu_.lock();
     auto size = barrier_done_[recv.meta.app_id].size();
     for (size_t customer_id = 0; customer_id < size; customer_id++) {

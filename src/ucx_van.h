@@ -924,7 +924,7 @@ class UCXVan : public Van {
     // Create separate UCX context for every device. If device is GPU, set the
     // corresponding cuda device before UCX context creation. This way UCX will
     // automatically select the most optimal NICs for using with this device.
-    CHECK(devs.size() == node.num_ports)
+    CHECK(static_cast<int>(devs.size()) == node.num_ports)
       << "num_cpu_dev + num_gpu_dev != num_ports";
     for (int i = 0; i < node.num_ports; ++i) {
       node.dev_types[i] = devs[i].first;
