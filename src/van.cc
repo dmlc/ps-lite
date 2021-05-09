@@ -356,7 +356,7 @@ void Van::ProcessInstanceBarrierCommand(Message *msg) {
     }
     int group = ctrl.barrier_group;
     ++barrier_count_[group];
-    PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
+    PS_VLOG(1) << "Instance barrier count for " << group << " : " << barrier_count_[group];
     if (barrier_count_[group] == static_cast<int>(postoffice_->GetNodeIDs(group).size())) {
       barrier_count_[group] = 0;
       Message res;
@@ -403,7 +403,6 @@ void Van::ProcessBarrierCommand(Message *msg) {
     } else {
       num_expected_requests = num_instances / group_size;
     }
-    group_barrier_requests_[node_group].push_back(msg->meta.sender);
     if (group_barrier_requests_[node_group].size() == num_expected_requests) {
       Message res;
       res.meta.request = false;
