@@ -51,16 +51,15 @@ void Postoffice::InitEnvironment() {
   const char* val = NULL;
   const char* van_type = GetEnv("DMLC_ENABLE_RDMA", "zmq");
   int enable_ucx  = GetEnv("DMLC_ENABLE_UCX", 0);
-  if (enable_ucx) {
-    LOG(INFO) << "enable UCX for networking";
-    van_ = Van::Create("ucx", this);
-  } else {
-    LOG(INFO) << "Creating Van: " << van_type;
-    van_ = Van::Create(van_type, this);
-  }
   val = Environment::Get()->find("DMLC_GROUP_SIZE");
   group_size_ = val ? atoi(val) : 1;
-  LOG(INFO) << "DMLC_GROUP_SIZE=" << group_size_;
+  if (enable_ucx) {
+    LOG(INFO) << "enable UCX for networking. group_size=" << group_size_;
+    van_ = Van::Create("ucx", this);
+  } else {
+    LOG(INFO) << "Creating Van: " << van_type << ". group_size=" << group_size_;
+    van_ = Van::Create(van_type, this);
+  }
   val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
   val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
