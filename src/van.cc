@@ -527,7 +527,7 @@ void Van::Start(int customer_id, bool standalone) {
       std::array<int, 32> ports;
       int num_available_ports = GetAvailablePort(num_ports, &ports);
 
-      const char *pstr = Environment::Get()->find("PORT");
+      const char *pstr = Environment::Get()->find("DMLC_PORT");
       if (pstr) ports[0] = atoi(pstr);
       CHECK(!ip.empty()) << "failed to get ip";
       CHECK_EQ(num_available_ports, num_ports) << "failed to get "
