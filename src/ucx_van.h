@@ -22,6 +22,8 @@
 #include <netdb.h>
 #include <queue>
 #include <set>
+#include <chrono>
+#include <random>
 
 #if DMLC_USE_CUDA
 #include <cuda_runtime.h>
@@ -556,7 +558,7 @@ public:
   // Create UCX listener object, so the remote side could connect by the given
   // address. Listener is created on receive worker, because senders are supposed
   // to connect to it.
-  void Listen(int port) {
+  ucs_status_t Listen(int port) {
     auto val = Environment::Get()->find("DMLC_NODE_HOST");
     struct sockaddr_in addr = {};
     if (val) {
@@ -576,9 +578,8 @@ public:
     params.conn_handler.cb  = ConnHandlerCb;
     params.conn_handler.arg = this;
     ucs_status_t status     = ucp_listener_create(rx_worker_, &params, &listener_);
-    CHECK_STATUS(status) << "ucp_listener_create failed: " << ucs_status_string(status);
-
-    UCX_LOGE(3, "bound to " << addr.sin_addr.s_addr << " port: " << port);
+    UCX_LOGE(3, "listening to " << addr.sin_addr.s_addr << " port: " << port);
+    return status;
   }
 
   void Connect(const Node &node) {
@@ -918,7 +919,7 @@ class UCXVan : public Van {
       devs.push_back(std::make_pair(GPU, i));
     }
 
-    UCX_LOG(1, "Start/Bind UCX Van, num ports " << node.num_ports);
+    UCX_LOG(1, "Bind UCX Van, num ports " << node.num_ports);
 
     // Create separate UCX context for every device. If device is GPU, set the
     // corresponding cuda device before UCX context creation. This way UCX will
@@ -934,9 +935,29 @@ class UCXVan : public Van {
       contexts_[dev_id] = std::make_unique<UCXContext>(rx_pool_.get(), dev_id,
                                                        node.dev_types[i]);
       contexts_[dev_id]->Init(&my_node_, this);
-      contexts_[dev_id]->Listen(node.ports[i]);
-      UCX_LOG(1, "Create ctx[" << i << "]: dev id " << dev_id << ", port "
-              << node.ports[i]);
+      unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+      std::default_random_engine generator(seed);
+      std::uniform_int_distribution<int> distribution(10000, 40000);
+      auto status = contexts_[dev_id]->Listen(node.ports[i]);
+      if (status == UCS_OK) {
+        UCX_LOG(1, "Create ctx[" << i << "]: dev id " << dev_id << ", port "
+                << node.ports[i]);
+      } else {
+        // retry `max_retry` trials
+        int trial;
+        for (trial = 0; trial < max_retry; trial++) {
+          node.ports[i] = distribution(generator);
+          status = contexts_[dev_id]->Listen(node.ports[i]);
+          if (status == UCS_OK) {
+            UCX_LOG(1, "Create ctx[" << i << "]: dev id " << dev_id << ", port "
+                    << node.ports[i]);
+            break;
+          }
+        }
+        if (trial >= max_retry) {
+          CHECK(false) << "ucp_listener_create failed: " << ucs_status_string(status);
+        }
+      }
     }
 
     polling_tx_thread_.reset(new std::thread(&UCXVan::PollTxUCX, this));
