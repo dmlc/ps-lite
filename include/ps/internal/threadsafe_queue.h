@@ -19,7 +19,7 @@ template<typename T> class ThreadsafeQueue {
  public:
   ThreadsafeQueue() : lockless_queue_(32768) {
     auto lockless_str = getenv("DMLC_LOCKLESS_QUEUE");
-    lockless_ = lockless_str ? atoi(lockless_str) : true;
+    lockless_ = lockless_str ? atoi(lockless_str) : false;
     auto polling_str = getenv("DMLC_POLLING_IN_NANOSECOND");
     int polling_duration_int = polling_str ? atoi(polling_str) : 1000;
     polling_duration_ = std::chrono::nanoseconds(polling_duration_int);
