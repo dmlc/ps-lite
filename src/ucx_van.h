@@ -81,6 +81,18 @@ struct UCXRequest {
   UCXBuffer  data;
 };
 
+struct UCXTxReq {
+  void           *buf;
+  size_t         count;
+  ucp_datatype_t dt;
+  Tags           tag;
+  void           *user_data;
+  int            src_dev_id;
+  int            dst_dev_id;
+  int            rx_id;
+  uint64_t       key;
+};
+
 struct UCXAddress {
   UCXAddress() : address(nullptr), length(0), external(false) {}
   UCXAddress (char *addr, size_t len, bool ext) :
@@ -544,7 +556,10 @@ public:
 
     // Create UCP workers:
     // - Send worker is created with multi-threading support, because it is used
-    //   by ps-lite sending thread and UCX Van TX polling thread.
+    //   by UCX Van TX polling thread and also used for sending connection ids
+    //   during ep connection establishments.
+    //   TODO: make this worker single-threaded, lock is only needed during ep
+    //   connection establishments.
     // - Recv worker is created without multi-thread support, because it is only
     //   accessed/used by the UCX Van RX polling thread.
     tx_worker_ = CreateWorker(true);
@@ -623,15 +638,12 @@ public:
     ucp_worker_progress(tx_worker_);
   }
 
-  ucs_status_ptr_t Send(Message &msg, void *buf, size_t count, ucp_datatype_t dt,
-                        void *user_data, Tags tag) {
-    int id         = msg.meta.recver;
-    int dst_dev_id = msg.meta.dst_dev_id;
-    ucp_ep_h ep    = ep_pool_.Find(id, dst_dev_id);
-    ucp_tag_t stag = MakeTag(my_node_->id, tag, msg.meta.key);
+  ucs_status_ptr_t Send(UCXTxReq &req) {
+    ucp_ep_h ep    = ep_pool_.Find(req.rx_id, req.dst_dev_id);
+    ucp_tag_t stag = MakeTag(my_node_->id, req.tag, req.key);
     ucp_request_param_t send_param;
 
-    UCX_LOGE(3, "Send to ep " << ep  << " (" << id << ", " << dst_dev_id <<")");
+    UCX_LOGE(3, "Send to ep " << ep  << " (" << req.rx_id << ", " << req.dst_dev_id <<")");
 
     if (ep == nullptr) return UCS_STATUS_PTR(UCS_ERR_NOT_CONNECTED);
 
@@ -641,11 +653,11 @@ public:
     send_param.op_attr_mask = UCP_OP_ATTR_FIELD_CALLBACK |
                               UCP_OP_ATTR_FIELD_DATATYPE |
                               UCP_OP_ATTR_FIELD_USER_DATA;
-    send_param.datatype     = dt;
+    send_param.datatype     = req.dt;
     send_param.cb.send      = TxReqCompletedCb;
-    send_param.user_data    = user_data;
+    send_param.user_data    = req.user_data;
 
-    return ucp_tag_send_nbx(ep, buf, count, stag, &send_param);
+    return ucp_tag_send_nbx(ep, req.buf, req.count, stag, &send_param);
   }
 
   void Cleanup() {
@@ -844,6 +856,7 @@ class UCXVan : public Van {
   UCXVan(Postoffice* postoffice) : Van(postoffice), postoffice_(postoffice) {
     short_send_thresh_   = GetEnv("BYTEPS_UCX_SHORT_THRESH", 4096);
     force_request_order_ = GetEnv("BYTEPS_UCX_FORCE_REQ_ORDER", 0);
+    queue_sends_         = GetEnv("BYTEPS_UCX_QUEUE_SENDS", 0);
     if (!getenv("UCX_USE_MT_MUTEX") && !getenv("PSLITE_UCX_USE_MT_MUTEX")) {
       LOG(FATAL) << "PSLITE_UCX_USE_MT_MUTEX is not set. Please export PSLITE_UCX_USE_MT_MUTEX=y";
     }
@@ -960,9 +973,13 @@ class UCXVan : public Van {
       }
     }
 
-    polling_tx_thread_.reset(new std::thread(&UCXVan::PollTxUCX, this));
-    polling_rx_thread_.reset(new std::thread(&UCXVan::PollRxUCX, this));
     reorder_thread_.reset(new std::thread(&UCXVan::ReorderMsg, this));
+    polling_rx_thread_.reset(new std::thread(&UCXVan::PollRxUCX, this));
+    if (queue_sends_) {
+      polling_tx_thread_.reset(new std::thread(&UCXVan::PollTxQueueUCX, this));
+    } else {
+      polling_tx_thread_.reset(new std::thread(&UCXVan::PollTxUCX, this));
+    }
 
     return node.ports[0];
   }
@@ -986,6 +1003,7 @@ class UCXVan : public Van {
   int SendMsg(Message &msg) override {
     int id           = msg.meta.recver;
     int src_dev_id   = msg.meta.src_dev_id;
+    UCXTxReq req;
     CHECK_NE(id, Meta::kEmpty);
 
     msg.meta.option = UCX_OPTION_META;
@@ -1008,8 +1026,8 @@ class UCXVan : public Van {
         rx_pool_->CacheLocalAddress(msg.meta.key, (char*)msg.meta.addr);
       }
     } else {
-     // val_len should be non-zero for pull request.
-     msg.meta.val_len = 0;
+      // val_len should be non-zero for pull request.
+      msg.meta.val_len = 0;
     }
 
     int len = SendMeta(src_dev_id, msg);
@@ -1024,25 +1042,35 @@ class UCXVan : public Van {
     // data
     CHECK(IsDataMsg(msg));
 
-    ucs_status_ptr_t st = ContextById(src_dev_id)->Send(msg, msg.data[1].data(),
-                                                        msg.data[1].size(),
-                                                        ucp_dt_make_contig(1), NULL,
-                                                        ps::Tags::UCX_TAG_DATA);
-    if (UCS_PTR_IS_ERR(st)) {
-      LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
-      return -1;
+    req.buf        = msg.data[1].data();
+    req.count      = msg.data[1].size();
+    req.dt         = ucp_dt_make_contig(1);
+    req.tag        = ps::Tags::UCX_TAG_DATA;
+    req.user_data  = NULL;
+    req.src_dev_id = src_dev_id;
+    req.dst_dev_id = msg.meta.dst_dev_id;
+    req.rx_id      = msg.meta.recver;
+    req.key        = msg.meta.key;
+
+    if (queue_sends_) {
+      tx_reqs_.Push(req);
+      UCX_LOG(2, "queued data for send, len: " << msg.data[1].size() << ", to id " << id);
+    } else {
+      ucs_status_ptr_t st = ContextById(src_dev_id)->Send(req);
+      if (UCS_PTR_IS_ERR(st)) {
+        LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
+        return -1;
+      }
+      UCX_LOG(3, "send data, len: " << msg.data[1].size() << ", to id " << id);
     }
-    UCX_LOG(3, "send data, len: " << msg.data[1].size() << ", to id " << id);
 
     return len + msg.meta.data_size;
   }
 
   int SendMeta(int src_dev_id, Message &msg) {
     char *meta_buf = nullptr;
-    void *buf;
     int meta_size, data_size;
-    size_t count;
-    ucp_datatype_t dt;
+    UCXTxReq req;
 
     if (IsDataMsg(msg) && (msg.meta.val_len <= short_send_thresh_)) {
       // Bundle data with meta, save meta length in option (for parsing on Server)
@@ -1054,32 +1082,40 @@ class UCXVan : public Van {
       iov[0].length     = meta_size;
       iov[1].buffer     = msg.data[1].data();
       iov[1].length     = msg.meta.val_len;
-      dt                = ucp_dt_make_iov();
-      buf               = iov;
-      count             = 2;
       data_size         = msg.meta.val_len;
+      req.buf           = iov;
+      req.count         = 2;
+      req.dt            = ucp_dt_make_iov();
       UCX_LOG(3, "sending meta to id(" << msg.meta.recver << ") with data: "
               << msg.meta.val_len);
     } else {
       PackMeta(msg.meta, &meta_buf, &meta_size);
-      dt        = ucp_dt_make_contig(1);
-      buf       = meta_buf;
-      count     = meta_size;
+      req.dt    = ucp_dt_make_contig(1);
+      req.buf   = meta_buf;
+      req.count = meta_size;
       data_size = 0;
       UCX_LOG(3, "sending meta to id(" << msg.meta.recver << "), src dev id "
               << src_dev_id);
     }
 
-    UCX_LOG(3, "before Send");
-    ucs_status_ptr_t st = ContextById(src_dev_id)->Send(msg, buf, count, dt, meta_buf,
-                                                        ps::Tags::UCX_TAG_META);
-    UCX_LOG(3, "after Send");
-    if (!UCS_PTR_IS_PTR(st)) {
-      // Send was completed immediately
-      delete[] meta_buf;
-      if (UCS_PTR_IS_ERR(st)) {
-        LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st));
-        return -1;
+    req.tag        = ps::Tags::UCX_TAG_META;
+    req.user_data  = meta_buf;
+    req.src_dev_id = src_dev_id;
+    req.dst_dev_id = msg.meta.dst_dev_id;
+    req.rx_id      = msg.meta.recver;
+    req.key        = msg.meta.key;
+
+    if (queue_sends_) {
+      tx_reqs_.Push(req);
+    } else {
+      ucs_status_ptr_t st = ContextById(src_dev_id)->Send(req);
+      if (!UCS_PTR_IS_PTR(st)) {
+        // Send was completed immediately
+        delete[] meta_buf;
+        if (UCS_PTR_IS_ERR(st)) {
+          LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st));
+          return -1;
+        }
       }
     }
 
@@ -1204,8 +1240,31 @@ class UCXVan : public Van {
   }
 
   void PollTxUCX() {
+    PS_VLOG(2) << "polling TX " << contexts_.size() << " ucp_contexts";
+    while (!should_stop_.load()) {
+      for (const auto& it : contexts_) {
+        it.second->PollTx();
+      }
+    }
+  }
+
+  void PollTxQueueUCX() {
    PS_VLOG(2) << "polling TX " << contexts_.size() << " ucp_contexts";
     while (!should_stop_.load()) {
+      int num = tx_reqs_.Size();
+      for (int i = 0; i < num ; ++i) {
+        UCXTxReq req;
+        tx_reqs_.WaitAndPop(&req);
+        ucs_status_ptr_t st = ContextById(req.src_dev_id)->Send(req);
+        if (!UCS_PTR_IS_PTR(st)) {
+            // Send was completed immediately
+            delete[] req.user_data;
+            if (UCS_PTR_IS_ERR(st)) {
+                LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
+            }
+        }
+      }
+
       for (const auto& it : contexts_) {
         it.second->PollTx();
       }
@@ -1236,6 +1295,8 @@ class UCXVan : public Van {
   ThreadsafeQueue<UCXBuffer>                           ordered_recv_buffers_;
   std::unique_ptr<std::thread>                         reorder_thread_;
   int                                                  force_request_order_;
+  int                                                  queue_sends_;
+  ThreadsafeQueue<UCXTxReq>                            tx_reqs_;
 };  // class UCXVan
 
 };  // namespace ps
