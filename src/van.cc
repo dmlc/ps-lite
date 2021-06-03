@@ -237,7 +237,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       }
       if (connected_nodes_.find(node_host_ip) == connected_nodes_.end()) {
         CHECK_EQ(node.id, Node::kEmpty);
-        PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
+        PS_VLOG(1) << "assign id=" << id << " to node " << node.DebugString();
         node.id = id;
         Connect(node);
         postoffice_->UpdateHeartbeat(node.id, t);
