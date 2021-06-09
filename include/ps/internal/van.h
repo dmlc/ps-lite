@@ -116,6 +116,17 @@ class Van {
   }
 
   /**
+   * \brief pin a memory address for RDMA. This can be used to
+            avoid memory registration overhead during ZPush/ZPull.
+   * \param addr the memory address
+   * \param length the size of the memory buffer
+   * \param gpu whether the address is on the GPU device
+   */
+  virtual void PinMemory(void *addr, size_t length, bool gpu) {
+    CHECK(false) << "RDMA memory registration is not supported";
+  }
+
+  /**
    * \brief set the identity of the node
    */
   virtual void SetNode(const Node& node) {

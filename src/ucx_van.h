@@ -272,7 +272,6 @@ public:
 
     return (it->second->connected) ? it->second->ep : nullptr;
   }
-
  private:
   void CloseEp(ucp_ep_h ep) {
     void *req = ucp_ep_close_nb(ep, UCP_EP_CLOSE_MODE_FLUSH);
@@ -599,6 +598,28 @@ public:
 
   void Connect(const Node &node) {
       ep_pool_.Create(node);
+  }
+
+  void PinMemory(void *addr, size_t length) {
+    ucp_mem_map_params_t mem_map_params;
+    memset(&mem_map_params, 0, sizeof(ucp_mem_map_params_t));
+    mem_map_params.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS |
+                                UCP_MEM_MAP_PARAM_FIELD_LENGTH |
+				UCP_MEM_MAP_PARAM_FIELD_MEMORY_TYPE;
+    mem_map_params.address = addr;
+    mem_map_params.length = length;
+    mem_map_params.memory_type = UCS_MEMORY_TYPE_CUDA;
+    ucp_mem_h memh = NULL;
+    auto status = ucp_mem_map(context_, &mem_map_params, &memh);
+    CHECK_STATUS(status) << "ucp_mem_map failed: " << ucs_status_string(status);
+    void *rkey_buffer_p;
+    size_t size_p;
+    status = ucp_rkey_pack(context_, memh, &rkey_buffer_p, &size_p);
+    CHECK_STATUS(status) << "ucp_rkey_pack failed: " << ucs_status_string(status);
+    ucp_rkey_buffer_release(rkey_buffer_p);
+    status = ucp_mem_unmap(context_, memh);
+    CHECK_STATUS(status) << "ucp_mem_unmap failed: " << ucs_status_string(status);
+    VLOG(1) << "Pinned memory for " << addr << " len=" << length;
   }
 
   void PollRx() {
@@ -1167,6 +1188,19 @@ class UCXVan : public Van {
     total_len += keys.size() + vals.size() + lens.size();
 
     return total_len;
+  }
+
+  void PinMemory(void *addr, size_t length, bool gpu) override {
+    CHECK(gpu) << " cpu memory registration is not implemented yet";
+    int dev_id = -1;
+#if DMLC_USE_CUDA
+    if (cudaGetDevice(&dev_id) != cudaSuccess) {
+      LOG(ERROR) << "cudaGetDevice failed";
+    }
+#endif
+    auto ctx = ContextById(dev_id);
+    CHECK(ctx) << "invalid device id " << dev_id;
+    ctx->PinMemory(addr, length);
   }
 
   bool IsPushpullRequest(const RawMeta* raw) {
