@@ -60,18 +60,17 @@ Van *Van::Create(const std::string &type, Postoffice* postoffice) {
     temp_stream >> ts_string;
 
     if (CONST_WORKER_STR == postoffice->role_str()){
-      if(sysvar.length()==0){
+      if (sysvar.length()==0) {
         fout_.open("pslite_profile_van_worker_"+ts_string, std::fstream::out);
-      }
-      else{
+      } else {
         fout_.open(sysvar + "_van_worker", std::fstream::out);
       }
     }
     else if (CONST_SERVER_STR == postoffice->role_str()){
-      if(sysvar.length()==0){
+      if (sysvar.length()==0) {
         fout_.open("pslite_profile_van_server_"+ts_string, std::fstream::out);
       }
-      else{
+      else {
         fout_.open(sysvar + "_van_server", std::fstream::out);
       }
     }
@@ -188,7 +187,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
     bool with_preferred_rank = false;
     for (auto &node: nodes->control.node) {
       if (node.aux_id != -1) {
-        LOG(INFO) << "Preferred rank detected for node " << node.DebugString();
+        LOG(INFO) << "rank detected for node " << node.DebugString();
         with_preferred_rank = true;
       }
     }
@@ -285,7 +284,8 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       Send(back);
     }
   } else {
-    PS_VLOG(1) << "AddNode: " << nodes->control.node.size() << "/" << num_nodes + 1;
+    PS_VLOG(1) << "AddNode (" << nodes->control.node.size() << "/" << num_nodes << "): "
+               << nodes->control.node.back().DebugString();
   }
 }
 

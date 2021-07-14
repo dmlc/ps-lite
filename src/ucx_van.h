@@ -1079,7 +1079,8 @@ class UCXVan : public Van {
     } else {
       ucs_status_ptr_t st = ContextById(src_dev_id)->Send(req);
       if (UCS_PTR_IS_ERR(st)) {
-        LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
+        LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st))
+                   << ". " << msg.DebugString();
         return -1;
       }
       UCX_LOG(3, "send data, len: " << msg.data[1].size() << ", to id " << id);
@@ -1137,7 +1138,8 @@ class UCXVan : public Van {
         // Send was completed immediately
         delete[] meta_buf;
         if (UCS_PTR_IS_ERR(st)) {
-          LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st));
+          LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st))
+                     << ". " << msg.DebugString();
           return -1;
         }
       }
