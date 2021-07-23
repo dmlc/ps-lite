@@ -72,6 +72,16 @@ then
     export UCX_RDMA_CM_SOURCE_ADDRESS=${NODE_TWO_IP}
 
     DMLC_ROLE=worker $GDB $BINARY $ARGS
+elif [ $1 == "joint" ]
+then
+    # launch scheduler
+    echo "This is a joint node."
+    export DMLC_NODE_HOST=${NODE_ONE_IP}
+    export UCX_RDMA_CM_SOURCE_ADDRESS=${NODE_ONE_IP}
+
+    DMLC_ROLE=scheduler $BINARY $ARGS &
+    DMLC_ROLE=server $GDB $BINARY $ARGS &
+    DMLC_ROLE=worker $GDB $BINARY $ARGS
 else
     echo "Please specify either local or remote."
 fi
