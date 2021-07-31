@@ -172,7 +172,9 @@ const std::vector<Range>& Postoffice::GetServerKeyRanges() {
     for (int i = 0; i < num_servers_; ++i) {
       server_key_ranges_.push_back(Range(
           kMaxKey / num_servers_ * i,
-          kMaxKey / num_servers_ * (i+1)));
+          // kMaxKey maynot be divided by num_servers_ exactly
+          // the end of the last range is kMaxKey
+          i + 1 == num_servers_ ? kMaxKey : kMaxKey / num_servers_ * (i+1)));
     }
   }
   server_key_ranges_mu_.unlock();
