@@ -20,12 +20,13 @@
 
 namespace ps {
 
-#define check_err(ret, msg) do {                          \
-        if (ret != 0) {                                   \
-          LOG(FATAL) << msg << ". Return Code: " << ret   \
-                     << ". ERROR: " << fi_strerror(-ret); \
-        }                                                 \
-} while (false)
+#define check_err(ret, msg)                           \
+  do {                                                \
+    if (ret != 0) {                                   \
+      LOG(FATAL) << msg << ". Return Code: " << ret   \
+                 << ". ERROR: " << fi_strerror(-ret); \
+    }                                                 \
+  } while (false)
 
 static const uint64_t kRendezvousStartMask = 0x8000000000000000ULL;
 static const uint64_t kRendezvousReplyMask = 0x4000000000000000ULL;
@@ -75,7 +76,7 @@ struct FabricWRContext {
   // number of send/recv buffers
   size_t num_buffers;
   // private msg_buf point
-  void* private_data;
+  void *private_data;
 };
 
 struct FabricMessageBuffer {
@@ -106,29 +107,25 @@ struct RendezvousMsg {
   uint64_t key;
 };
 
-std::string RendezvousDebugStr(const RendezvousMsg& msg) {
+std::string RendezvousDebugStr(const RendezvousMsg &msg) {
   std::stringstream ss;
-  ss << "meta_len = " << msg.meta_len
-     << ", data_num = " << msg.data_num
+  ss << "meta_len = " << msg.meta_len << ", data_num = " << msg.data_num
      << ", data_len = " << msg.data_len[0]
-     << ", origin_addr = " << msg.origin_addr
-     << ", tag = " << msg.tag
+     << ", origin_addr = " << msg.origin_addr << ", tag = " << msg.tag
      << ", key = " << msg.key;
   return ss.str();
 }
 
-std::string WRContextDebugStr(const FabricWRContext& ctx) {
+std::string WRContextDebugStr(const FabricWRContext &ctx) {
   std::stringstream ss;
-  ss << "type = " << ctx.type
-     << ", tag = " << ctx.tag
+  ss << "type = " << ctx.type << ", tag = " << ctx.tag
      << ", num_buffers = " << ctx.num_buffers;
   for (size_t i = 0; i < ctx.num_buffers; i++) {
-     ss << ", buffers[" << i << "].iov_base = " << ctx.buffers[i].iov_base
-        << ", buffers[" << i << "].iov_len = " << ctx.buffers[i].iov_len;
+    ss << ", buffers[" << i << "].iov_base = " << ctx.buffers[i].iov_base
+       << ", buffers[" << i << "].iov_len = " << ctx.buffers[i].iov_len;
   }
   return ss.str();
 }
-
 
 struct FabricAddr {
   // endpoint name
@@ -146,17 +143,16 @@ struct FabricAddr {
     return ss.str();
   }
 
-  void CopyFrom(const char* ep_name, const size_t ep_name_len) {
+  void CopyFrom(const char *ep_name, const size_t ep_name_len) {
     len = ep_name_len;
     memcpy(name, ep_name, sizeof(name));
   }
 
-  void CopyTo(char* ep_name, size_t* ep_name_len) {
+  void CopyTo(char *ep_name, size_t *ep_name_len) {
     *(ep_name_len) = len;
     memcpy(ep_name, name, sizeof(name));
   }
 };
-
 
 class FabricMemoryAllocator {
  public:
@@ -166,7 +162,7 @@ class FabricMemoryAllocator {
 
   ~FabricMemoryAllocator() {}
 
-  char *Alloc(size_t size, size_t* actual_size) {
+  char *Alloc(size_t size, size_t *actual_size) {
     if (size == 0) {
       return nullptr;
     }
@@ -174,7 +170,7 @@ class FabricMemoryAllocator {
     *actual_size = align_ceil(size, pagesize_);
 
     char *p;
-    aligned_malloc((void**) &p, *actual_size);
+    aligned_malloc((void **)&p, *actual_size);
     CHECK(p);
     return p;
   }
@@ -182,8 +178,8 @@ class FabricMemoryAllocator {
   size_t pagesize_ = sysconf(_SC_PAGESIZE);
 };
 
-void PrepareWRContext(FabricWRContext* context, void *meta_buff, size_t meta_size,
-                      void *data_buff, size_t data_size) {
+void PrepareWRContext(FabricWRContext *context, void *meta_buff,
+                      size_t meta_size, void *data_buff, size_t data_size) {
   context->buffers[0].iov_base = meta_buff;
   context->buffers[0].iov_len = meta_size;
   if (data_size != 0) {
@@ -194,8 +190,6 @@ void PrepareWRContext(FabricWRContext* context, void *meta_buff, size_t meta_siz
     context->num_buffers = 1;
   }
 }
-
-
 
 };  // namespace ps
 

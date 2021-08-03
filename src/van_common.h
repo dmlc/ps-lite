@@ -1,4 +1,5 @@
-// Copyright 2019 Amazon Web Services Inc. or its affiliates. All Rights Reserved.
+// Copyright 2019 Amazon Web Services Inc. or its affiliates. All Rights
+// Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,8 +18,8 @@
 
 #if defined(DMLC_USE_RDMA) || defined(DMLC_USE_FABRIC)
 
-#define DIVUP(x, y) (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
+#define DIVUP(x, y) (((x) + (y)-1) / (y))
+#define ROUNDUP(x, y) (DIVUP((x), (y)) * (y))
 
 namespace ps {
 
@@ -40,9 +41,9 @@ enum MessageTypes : uint32_t {
   kRendezvousReply,
 };
 
-static inline void aligned_malloc(void** ptr, size_t size) {
+static inline void aligned_malloc(void **ptr, size_t size) {
   size_t page_size = sysconf(_SC_PAGESIZE);
-  void* p;
+  void *p;
   int size_aligned = ROUNDUP(size, page_size);
   int ret = posix_memalign(&p, page_size, size_aligned);
   CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
@@ -51,23 +52,23 @@ static inline void aligned_malloc(void** ptr, size_t size) {
   *ptr = p;
 }
 
-
 bool IsValidPushpull(const Message &msg) {
   if (!msg.meta.control.empty()) return false;
   if (msg.meta.simple_app) return false;
   return true;
 }
 
-uint64_t DecodeKey(SArray<char> keys) { // just a translation, the decoded key might not be readable when we have multiple servers
+// just a translation, the decoded key might not be
+// readable when we have multiple servers
+uint64_t DecodeKey(SArray<char> keys) {
   ps::Key key = 0;
   uint64_t coef = 1;
   for (unsigned int i = 0; i < keys.size(); ++i) {
-    key += coef * (uint8_t) keys.data()[i];
-    coef *= 256; // 256=2^8 (uint8_t)
+    key += coef * (uint8_t)keys.data()[i];
+    coef *= 256;  // 256=2^8 (uint8_t)
   }
   return key;
 }
-
 
 template <typename T>
 class AddressPool {
@@ -76,7 +77,7 @@ class AddressPool {
     auto addrpool_size = Environment::Get()->find("BYTEPS_ADDRESS_POOL_SIZE");
     kMaxEntries = addrpool_size ? atoi(addrpool_size) : kMaxEntries;
     std::lock_guard<std::mutex> lk(mu_);
-    table_ = new T*[kMaxEntries];
+    table_ = new T *[kMaxEntries];
     // init the queue
     for (int i = 0; i < kMaxEntries; i++) {
       indices_.push(i);
@@ -103,9 +104,9 @@ class AddressPool {
     std::lock_guard<std::mutex> lk(mu_);
     CHECK(ptr);
     CHECK(!indices_.empty())
-      << "Address pool size is too small, "
-      << "current size is " << kMaxEntries
-      << ", consider increasing BYTEPS_ADDRESS_POOL_SIZE";
+        << "Address pool size is too small, "
+        << "current size is " << kMaxEntries
+        << ", consider increasing BYTEPS_ADDRESS_POOL_SIZE";
     uint32_t idx = indices_.front();
     indices_.pop();
     CHECK_EQ(table_[idx], nullptr) << idx;
@@ -120,7 +121,6 @@ class AddressPool {
   std::queue<uint32_t> indices_;
   T **table_;
 };
-
 
 };  // namespace ps
 

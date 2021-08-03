@@ -18,21 +18,19 @@
 
 #ifdef DMLC_USE_RDMA
 
-
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/shm.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <netdb.h>
 #include <poll.h>
+#include <rdma/rdma_cma.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#include <rdma/rdma_cma.h>
+#include <sys/mman.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <map>
@@ -48,12 +46,10 @@
 #include "ps/internal/van.h"
 #include "van_common.h"
 
-
 namespace ps {
 
-
-#define DIVUP(x, y) (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
+#define DIVUP(x, y) (((x) + (y)-1) / (y))
+#define ROUNDUP(x, y) (DIVUP((x), (y)) * (y))
 
 static const int kSGEntry = 1;
 static const int kTimeoutms = 1000;
@@ -71,7 +67,6 @@ enum WRContextType {
   kReceiveContext
 };
 
-
 class MemoryAllocator {
  public:
   explicit MemoryAllocator(struct ibv_pd *pd) {
@@ -81,7 +76,7 @@ class MemoryAllocator {
 
   ~MemoryAllocator() {
     std::lock_guard<std::mutex> lk(mu_);
-    for(auto &it : mr_) {
+    for (auto &it : mr_) {
       CHECK_EQ(ibv_dereg_mr(it.second), 0);
       free(it.first);
     }
@@ -96,12 +91,13 @@ class MemoryAllocator {
     size = align_ceil(size, pagesize_);
 
     char *p;
-    aligned_malloc((void**) &p, size);
+    aligned_malloc((void **)&p, size);
     CHECK(p);
 
     struct ibv_mr *mr;
-    CHECK(mr = ibv_reg_mr(pd_, p, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-    
+    CHECK(mr = ibv_reg_mr(pd_, p, size,
+                          IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+
     std::lock_guard<std::mutex> lk(mu_);
     mr_[p] = mr;
     used_list.emplace(p, size);
@@ -109,25 +105,20 @@ class MemoryAllocator {
     return p;
   }
 
-  uint32_t LocalKey(char *addr) {
-    return Addr2MR(addr)->lkey;
-  }
+  uint32_t LocalKey(char *addr) { return Addr2MR(addr)->lkey; }
 
-  uint32_t RemoteKey(char *addr) {
-    return Addr2MR(addr)->rkey;
-  }
+  uint32_t RemoteKey(char *addr) { return Addr2MR(addr)->rkey; }
 
-  struct ibv_pd* GetPD() {
+  struct ibv_pd *GetPD() {
     return pd_;
   }
 
  private:
   // convert the memory address to its associated RDMA memory region
-  inline struct ibv_mr* Addr2MR(char *addr) {
+  inline struct ibv_mr *Addr2MR(char *addr) {
     std::lock_guard<std::mutex> lk(mu_);
     auto it = mr_.find(addr);
-    CHECK_NE(it, mr_.end()) 
-        << "cannot find the associated memory region";
+    CHECK_NE(it, mr_.end()) << "cannot find the associated memory region";
 
     return it->second;
   }
@@ -182,11 +173,11 @@ struct RequestContext {
   char hostname[kMaxHostnameLength];
 };
 
-// <remote_addr, rkey, idx, local_addr> 
-typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer*> RemoteTuple;  
+// <remote_addr, rkey, idx, local_addr>
+typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer *> RemoteTuple;
 
-// recver, <remote_addr, rkey, idx> 
-typedef std::unordered_map<int, RemoteTuple> RemoteAndLocalAddress;  
+// recver, <remote_addr, rkey, idx>
+typedef std::unordered_map<int, RemoteTuple> RemoteAndLocalAddress;
 
 static_assert(std::is_pod<RendezvousStart>::value,
               "RendezvousStart must be a POD type.");
@@ -199,7 +190,8 @@ static const size_t kMempoolChunkSize =
     std::max({sizeof(RendezvousStart), sizeof(RendezvousReply)});
 
 uint64_t DecodeWorkerKey(uint64_t key) {
-  auto kr = ps::Postoffice::GetServer()->GetServerKeyRanges()[ps::Postoffice::GetServer()->my_rank()];
+  auto kr = ps::Postoffice::GetServer()
+                ->GetServerKeyRanges()[ps::Postoffice::GetServer()->my_rank()];
   return key - kr.begin();
 }
 

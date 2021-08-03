@@ -3,14 +3,15 @@
  */
 #ifndef PS_INTERNAL_CUSTOMER_H_
 #define PS_INTERNAL_CUSTOMER_H_
-#include <mutex>
-#include <vector>
-#include <utility>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
-#include <thread>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"
 namespace ps {
@@ -35,12 +36,15 @@ class Customer {
 
   /**
    * \brief constructor
-   * \param app_id the globally unique id indicating the application the postoffice
-   *               serving for
-   * \param customer_id the locally unique id indicating the customer of a postoffice
-   * \param recv_handle the functino for processing a received message
+   * \param app_id the globally unique id indicating the application the
+   * postoffice serving for
+   * \param customer_id the locally unique id indicating
+   * the customer of a postoffice
+   * \param recv_handle the functino for processing
+   * a received message
    */
-  Customer(int app_id, int customer_id, const RecvHandle& recv_handle, Postoffice* postoffice);
+  Customer(int app_id, int customer_id, const RecvHandle& recv_handle,
+           Postoffice* postoffice);
 
   /**
    * \brief desconstructor
@@ -51,7 +55,6 @@ class Customer {
    * \brief return the globally unique application id
    */
   inline int app_id() { return app_id_; }
-
 
   /**
    * \brief return the locally unique customer id
@@ -64,7 +67,6 @@ class Customer {
    * \return the timestamp of this request
    */
   int NewRequest(int recver);
-
 
   /**
    * \brief wait until the request is finished. threadsafe
@@ -87,9 +89,7 @@ class Customer {
    * \brief accept a received message from \ref Van. threadsafe
    * \param recved the received the message
    */
-  inline void Accept(const Message& recved) {
-    recv_queue_.Push(recved);
-  }
+  inline void Accept(const Message& recved) { recv_queue_.Push(recved); }
 
  private:
   /**

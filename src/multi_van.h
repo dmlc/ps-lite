@@ -24,8 +24,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <zmq.h>
 #include <sys/uio.h>
+#include <zmq.h>
 
 #include <algorithm>
 #include <map>
@@ -48,25 +48,23 @@ const int ID_OFFSET = 1000000;
 const int MAX_NUM_IDS = 1000;
 
 class MultiVanBufferContext {
-public:
+ public:
   int msg_len;
   int src_idx;
   Message msg;
 };
 
-// A van that uses multiple 0mq van under the hood. Implemented for testing purpose.
-// It supports multiple CPU devices and multiple ports.
+// A van that uses multiple 0mq van under the hood. Implemented for testing
+// purpose. It supports multiple CPU devices and multiple ports.
 class MultiVan : public Van {
  public:
-  MultiVan(Postoffice* postoffice) : Van(postoffice), postoffice_(postoffice) { }
+  MultiVan(Postoffice* postoffice) : Van(postoffice), postoffice_(postoffice) {}
 
   Postoffice* postoffice_;
 
   ~MultiVan() { PS_VLOG(1) << "~MultiVan"; }
 
-  virtual std::string GetType() const {
-    return std::string("multivan");
-  }
+  virtual std::string GetType() const { return std::string("multivan"); }
 
  protected:
   void Start(int customer_id, bool standalone) override {
@@ -81,7 +79,7 @@ class MultiVan : public Van {
     // only 1 port needed for the scheduler
     is_scheduler_ = "scheduler" == role;
     num_ports_ = 1;
-    const char *npstr = Environment::Get()->find("DMLC_NUM_PORTS");
+    const char* npstr = Environment::Get()->find("DMLC_NUM_PORTS");
     if (npstr && !is_scheduler_) num_ports_ = atoi(npstr);
 
     // van creation
@@ -96,7 +94,7 @@ class MultiVan : public Van {
   void Stop() override {
     PS_VLOG(1) << "Stopping " << my_node_.ShortDebugString();
     Van::Stop();
-    
+
     // send a TERMINATE message to myself
     should_stop_ = true;
     for (int i = 0; i < num_ports_; ++i) {
@@ -139,12 +137,13 @@ class MultiVan : public Van {
       node.dev_ids[i] = i;
       node.ports[i] = bound_port;
       my_nodes_[i] = one_node;
-      polling_threads_.emplace_back(new std::thread(&MultiVan::PollingThread, this, i));
+      polling_threads_.emplace_back(
+          new std::thread(&MultiVan::PollingThread, this, i));
     }
     return node.ports[0];
   }
 
-  void Connect(const Node &node) override {
+  void Connect(const Node& node) override {
     CHECK_NE(node.id, node.kEmpty);
     CHECK_NE(node.port, node.kEmpty);
     CHECK(node.hostname.size());
@@ -164,13 +163,14 @@ class MultiVan : public Van {
         one_node.num_ports = 1;
         one_node.port = node.ports[j];
         one_node.ports[0] = one_node.port;
-        PS_VLOG(3) << "Connect: " << one_node.DebugString() << " from " << my_nodes_[i].DebugString();
+        PS_VLOG(3) << "Connect: " << one_node.DebugString() << " from "
+                   << my_nodes_[i].DebugString();
         vans_[i]->Connect(one_node);
       }
     }
   }
 
-  int SendMsg(Message &msg) override {
+  int SendMsg(Message& msg) override {
     int remote_id = msg.meta.recver;
     CHECK_NE(remote_id, Node::kEmpty);
     // XXX assume device IDs are: [0, 1 ... num_ports - 1]
@@ -186,7 +186,6 @@ class MultiVan : public Van {
       CHECK_EQ(my_nodes_[src_idx].dev_types[0], data.src_device_type_);
       CHECK_EQ(my_nodes_[src_idx].dev_ids[0], data.src_device_id_);
       // TODO: check msg.meta.src_dev_ids, types, etc.
-      
     }
     Message van_msg = msg;
     auto van = vans_[src_idx];
@@ -196,7 +195,7 @@ class MultiVan : public Van {
     return van->SendMsg(van_msg);
   }
 
-  void RegisterRecvBuffer(Message &msg) {
+  void RegisterRecvBuffer(Message& msg) {
     Message van_msg = msg;
     CHECK_EQ(msg.data.size(), 3);
     int src_idx = msg.data[1].src_device_id_;
@@ -206,7 +205,7 @@ class MultiVan : public Van {
     van->RegisterRecvBuffer(van_msg);
   }
 
-  int RecvMsg(Message *msg) override {
+  int RecvMsg(Message* msg) override {
     msg->data.clear();
     MultiVanBufferContext ctx;
     recv_buffers_.WaitAndPop(&ctx);
@@ -252,7 +251,6 @@ class MultiVan : public Van {
     return id;
   }
 
-
   void PollingThread(int index) {
     while (!should_stop_) {
       Message msg;
@@ -283,6 +281,5 @@ class MultiVan : public Van {
 
 };  // FabricVan
 };  // namespace ps
-
 
 #endif  // PS_FABRIC_VAN_H_

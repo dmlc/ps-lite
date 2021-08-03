@@ -4,6 +4,7 @@
 #ifndef PS_SIMPLE_APP_H_
 #define PS_SIMPLE_APP_H_
 #include <string>
+
 #include "ps/internal/message.h"
 #include "ps/internal/postoffice.h"
 namespace ps {
@@ -33,14 +34,18 @@ class SimpleApp {
  public:
   /**
    * \brief constructor
-   * @param app_id the app id, should match with the remote node app with which this app
+   * @param app_id the app id, should match with the remote node app with which
+   * this app
    * @param customer_id the customer_id, should be node-locally unique
    * is communicated
    */
   explicit SimpleApp(int app_id, int customer_id, Postoffice* postoffice);
 
   /** \brief deconstructor */
-  virtual ~SimpleApp() { delete obj_; obj_ = nullptr; }
+  virtual ~SimpleApp() {
+    delete obj_;
+    obj_ = nullptr;
+  }
 
   /**
    * \brief send a request to a remote node
@@ -51,7 +56,8 @@ class SimpleApp {
    *
    * @return the timestamp of this request
    */
-  virtual inline int Request(int req_head, const std::string& req_body, int recv_id);
+  virtual inline int Request(int req_head, const std::string& req_body,
+                             int recv_id);
 
   /**
    * \brief wait until a request is finished
@@ -60,13 +66,13 @@ class SimpleApp {
    */
   virtual inline void Wait(int timestamp) { obj_->WaitRequest(timestamp); }
 
-
   /**
    * \brief send back a response for a request
    * \param recv_req the received request
    * \param the response body
    */
-  virtual inline void Response(const SimpleData& recv_req, const std::string& res_body = "");
+  virtual inline void Response(const SimpleData& recv_req,
+                               const std::string& res_body = "");
 
   /**
    * \brief the handle to proces a received request/respoonse
@@ -105,7 +111,7 @@ class SimpleApp {
     request_handle_ = [](const SimpleData& recved, SimpleApp* app) {
       app->Response(recved);
     };
-    response_handle_ = [](const SimpleData& recved, SimpleApp* app) { };
+    response_handle_ = [](const SimpleData& recved, SimpleApp* app) {};
   }
 
   /** \brief process a received message */
@@ -124,13 +130,16 @@ class SimpleApp {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-inline SimpleApp::SimpleApp(int app_id, int customer_id, Postoffice* postoffice) : SimpleApp() {
+inline SimpleApp::SimpleApp(int app_id, int customer_id, Postoffice* postoffice)
+    : SimpleApp() {
   postoffice_ = postoffice;
   using namespace std::placeholders;
-  obj_ = new Customer(app_id, customer_id, std::bind(&SimpleApp::Process, this, _1), postoffice_);
+  obj_ = new Customer(app_id, customer_id,
+                      std::bind(&SimpleApp::Process, this, _1), postoffice_);
 }
 
-inline int SimpleApp::Request(int req_head, const std::string& req_body, int recv_id) {
+inline int SimpleApp::Request(int req_head, const std::string& req_body,
+                              int recv_id) {
   // setup message
   Message msg;
   msg.meta.head = req_head;
@@ -150,7 +159,8 @@ inline int SimpleApp::Request(int req_head, const std::string& req_body, int rec
   return ts;
 }
 
-inline void SimpleApp::Response(const SimpleData& req, const std::string& res_body) {
+inline void SimpleApp::Response(const SimpleData& req,
+                                const std::string& res_body) {
   // setup message
   Message msg;
   msg.meta.head = req.head;
@@ -166,12 +176,11 @@ inline void SimpleApp::Response(const SimpleData& req, const std::string& res_bo
   postoffice_->van()->Send(msg);
 }
 
-
 inline void SimpleApp::Process(const Message& msg) {
   SimpleData recv;
-  recv.sender    = msg.meta.sender;
-  recv.head      = msg.meta.head;
-  recv.body      = msg.meta.body;
+  recv.sender = msg.meta.sender;
+  recv.head = msg.meta.head;
+  recv.body = msg.meta.body;
   recv.timestamp = msg.meta.timestamp;
   recv.customer_id = msg.meta.customer_id;
   if (msg.meta.request) {

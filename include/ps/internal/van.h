@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
 #include "ps/base.h"
 #include "ps/internal/message.h"
 namespace ps {
@@ -32,10 +33,10 @@ class Van {
    * \brief create Van
    * \param type zmq, socket, ...
    */
-  static Van *Create(const std::string &type, Postoffice* postoffice);
+  static Van *Create(const std::string &type, Postoffice *postoffice);
 
   /** \brief constructer, do nothing. use \ref Start for real start */
-  Van(Postoffice* postoffice) : postoffice_(postoffice) {}
+  Van(Postoffice *postoffice) : postoffice_(postoffice) {}
 
   /**\brief deconstructer, do nothing. use \ref Stop for real stop */
   virtual ~Van() {}
@@ -97,7 +98,7 @@ class Van {
    * with the ports and device info used by the van.
    * \return return the first port bound, -1 if failed.
    */
-  virtual int Bind(Node& node, int max_retry) = 0;
+  virtual int Bind(Node &node, int max_retry) = 0;
 
   /**
    * \brief block until received a message
@@ -129,9 +130,7 @@ class Van {
   /**
    * \brief set the identity of the node
    */
-  virtual void SetNode(const Node& node) {
-    my_node_ = node;
-  }
+  virtual void SetNode(const Node &node) { my_node_ = node; }
 
   /**
    * \brief get the node type {'fabric', 'zeromq', 'rdma'}
@@ -139,7 +138,6 @@ class Van {
   virtual std::string GetType() const = 0;
 
  protected:
-
   /**
    * \brief get the length of pack meta
    */
@@ -162,7 +160,7 @@ class Van {
   bool is_scheduler_;
   std::mutex start_mu_;
 
-  Postoffice* postoffice_;
+  Postoffice *postoffice_;
 
  private:
   /** thread function for receving */
@@ -218,13 +216,15 @@ class Van {
   void ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes);
 
   /**
-   * \brief processing logic of group-level Barrier message (run on each postoffice instance group)
+   * \brief processing logic of group-level Barrier message (run on each
+   * postoffice instance group)
    */
   void ProcessBarrierCommand(Message *msg);
 
   /**
-  * \brief processing logic of instance-level Barrier message (run on each postoffice instance)
-  */
+   * \brief processing logic of instance-level Barrier message (run on each
+   * postoffice instance)
+   */
   void ProcessInstanceBarrierCommand(Message *msg);
 
   /**

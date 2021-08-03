@@ -47,7 +47,8 @@ struct Endpoint {
 
   Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {
     auto byteps_rx_depth = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
-    auto byteps_start_depth = Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
+    auto byteps_start_depth =
+        Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
     kStartDepth = byteps_start_depth ? atoi(byteps_start_depth) : kStartDepth;
     kRxDepth = byteps_rx_depth ? atoi(byteps_rx_depth) : kRxDepth;
     kReplyDepth = kRxDepth;
@@ -102,10 +103,11 @@ struct Endpoint {
                              WRContextType type) {
     for (size_t i = 0; i < num; ++i) {
       void *buf;
-      aligned_malloc((void**) &buf, kMempoolChunkSize);
+      aligned_malloc((void **)&buf, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno) 
+      CHECK(mr)
+          << "ibv_reg_mr failed: " << strerror(errno)
           << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
           << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
 
@@ -138,11 +140,12 @@ struct Endpoint {
 
     for (int i = 0; i < kRxDepth; ++i) {
       void *buf;
-      aligned_malloc((void**) &buf, kMempoolChunkSize);
+      aligned_malloc((void **)&buf, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr =
           ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-      CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno) 
+      CHECK(mr)
+          << "ibv_reg_mr failed: " << strerror(errno)
           << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
           << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
 
@@ -175,29 +178,40 @@ struct Endpoint {
 
 class Transport {
  public:
-  virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr, uint32_t rkey, uint32_t idx) = 0;
-  
-  virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) = 0;
-  virtual int RecvPullRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) = 0;
-  virtual int RecvPushResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) = 0;
-  virtual int RecvPullResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) = 0;
+  virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr,
+                                uint32_t rkey, uint32_t idx) = 0;
 
-  virtual void Send(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) = 0;
-  virtual void SendPullRequest(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) = 0;
-  virtual void SendPushRequest(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) = 0;
-  virtual void SendPushResponse(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple)  = 0;
-  virtual void SendPullResponse(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple, size_t lkey) = 0;
+  virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx,
+                              int meta_len) = 0;
+  virtual int RecvPullRequest(Message *msg, BufferContext *buffer_ctx,
+                              int meta_len) = 0;
+  virtual int RecvPushResponse(Message *msg, BufferContext *buffer_ctx,
+                               int meta_len) = 0;
+  virtual int RecvPullResponse(Message *msg, BufferContext *buffer_ctx,
+                               int meta_len) = 0;
+
+  virtual void Send(Message &msg, MessageBuffer *msg_buf,
+                    RemoteTuple remote_tuple) = 0;
+  virtual void SendPullRequest(Message &msg, MessageBuffer *msg_buf,
+                               RemoteTuple remote_tuple) = 0;
+  virtual void SendPushRequest(Message &msg, MessageBuffer *msg_buf,
+                               RemoteTuple remote_tuple) = 0;
+  virtual void SendPushResponse(Message &msg, MessageBuffer *msg_buf,
+                                RemoteTuple remote_tuple) = 0;
+  virtual void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
+                                RemoteTuple remote_tuple, size_t lkey) = 0;
   virtual void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) = 0;
-  virtual void SendRendezvousReply(RendezvousStart *req, AddressPool<BufferContext> &pool) = 0;
+  virtual void SendRendezvousReply(RendezvousStart *req,
+                                   AddressPool<BufferContext> &pool) = 0;
 
   virtual SArray<char> CreateFunctionalSarray(void *value, size_t size) = 0;
 
-}; // class Transport
-
+};  // class Transport
 
 class RDMATransport : public Transport {
  public:
-  explicit RDMATransport(Endpoint *endpoint, MemoryAllocator *allocator, Postoffice* postoffice) {
+  explicit RDMATransport(Endpoint *endpoint, MemoryAllocator *allocator,
+                         Postoffice *postoffice) {
     endpoint_ = CHECK_NOTNULL(endpoint);
     allocator_ = CHECK_NOTNULL(allocator);
     pagesize_ = sysconf(_SC_PAGESIZE);
@@ -206,14 +220,15 @@ class RDMATransport : public Transport {
     is_server_ = postoffice_->is_server();
   };
 
-  ~RDMATransport() {};
+  ~RDMATransport(){};
 
-  virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr, uint32_t rkey, uint32_t idx) {
+  virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr,
+                                uint32_t rkey, uint32_t idx) {
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
     sge.length = msg_buf->inline_len;
     sge.lkey = allocator_->LocalKey(msg_buf->inline_buf);
-    
+
     struct ibv_send_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
     wr.wr_id = reinterpret_cast<uint64_t>(msg_buf);
@@ -233,7 +248,7 @@ class RDMATransport : public Transport {
   void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) {
     WRContext *context = nullptr;
     endpoint_->free_start_ctx.WaitAndPop(&context);
-    
+
     RendezvousStart *req =
         reinterpret_cast<RendezvousStart *>(context->buffer->addr);
     req->meta_len = msg_buf->inline_len;
@@ -242,7 +257,7 @@ class RDMATransport : public Transport {
     for (size_t i = 0; i < req->data_num; ++i) {
       req->data_len[i] = msg.data[i].size();
     }
-    
+
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(req);
     sge.lkey = context->buffer->lkey;
@@ -262,7 +277,8 @@ class RDMATransport : public Transport {
         << strerror(errno);
   }
 
-  void SendRendezvousReply(RendezvousStart *req, AddressPool<BufferContext> &addrpool) {
+  void SendRendezvousReply(RendezvousStart *req,
+                           AddressPool<BufferContext> &addrpool) {
     BufferContext *buf_ctx = new BufferContext();
     buf_ctx->meta_len = req->meta_len;
     buf_ctx->data_num = req->data_num;
@@ -272,10 +288,11 @@ class RDMATransport : public Transport {
       buf_ctx->data_len[i] = req->data_len[i];
       data_len += req->data_len[i];
     }
-    
+
     // worker only needs a buffer for receving meta
     char *buffer = allocator_->Alloc(
-        is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len) : req->meta_len);
+        is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len)
+                   : req->meta_len);
     CHECK(buffer);
     buf_ctx->buffer = buffer;
 
@@ -320,19 +337,22 @@ class RDMATransport : public Transport {
     RDMAWriteWithImm(msg_buf, raddr, rkey, idx);
   }
 
-  void SendPushRequest(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
+  void SendPushRequest(Message &msg, MessageBuffer *msg_buf,
+                       RemoteTuple remote_tuple) {
     CHECK_EQ(msg_buf->mrs.size(), 1);
     auto raddr = std::get<0>(remote_tuple);
     auto rkey = std::get<1>(remote_tuple);
     auto idx = std::get<2>(remote_tuple);
 
     // push request, split the meta and data into two writes
-    // further, it does not send keys and lens since these meta already carries these info 
+    // further, it does not send keys and lens since these meta already carries
+    // these info
     struct ibv_sge my_sge;
     my_sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[0].first->addr);
     // support variable data length
     CHECK(msg.data.size() == 3);
-    // the data size sent this time must be no larger than the one we registered the first time
+    // the data size sent this time must be no larger than the one we registered
+    // the first time
     CHECK(msg.data[1].size() <= msg_buf->mrs[0].second);
     my_sge.length = msg.data[1].size();
     my_sge.lkey = msg_buf->mrs[0].first->lkey;
@@ -347,7 +367,8 @@ class RDMATransport : public Transport {
     wr.num_sge = 1;
     wr.wr.rdma.rkey = rkey;
 
-    // write to the next page-aligned address (remote_addr should already be aligned)
+    // write to the next page-aligned address (remote_addr should already be
+    // aligned)
     wr.wr.rdma.remote_addr = raddr + align_ceil(msg_buf->inline_len, pagesize_);
 
     CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
@@ -356,23 +377,26 @@ class RDMATransport : public Transport {
     RDMAWriteWithImm(msg_buf, raddr, rkey, idx);
   }
 
-  void SendPullRequest(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
+  void SendPullRequest(Message &msg, MessageBuffer *msg_buf,
+                       RemoteTuple remote_tuple) {
     CHECK_EQ(msg_buf->mrs.size(), 0);
     Send(msg, msg_buf, remote_tuple);
   }
 
-  virtual void SendPushResponse(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
+  virtual void SendPushResponse(Message &msg, MessageBuffer *msg_buf,
+                                RemoteTuple remote_tuple) {
     CHECK_EQ(msg_buf->mrs.size(), 0);
     Send(msg, msg_buf, remote_tuple);
   }
 
-  virtual void SendPullResponse(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple, size_t lkey) {
+  virtual void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
+                                RemoteTuple remote_tuple, size_t lkey) {
     CHECK_EQ(msg_buf->mrs.size(), 0);
 
     auto raddr = msg.meta.addr;
     auto rkey = msg.meta.option;
     auto len = msg.meta.val_len;
-    CHECK_EQ((size_t) msg.meta.val_len, msg_buf->data[1].size());
+    CHECK_EQ((size_t)msg.meta.val_len, msg_buf->data[1].size());
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(msg_buf->data[1].data());
@@ -391,21 +415,23 @@ class RDMATransport : public Transport {
     wr.wr.rdma.rkey = rkey;
 
     CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
-      << "ibv_post_send failed.";
+        << "ibv_post_send failed.";
 
     // after write keys/vals/lens (no imm), write the meta (with imm)
     Send(msg, msg_buf, remote_tuple);
   }
 
-  virtual int RecvPushResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+  virtual int RecvPushResponse(Message *msg, BufferContext *buffer_ctx,
+                               int meta_len) {
     CHECK_EQ(buffer_ctx->data_num, 0);
     return 0;
   }
 
-  virtual int RecvPullRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+  virtual int RecvPullRequest(Message *msg, BufferContext *buffer_ctx,
+                              int meta_len) {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
 
-    SArray<char> vals; // add an empty sarray to pass kvapp check 
+    SArray<char> vals;  // add an empty sarray to pass kvapp check
 
     msg->data.push_back(keys);
     msg->data.push_back(vals);
@@ -413,10 +439,11 @@ class RDMATransport : public Transport {
     return keys.size() + vals.size();
   }
 
-  virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+  virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx,
+                              int meta_len) {
     CHECK(msg->meta.push && msg->meta.request);
     CHECK_EQ(buffer_ctx->data_num, 3);
-    char* cur = buffer_ctx->buffer + align_ceil((size_t) meta_len, pagesize_);
+    char *cur = buffer_ctx->buffer + align_ceil((size_t)meta_len, pagesize_);
 
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
 
@@ -432,12 +459,14 @@ class RDMATransport : public Transport {
     return keys.size() + vals.size() + lens.size();
   }
 
-  virtual int RecvPullResponse(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+  virtual int RecvPullResponse(Message *msg, BufferContext *buffer_ctx,
+                               int meta_len) {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
 
     SArray<char> vals;
     auto addr = msg->meta.addr;
-    vals.reset(reinterpret_cast<char*>(addr), msg->meta.val_len, [](void *){});
+    vals.reset(reinterpret_cast<char *>(addr), msg->meta.val_len,
+               [](void *) {});
 
     SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
 
@@ -452,7 +481,7 @@ class RDMATransport : public Transport {
     SArray<char> sarr;
     void *p = malloc(size);
     memcpy(p, value, size);
-    sarr.reset((char *) p, size, [p](void *) { free(p); });
+    sarr.reset((char *)p, size, [p](void *) { free(p); });
     return sarr;
   }
 
@@ -462,15 +491,15 @@ class RDMATransport : public Transport {
   MemoryAllocator *allocator_;
   bool is_server_;
 
-  Postoffice* postoffice_;
+  Postoffice *postoffice_;
 
-}; // class Transport
+};  // class Transport
 
 class IPCTransport : public RDMATransport {
  public:
-
-  explicit IPCTransport(Endpoint *endpoint, MemoryAllocator *allocator, Postoffice* postoffice)
-  : RDMATransport(endpoint, allocator, postoffice) {
+  explicit IPCTransport(Endpoint *endpoint, MemoryAllocator *allocator,
+                        Postoffice *postoffice)
+      : RDMATransport(endpoint, allocator, postoffice) {
     auto val = Environment::Get()->find("BYTEPS_IPC_COPY_NUM_THREADS");
     ipc_copy_nthreads_ = val ? atoi(val) : 4;
     for (int i = 0; i < ipc_copy_nthreads_; ++i) {
@@ -486,11 +515,14 @@ class IPCTransport : public RDMATransport {
 
     val = Environment::Get()->find("BYTEPS_LOCAL_SIZE");
     auto byteps_local_size = val ? atoi(val) : 8;
-    byteps_partition_bytes_ = RoundUp(byteps_partition_bytes_, byteps_local_size * sysconf(_SC_PAGESIZE));
+    byteps_partition_bytes_ = RoundUp(
+        byteps_partition_bytes_, byteps_local_size * sysconf(_SC_PAGESIZE));
 
     val = Environment::Get()->find("BYTEPS_IPC_ENABLE_ASYNC_COPY");
-    enable_async_copy_ = val ? atoi(val) : 1; // default enabled
-    if (!enable_async_copy_) LOG(INFO) << "Async copy has been disabled, this could affect the performance";
+    enable_async_copy_ = val ? atoi(val) : 1;  // default enabled
+    if (!enable_async_copy_)
+      LOG(INFO)
+          << "Async copy has been disabled, this could affect the performance";
 
     val = Environment::Get()->find("BYTEPS_PCIE_SWITCH_SIZE");
     auto byteps_nccl_pcie_size = val ? atoi(val) : 8;
@@ -498,11 +530,13 @@ class IPCTransport : public RDMATransport {
       // local_size < pcie_size or unbalance PCIe switches
       byteps_nccl_pcie_size = byteps_local_size;
     }
-    // ensure this name corresponds with that in BytePSSharedMemory::openPcieSharedMemory()
+    // ensure this name corresponds with that in
+    // BytePSSharedMemory::openPcieSharedMemory()
     if (byteps_local_size > byteps_nccl_pcie_size) {
       // cross pcie switch, use the last pcie cpu buffer
       auto byteps_pcie_num = byteps_local_size / byteps_nccl_pcie_size;
-      shm_prefix_ = kShmPciePrefix + std::to_string(byteps_pcie_num - 1) + "_Shm_";
+      shm_prefix_ =
+          kShmPciePrefix + std::to_string(byteps_pcie_num - 1) + "_Shm_";
     } else {
       shm_prefix_ = kShmPrefix;
     }
@@ -517,17 +551,20 @@ class IPCTransport : public RDMATransport {
     }
   }
 
-  void SendPushRequest(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
+  void SendPushRequest(Message &msg, MessageBuffer *msg_buf,
+                       RemoteTuple remote_tuple) {
     Send(msg, msg_buf, remote_tuple);
   }
 
-  void SendPullResponse(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple, size_t lkey) {
-    auto addr = (void*) CHECK_NOTNULL(msg.data[1].data());
-    void* shm_addr = CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
+  void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
+                        RemoteTuple remote_tuple, size_t lkey) {
+    auto addr = (void *)CHECK_NOTNULL(msg.data[1].data());
+    void *shm_addr = CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
 
     if (enable_async_copy_) {
       // async copy with a simple load-balancing strategy
-      AsyncCopy m = {msg_buf, remote_tuple, shm_addr, addr, msg.meta.val_len, false};
+      AsyncCopy m = {msg_buf, remote_tuple,     shm_addr,
+                     addr,    msg.meta.val_len, false};
       auto cnt = cpy_counter_.fetch_add(1);
       async_copy_queue_[cnt % ipc_copy_nthreads_]->Push(m);
     } else {
@@ -541,12 +578,12 @@ class IPCTransport : public RDMATransport {
     // get data message from local shared memory
     auto key = msg->meta.key;
     auto len = msg->meta.val_len;
-  
+
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
 
     SArray<char> vals;
-    void* addr = GetSharedMemory(shm_prefix_, key);
-    vals.reset(reinterpret_cast<char*>(addr), len, [](void *){});
+    void *addr = GetSharedMemory(shm_prefix_, key);
+    vals.reset(reinterpret_cast<char *>(addr), len, [](void *) {});
 
     SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
 
@@ -559,16 +596,16 @@ class IPCTransport : public RDMATransport {
 
  private:
   struct AsyncCopy {
-    MessageBuffer* msg_buf;
+    MessageBuffer *msg_buf;
     RemoteTuple remote_tuple;
-    void* dst;
-    void* src;
+    void *dst;
+    void *src;
     int len;
     bool shutdown;
   };
 
   void AsyncCopyThread(int i) {
-    auto& q = async_copy_queue_[i];
+    auto &q = async_copy_queue_[i];
     while (true) {
       AsyncCopy m;
       q->WaitAndPop(&m);
@@ -581,44 +618,45 @@ class IPCTransport : public RDMATransport {
       memcpy(m.dst, m.src, m.len);
 
       auto raddr = std::get<0>(m.remote_tuple);
-      auto rkey  = std::get<1>(m.remote_tuple);
-      auto idx   = std::get<2>(m.remote_tuple);
-      
+      auto rkey = std::get<1>(m.remote_tuple);
+      auto idx = std::get<2>(m.remote_tuple);
+
       RDMAWriteWithImm(m.msg_buf, raddr, rkey, idx);
     }
   }
 
-  void* GetSharedMemory(const std::string& prefix, uint64_t key) {
+  void *GetSharedMemory(const std::string &prefix, uint64_t key) {
     std::lock_guard<std::mutex> lock(shm_mu_);
     auto worker_key = DecodeWorkerKey(key);
     auto seq_num = worker_key % (1 << 16);
     auto base_key = worker_key - seq_num;
     uint64_t offset = byteps_partition_bytes_ * seq_num;
     if (key_shm_addr_.find(base_key) != key_shm_addr_.end()) {
-      return (void*) ((char*) key_shm_addr_[base_key] + offset);
+      return (void *)((char *)key_shm_addr_[base_key] + offset);
     }
     std::string shm_name(prefix);
     shm_name += std::to_string(base_key);
     int shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0666);
-    CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name
-        << ", " << strerror(errno);
+    CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name << ", "
+                        << strerror(errno);
 
     struct stat sb;
     CHECK_EQ(0, fstat(shm_fd, &sb)) << strerror(errno);
     auto total_shm_size = sb.st_size;
 
-    void* base_ptr = mmap(0, total_shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    CHECK_NE(base_ptr, (void*) -1) << strerror(errno);
+    void *base_ptr =
+        mmap(0, total_shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    CHECK_NE(base_ptr, (void *)-1) << strerror(errno);
     key_shm_addr_[base_key] = base_ptr;
 
-    PS_VLOG(1) << "open Shared Memory: " << shm_name << ", offset=" 
-        << offset << ", (in bytes) size=" << total_shm_size;
-    return (void*) ((char*) key_shm_addr_[base_key] + offset);
+    PS_VLOG(1) << "open Shared Memory: " << shm_name << ", offset=" << offset
+               << ", (in bytes) size=" << total_shm_size;
+    return (void *)((char *)key_shm_addr_[base_key] + offset);
   }
 
   int ipc_copy_nthreads_;
-  std::vector<std::thread*> ipc_copy_thread_list_;
-  std::vector<ThreadsafeQueue<AsyncCopy>*> async_copy_queue_;
+  std::vector<std::thread *> ipc_copy_thread_list_;
+  std::vector<ThreadsafeQueue<AsyncCopy> *> async_copy_queue_;
   std::atomic<unsigned long long> cpy_counter_{0};
 
   int byteps_partition_bytes_ = 4096000;
@@ -630,11 +668,9 @@ class IPCTransport : public RDMATransport {
 
   bool enable_async_copy_;
 
-}; // class IPCTransport
-
+};  // class IPCTransport
 
 };  // namespace ps
 
 #endif  // DMLC_USE_RDMA
 #endif  // PS_RDMA_VAN_H_
-

@@ -3,13 +3,14 @@
  */
 #ifndef PS_INTERNAL_POSTOFFICE_H_
 #define PS_INTERNAL_POSTOFFICE_H_
-#include <mutex>
 #include <algorithm>
+#include <mutex>
 #include <vector>
-#include "ps/range.h"
-#include "ps/internal/env.h"
+
 #include "ps/internal/customer.h"
+#include "ps/internal/env.h"
 #include "ps/internal/van.h"
+#include "ps/range.h"
 namespace ps {
 
 /**
@@ -64,21 +65,24 @@ class Postoffice {
   /**
    * \brief start the system
    *
-   * This function will block until every nodes are started if do_barrier is True.
+   * This function will block until every nodes are started if do_barrier is
+   True.
    * \param customer_id the customer id
    * \param role the role of the postoffice
-   * \param rank the rank. -1 means no preference and the rank will be assigned by
-      the scheduler.
+   * \param rank the rank. -1 means no preference and the rank will be assigned
+   by the scheduler.
    * \param do_barrier whether to block until every nodes are started.
    * \param argv0 the program name, used for logging.
    */
-  void Start(int customer_id, const Node::Role role, int rank, const bool do_barrier, const char* argv0);
+  void Start(int customer_id, const Node::Role role, int rank,
+             const bool do_barrier, const char* argv0);
 
   /**
    * \brief terminate the system
    *
-   * All nodes should call this function before existing. 
-   * \param do_barrier whether to do block until every node is finalized, default true.
+   * All nodes should call this function before existing.
+   * \param do_barrier whether to do block until every node is finalized,
+   * default true.
    */
   void Finalize(const int customer_id, const bool do_barrier = true);
   /**
@@ -131,9 +135,7 @@ class Postoffice {
    * \endcode
    * \param cb the callback function
    */
-  void RegisterExitCallback(const Callback& cb) {
-    exit_callback_ = cb;
-  }
+  void RegisterExitCallback(const Callback& cb) { exit_callback_ = cb; }
 
   /**
    * \brief convert a worker group's rank into a instance id with the
@@ -171,16 +173,12 @@ class Postoffice {
    * \brief convert from a worker rank into a node id
    * \param rank the worker rank
    */
-  static inline int WorkerRankToID(int rank) {
-    return rank * 2 + 9;
-  }
+  static inline int WorkerRankToID(int rank) { return rank * 2 + 9; }
   /**
    * \brief convert from a server rank into a node id
    * \param rank the server rank
    */
-  static inline int ServerRankToID(int rank) {
-    return rank * 2 + 8;
-  }
+  static inline int ServerRankToID(int rank) { return rank * 2 + 8; }
   /**
    * \brief convert from a node id into a server or worker rank
    * \param id the node id
@@ -209,7 +207,7 @@ class Postoffice {
    */
   int my_rank() const { return IDtoRank(van_->my_node().id); }
 
-  int preferred_rank() const {return preferred_rank_;}
+  int preferred_rank() const { return preferred_rank_; }
   /** \brief Returns true if this node is a worker node */
   int is_worker() const { return is_worker_; }
   /** \brief Returns true if this node is a server node. */
@@ -295,7 +293,7 @@ class Postoffice {
 
   // a hint for preferred rank
   int preferred_rank_;
-  std::unordered_map<int, std::unordered_map<int, bool> > barrier_done_;
+  std::unordered_map<int, std::unordered_map<int, bool>> barrier_done_;
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
@@ -305,7 +303,8 @@ class Postoffice {
   int instance_idx_ = 0;
   std::unordered_map<int, time_t> heartbeats_;
   Callback exit_callback_;
-  /** \brief Holding a shared_ptr to prevent it from being destructed too early */
+  /** \brief Holding a shared_ptr to prevent it from being destructed too early
+   */
   std::shared_ptr<Environment> env_ref_;
   time_t start_time_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);

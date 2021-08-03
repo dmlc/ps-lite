@@ -3,38 +3,46 @@
  */
 #ifndef PS_INTERNAL_MESSAGE_H_
 #define PS_INTERNAL_MESSAGE_H_
-#include <vector>
-#include <limits>
-#include <string>
-#include <sstream>
 #include <array>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include "ps/sarray.h"
 namespace ps {
 /** \brief data type */
 enum DataType {
-  CHAR, INT8, INT16, INT32, INT64,
-  UINT8, UINT16, UINT32, UINT64,
-  FLOAT, DOUBLE, OTHER
+  CHAR,
+  INT8,
+  INT16,
+  INT32,
+  INT64,
+  UINT8,
+  UINT16,
+  UINT32,
+  UINT64,
+  FLOAT,
+  DOUBLE,
+  OTHER
 };
 
 /** \brief data type name */
-static const char* DataTypeName[] = {
-  "CHAR", "INT8", "INT16", "INT32", "INT64",
-  "UINT8", "UINT16", "UINT32", "UINT64",
-  "FLOAT", "DOUBLE", "OTHER"
-};
+static const char* DataTypeName[] = {"CHAR",   "INT8",  "INT16",  "INT32",
+                                     "INT64",  "UINT8", "UINT16", "UINT32",
+                                     "UINT64", "FLOAT", "DOUBLE", "OTHER"};
 
 /**
  * \brief compare if V and W are the same type
  */
-template<typename V, typename W>
+template <typename V, typename W>
 inline bool SameType() {
   return std::is_same<typename std::remove_cv<V>::type, W>::value;
 }
 /**
  * \brief return the DataType of V
  */
-template<typename V>
+template <typename V>
 DataType GetDataType() {
   if (SameType<V, int8_t>()) {
     return INT8;
@@ -73,10 +81,13 @@ struct Node {
   /** \brief get debug string */
   std::string DebugString() const {
     std::stringstream ss;
-    ss << "[role=" << (role == SERVER ? "server" : (role == WORKER ? "worker" : "scheduler"))
+    ss << "[role="
+       << (role == SERVER ? "server"
+                          : (role == WORKER ? "worker" : "scheduler"))
        << (id != kEmpty ? ", id=" + std::to_string(id) : "")
-       << ", ip=" << hostname << ", port=" << port << ", is_recovery=" << is_recovery
-       << ", aux_id=" << aux_id << ", num_ports=" << num_ports;
+       << ", ip=" << hostname << ", port=" << port
+       << ", is_recovery=" << is_recovery << ", aux_id=" << aux_id
+       << ", num_ports=" << num_ports;
     if (num_ports > 1) {
       ss << ", ports=[";
       for (int i = 0; i < num_ports; ++i) {
@@ -128,7 +139,8 @@ struct Node {
   char endpoint_name[64];
   /** \brief the length of the endpoint name */
   size_t endpoint_name_len = 0;
-  /** \brief the auxilary id. currently used for fabric van communication setup */
+  /** \brief the auxilary id. currently used for fabric van communication setup
+   */
   /** also used for the rank assignment phase for p2p communication**/
   int aux_id = -1;
 };
@@ -138,16 +150,16 @@ struct Node {
  */
 struct Control {
   /** \brief empty constructor */
-  Control() : cmd(EMPTY) { }
+  Control() : cmd(EMPTY) {}
   /** \brief return true is empty */
   inline bool empty() const { return cmd == EMPTY; }
   /** \brief get debug string */
   std::string DebugString() const {
     if (empty()) return "";
     std::vector<std::string> cmds = {
-      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT", "BOOTSTRAP", "ADDR_REQUEST",
-      "ADDR_RESOLVED", "INSTANCE_BARRIER"
-    };
+        "EMPTY",         "TERMINATE",       "ADD_NODE",  "BARRIER",
+        "ACK",           "HEARTBEAT",       "BOOTSTRAP", "ADDR_REQUEST",
+        "ADDR_RESOLVED", "INSTANCE_BARRIER"};
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
     if (node.size()) {
@@ -155,13 +167,24 @@ struct Control {
       for (const Node& n : node) ss << " " << n.DebugString();
       ss << " }";
     }
-    if (cmd == BARRIER || cmd == INSTANCE_BARRIER) ss << ", barrier_group=" << barrier_group;
+    if (cmd == BARRIER || cmd == INSTANCE_BARRIER)
+      ss << ", barrier_group=" << barrier_group;
     if (cmd == ACK) ss << ", msg_sig=" << msg_sig;
     return ss.str();
   }
   /** \brief all commands */
-  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, BOOTSTRAP, ADDR_REQUEST,
-                 ADDR_RESOLVED, INSTANCE_BARRIER};
+  enum Command {
+    EMPTY,
+    TERMINATE,
+    ADD_NODE,
+    BARRIER,
+    ACK,
+    HEARTBEAT,
+    BOOTSTRAP,
+    ADDR_REQUEST,
+    ADDR_RESOLVED,
+    INSTANCE_BARRIER
+  };
   /** \brief the command */
   Command cmd;
   /** \brief node infos */
@@ -178,9 +201,16 @@ struct Meta {
   /** \brief the empty value */
   static const int kEmpty;
   /** \brief default constructor */
-  Meta() : head(kEmpty), app_id(kEmpty), customer_id(kEmpty),
-           timestamp(kEmpty), sender(kEmpty), recver(kEmpty),
-           request(false), push(false), simple_app(false) {}
+  Meta()
+      : head(kEmpty),
+        app_id(kEmpty),
+        customer_id(kEmpty),
+        timestamp(kEmpty),
+        sender(kEmpty),
+        recver(kEmpty),
+        request(false),
+        push(false),
+        simple_app(false) {}
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {
@@ -188,20 +218,19 @@ struct Meta {
     } else {
       ss << sender;
     }
-    ss <<  " => " << recver;
+    ss << " => " << recver;
     ss << ". Meta: request=" << request;
     if (timestamp != kEmpty) ss << ", timestamp=" << timestamp;
     if (!control.empty()) {
       ss << ", control={ " << control.DebugString() << " }";
     } else {
-      ss << ", app_id=" << app_id
-         << ", customer_id=" << customer_id
-         << ", simple_app=" << simple_app
-         << ", push=" << push
+      ss << ", app_id=" << app_id << ", customer_id=" << customer_id
+         << ", simple_app=" << simple_app << ", push=" << push
          << ", sid=" << sid;
     }
     if (head != kEmpty) ss << ", head=" << head;
-    if (control.empty() && !simple_app) ss << ", key=" << key; // valid data msg
+    if (control.empty() && !simple_app)
+      ss << ", key=" << key;  // valid data msg
     if (body.size()) ss << ", body=" << body;
     if (data_type.size()) {
       ss << ", dtype={";

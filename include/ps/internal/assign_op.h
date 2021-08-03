@@ -23,19 +23,24 @@ enum AssignOp {
 /**
  * \brief return an assignment function: right op= left
  */
-template<typename T>
+template <typename T>
 inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {
     case ASSIGN:
-      *right = left; break;
+      *right = left;
+      break;
     case PLUS:
-      *right += left; break;
+      *right += left;
+      break;
     case MINUS:
-      *right -= left; break;
+      *right -= left;
+      break;
     case TIMES:
-      *right *= left; break;
+      *right *= left;
+      break;
     case DIVIDE:
-      *right /= left; break;
+      *right /= left;
+      break;
     default:
       LOG(FATAL) << "use AssignOpInt..";
   }
@@ -45,28 +50,35 @@ inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
  * \brief return an assignment function including bit operations, only
  * works for integers
  */
-template<typename T>
+template <typename T>
 inline void AssignFuncInt(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {
     case ASSIGN:
-      *right = left; break;
+      *right = left;
+      break;
     case PLUS:
-      *right += left; break;
+      *right += left;
+      break;
     case MINUS:
-      *right -= left; break;
+      *right -= left;
+      break;
     case TIMES:
-      *right *= left; break;
+      *right *= left;
+      break;
     case DIVIDE:
-      *right /= left; break;
+      *right /= left;
+      break;
     case AND:
-      *right &= left; break;
+      *right &= left;
+      break;
     case OR:
-      *right |= left; break;
+      *right |= left;
+      break;
     case XOR:
-      *right ^= left; break;
+      *right ^= left;
+      break;
   }
 }
-
 
 }  // namespace ps
 #endif  // PS_INTERNAL_ASSIGN_OP_H_

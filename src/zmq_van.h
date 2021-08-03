@@ -4,14 +4,16 @@
 #ifndef PS_ZMQ_VAN_H_
 #define PS_ZMQ_VAN_H_
 #include <stdio.h>
-#include <cstdlib>
 #include <zmq.h>
-#include <string>
-#include <cstring>
-#include <thread>
-#include <cmath>
+
 #include <atomic>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
 #include <tuple>
+
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
 #if _MSC_VER
@@ -20,7 +22,7 @@
 
 namespace ps {
 
-struct ZmqBufferContext { // for clarity, don't merge meta and data
+struct ZmqBufferContext {  // for clarity, don't merge meta and data
   int sender;
   zmq_msg_t* meta_zmsg;
   std::vector<zmq_msg_t*> data_zmsg;
@@ -45,9 +47,7 @@ class ZMQVan : public Van {
   ZMQVan(Postoffice* postoffice) : Van(postoffice) {}
   virtual ~ZMQVan() {}
 
-  virtual std::string GetType() const {
-    return std::string("zeromq");
-  }
+  virtual std::string GetType() const { return std::string("zeromq"); }
 
  public:
   void Start(int customer_id, bool standalone) {
@@ -78,7 +78,8 @@ class ZMQVan : public Van {
     // join all threads
     should_stop_ = true;
     for (auto t : thread_list_) t->join();
-    PS_VLOG(1) << my_node_.ShortDebugString() << " all threads joined and destroyed";
+    PS_VLOG(1) << my_node_.ShortDebugString()
+               << " all threads joined and destroyed";
     // close sockets
     int linger = 0;
     int rc = zmq_setsockopt(receiver_, ZMQ_LINGER, &linger, sizeof(linger));
@@ -97,10 +98,11 @@ class ZMQVan : public Van {
 
   int Bind(Node& node, int max_retry) override {
     CHECK_EQ(my_node_.num_ports, 1)
-      << "zmq van does not support multiple ports";
+        << "zmq van does not support multiple ports";
     receiver_ = zmq_socket(context_, ZMQ_ROUTER);
     int option = 1;
-    CHECK(!zmq_setsockopt(receiver_, ZMQ_ROUTER_MANDATORY, &option, sizeof(option)))
+    CHECK(!zmq_setsockopt(receiver_, ZMQ_ROUTER_MANDATORY, &option,
+                          sizeof(option)))
         << zmq_strerror(errno);
     CHECK(receiver_ != NULL)
         << "create receiver socket failed: " << zmq_strerror(errno);
@@ -121,14 +123,15 @@ class ZMQVan : public Van {
         port = -1;
         int zmq_err = zmq_errno();
         LOG(FATAL) << "Reached max retry for bind: " << zmq_strerror(zmq_err)
-          << ". errno = " << zmq_err;
+                   << ". errno = " << zmq_err;
       } else {
         port = 10000 + rand_r(&seed) % 40000;
       }
     }
     std::lock_guard<std::mutex> lk(mu_);
     is_worker_ = (node.role == Node::WORKER ? true : false);
-    auto t = new std::thread(&ZMQVan::CallZmqRecvThread, this, (void*) receiver_);
+    auto t =
+        new std::thread(&ZMQVan::CallZmqRecvThread, this, (void*)receiver_);
     thread_list_.push_back(t);
 
     return port;
@@ -145,9 +148,10 @@ class ZMQVan : public Van {
       zmq_close(it->second);
     }
     mu_.unlock();
-    // worker doesn't need to connect to the other workers if not in standalone mode.
-    // same for server
-    if ((node.role == my_node_.role) && (node.id != my_node_.id) && !standalone_) {
+    // worker doesn't need to connect to the other workers if not in standalone
+    // mode. same for server
+    if ((node.role == my_node_.role) && (node.id != my_node_.id) &&
+        !standalone_) {
       PS_VLOG(1) << "Zmq skipped connection to node " << node.DebugString()
                  << ". My node is " << my_node_.DebugString();
       return;
@@ -164,8 +168,9 @@ class ZMQVan : public Van {
       std::string my_id = "ps" + std::to_string(my_node_.id);
       zmq_setsockopt(sender, ZMQ_IDENTITY, my_id.data(), my_id.size());
       std::lock_guard<std::mutex> lk(mu_);
-      if (is_worker_ && (senders_.find(id)==senders_.end())) {
-        auto t = new std::thread(&ZMQVan::CallZmqRecvThread, this, (void*) sender);
+      if (is_worker_ && (senders_.find(id) == senders_.end())) {
+        auto t =
+            new std::thread(&ZMQVan::CallZmqRecvThread, this, (void*)sender);
         thread_list_.push_back(t);
       }
     }
@@ -203,7 +208,7 @@ class ZMQVan : public Van {
     return ZmqSendMsg(socket, msg);
   }
 
-  void RegisterRecvBuffer(Message &msg) {
+  void RegisterRecvBuffer(Message& msg) {
     CHECK_EQ(msg.data.size(), 3);
     auto key_ptr = reinterpret_cast<Key*>(msg.data[0].data());
     auto val = msg.data[1];
@@ -211,10 +216,11 @@ class ZMQVan : public Van {
     auto& buffs = registered_buffs_[sender];
     buffs[*key_ptr] = val;
 
-    PS_VLOG(1) << "Registered buffer for worker=" << sender << ", key="
-      << *key_ptr << ", size=" << val.size() << ", addr=" << (long long)val.data()
-      << ", my_id=" << my_node_.id
-      << " buff_count=" << registered_buffs_.size();
+    PS_VLOG(1) << "Registered buffer for worker=" << sender
+               << ", key=" << *key_ptr << ", size=" << val.size()
+               << ", addr=" << (long long)val.data()
+               << ", my_id=" << my_node_.id
+               << " buff_count=" << registered_buffs_.size();
   }
 
   int RecvMsg(Message* msg) override {
@@ -251,29 +257,29 @@ class ZMQVan : public Van {
             CHECK_EQ(val.size(), size) << val.size() << " v.s." << size;
             std::memcpy(val.data(), buf, val.size());
             msg->data.push_back(val);
-            PS_VLOG(3) << "Using registered buffer " << (long long) val.data() << ", key=" << *key;
+            PS_VLOG(3) << "Using registered buffer " << (long long)val.data()
+                       << ", key=" << *key;
             continue;
           } else {
             PS_VLOG(3) << "Cannot find registered buffer for key=" << *key;
           }
         } else {
-          PS_VLOG(3) << "Cannot find registered buffer for sender=" << sender << " my_id=" << my_node_.id
-            << " buff count=" << registered_buffs_.size();
+          PS_VLOG(3) << "Cannot find registered buffer for sender=" << sender
+                     << " my_id=" << my_node_.id
+                     << " buff count=" << registered_buffs_.size();
         }
       }
 
       SArray<char> data;
       // zero copy
-      data.reset(buf, size, 
-        [zmsg, size](void *) {
-          zmq_msg_close(zmsg);
-          delete zmsg;
-        },
-        msg->meta.src_dev_type,
-        msg->meta.src_dev_id,
-        msg->meta.dst_dev_type,
-        msg->meta.dst_dev_id
-      );
+      data.reset(
+          buf, size,
+          [zmsg, size](void*) {
+            zmq_msg_close(zmsg);
+            delete zmsg;
+          },
+          msg->meta.src_dev_type, msg->meta.src_dev_id, msg->meta.dst_dev_type,
+          msg->meta.dst_dev_id);
 
       msg->data.push_back(data);
     }
@@ -282,7 +288,6 @@ class ZMQVan : public Van {
   }
 
  private:
-
   int NonWorkerSendMsg(Message& msg) {
     std::lock_guard<std::mutex> lk(mu_);
 
@@ -298,23 +303,23 @@ class ZMQVan : public Van {
 
     void* socket;
 
-    if (msg.meta.simple_app || !msg.meta.control.empty()
-               || (GetRoleFromId(id) != Node::WORKER)) {
+    if (msg.meta.simple_app || !msg.meta.control.empty() ||
+        (GetRoleFromId(id) != Node::WORKER)) {
       socket = it->second;
-    }
-    else { // data msg, and recver is WORKER
-      socket = receiver_; // scheduler/server using receiver socket --> worker sender socket
+    } else {               // data msg, and recver is WORKER
+      socket = receiver_;  // scheduler/server using receiver socket --> worker
+                           // sender socket
 
       // first, send dst id
       std::string dst = "ps" + std::to_string(id);
       int len = dst.size();
-      char *dst_array = new char[len + 1];
+      char* dst_array = new char[len + 1];
       strcpy(dst_array, dst.c_str());
       CHECK(dst_array);
 
       zmq_msg_t zmsg_dstid;
-      CHECK_EQ(zmq_msg_init_data(
-          &zmsg_dstid, dst_array, len, FreeData, NULL), 0);
+      CHECK_EQ(zmq_msg_init_data(&zmsg_dstid, dst_array, len, FreeData, NULL),
+               0);
       while (true) {
         if (len == zmq_msg_send(&zmsg_dstid, receiver_, ZMQ_SNDMORE)) break;
         if (errno == EINTR) continue;
@@ -324,13 +329,13 @@ class ZMQVan : public Van {
       // second, send my id
       std::string my_id = "ps" + std::to_string(my_node_.id);
       len = my_id.size();
-      char *myid_array = new char[len + 1];
+      char* myid_array = new char[len + 1];
       strcpy(myid_array, my_id.c_str());
       CHECK(myid_array);
 
       zmq_msg_t zmsg_myid;
-      CHECK_EQ(zmq_msg_init_data(
-          &zmsg_myid, myid_array, len, FreeData, NULL), 0);
+      CHECK_EQ(zmq_msg_init_data(&zmsg_myid, myid_array, len, FreeData, NULL),
+               0);
       while (true) {
         if (len == zmq_msg_send(&zmsg_myid, receiver_, ZMQ_SNDMORE)) break;
         if (errno == EINTR) continue;
@@ -346,24 +351,25 @@ class ZMQVan : public Van {
     LOG(INFO) << "Start ZMQ recv thread";
 
     while (true) {
-      ZmqBufferContext *buf_ctx = new ZmqBufferContext();
+      ZmqBufferContext* buf_ctx = new ZmqBufferContext();
 
       for (int i = 0;; ++i) {
         zmq_msg_t* zmsg = new zmq_msg_t;
         CHECK(zmq_msg_init(zmsg) == 0) << zmq_strerror(errno);
         while (true) {
           std::lock_guard<std::mutex> lk(mu_);
-          // the zmq_msg_recv should be non-blocking, otherwise deadlock will happen
+          // the zmq_msg_recv should be non-blocking, otherwise deadlock will
+          // happen
           int tag = ZMQ_DONTWAIT;
           if (should_stop_ || zmq_msg_recv(zmsg, socket, tag) != -1) break;
           if (errno == EINTR) {
             std::cout << "interrupted";
             continue;
-          } else if (errno == EAGAIN) { // ZMQ_DONTWAIT
+          } else if (errno == EAGAIN) {  // ZMQ_DONTWAIT
             continue;
           }
           CHECK(0) << "failed to receive message. errno: " << errno << " "
-                       << zmq_strerror(errno);
+                   << zmq_strerror(errno);
         }
         if (should_stop_) break;
         char* buf = CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
@@ -375,22 +381,20 @@ class ZMQVan : public Van {
           CHECK(zmq_msg_more(zmsg));
           zmq_msg_close(zmsg);
           delete zmsg;
-        }
-        else if (i == 1) {
+        } else if (i == 1) {
           // task
           buf_ctx->meta_zmsg = zmsg;
           bool more = zmq_msg_more(zmsg);
           if (!more) break;
-        }
-        else {
+        } else {
           buf_ctx->data_zmsg.push_back(zmsg);
           bool more = zmq_msg_more(zmsg);
           if (!more) break;
         }
-      } // for
+      }  // for
       if (should_stop_) break;
       recv_buffers_.Push(*buf_ctx);
-    } // while
+    }  // while
   }
 
   int ZmqSendMsg(void* socket, Message& msg) {
@@ -421,9 +425,8 @@ class ZMQVan : public Van {
       while (true) {
         if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
         if (errno == EINTR) continue;
-        LOG(WARNING) << "failed to send message, errno: "
-                     << errno << " " << zmq_strerror(errno)
-                     << ". " << i << "/" << n;
+        LOG(WARNING) << "failed to send message, errno: " << errno << " "
+                     << zmq_strerror(errno) << ". " << i << "/" << n;
         return -1;
       }
       zmq_msg_close(&data_msg);
@@ -475,8 +478,8 @@ class ZMQVan : public Van {
 
   std::vector<std::thread*> thread_list_;
   bool standalone_;
-  std::unordered_map<int, std::unordered_map<Key, SArray<char>>> registered_buffs_;
-
+  std::unordered_map<int, std::unordered_map<Key, SArray<char>>>
+      registered_buffs_;
 };
 }  // namespace ps
 

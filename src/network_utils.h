@@ -7,15 +7,15 @@
 #define PS_NETWORK_UTILS_H_
 #include <unistd.h>
 #ifdef _MSC_VER
-#include <tchar.h>
-#include <winsock2.h>
-#include <windows.h>
 #include <iphlpapi.h>
+#include <tchar.h>
+#include <windows.h>
+#include <winsock2.h>
 #undef interface
 #else
-#include <net/if.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #endif
 #include <string>
@@ -29,10 +29,10 @@ void GetIP(const std::string& interface, std::string* ip) {
 #ifdef _MSC_VER
   typedef std::basic_string<TCHAR> tstring;
   // Try to get the Adapters-info table, so we can given useful names to the IP
-  // addresses we are returning.  Gotta call GetAdaptersInfo() up to 5 times to handle
-  // the potential race condition between the size-query call and the get-data call.
-  // I love a well-designed API :^P
-  IP_ADAPTER_INFO * pAdapterInfo = NULL;
+  // addresses we are returning.  Gotta call GetAdaptersInfo() up to 5 times to
+  // handle the potential race condition between the size-query call and the
+  // get-data call. I love a well-designed API :^P
+  IP_ADAPTER_INFO* pAdapterInfo = NULL;
   {
     ULONG bufLen = 0;
     for (int i = 0; i < 5; i++) {
@@ -50,27 +50,30 @@ void GetIP(const std::string& interface, std::string* ip) {
     }
   }
   if (pAdapterInfo) {
-    tstring keybase = _T(
+    tstring keybase =
+        _T(
         "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
     tstring connection = _T("\\Connection");
 
-    IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
+    IP_ADAPTER_INFO* curpAdapterInfo = pAdapterInfo;
     while (curpAdapterInfo) {
       HKEY hKEY;
       std::string AdapterName = curpAdapterInfo->AdapterName;
       // GUID only ascii
-      tstring key_set = keybase + tstring(AdapterName.begin(), AdapterName.end()) + connection;
+      tstring key_set = keybase +
+                        tstring(AdapterName.begin(), AdapterName.end()) +
+                        connection;
       LPCTSTR data_Set = key_set.c_str();
       LPCTSTR dwValue = NULL;
       if (ERROR_SUCCESS ==
           ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, data_Set, 0, KEY_READ, &hKEY)) {
         DWORD dwSize = 0;
         DWORD dwType = REG_SZ;
-        if (ERROR_SUCCESS ==
-            ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize)) {
+        if (ERROR_SUCCESS == ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType,
+                                               (LPBYTE)dwValue, &dwSize)) {
           dwValue = new TCHAR[dwSize];
-          if (ERROR_SUCCESS ==
-              ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize)) {
+          if (ERROR_SUCCESS == ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType,
+                                                 (LPBYTE)dwValue, &dwSize)) {
             // interface name must only ascii
             tstring tstr = dwValue;
             std::string s(tstr.begin(), tstr.end());
@@ -87,21 +90,20 @@ void GetIP(const std::string& interface, std::string* ip) {
     free(pAdapterInfo);
   }
 #else
-  struct ifaddrs * ifAddrStruct = NULL;
-  struct ifaddrs * ifa = NULL;
-  void * tmpAddrPtr = NULL;
+  struct ifaddrs* ifAddrStruct = NULL;
+  struct ifaddrs* ifa = NULL;
+  void* tmpAddrPtr = NULL;
 
   getifaddrs(&ifAddrStruct);
   for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == NULL) continue;
     if (ifa->ifa_addr->sa_family == AF_INET) {
       // is a valid IP4 Address
-      tmpAddrPtr = &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr))->sin_addr;
+      tmpAddrPtr =
+          &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr))->sin_addr;
       char addressBuffer[INET_ADDRSTRLEN];
       inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-      if (strncmp(ifa->ifa_name,
-                  interface.c_str(),
-                  interface.size()) == 0) {
+      if (strncmp(ifa->ifa_name, interface.c_str(), interface.size()) == 0) {
         *ip = addressBuffer;
         break;
       }
@@ -111,18 +113,16 @@ void GetIP(const std::string& interface, std::string* ip) {
 #endif
 }
 
-
 /**
  * \brief return the IP address and Interface the first interface which is not
  * loopback
  *
  * only support IPv4
  */
-void GetAvailableInterfaceAndIP(
-    std::string* interface, std::string* ip) {
+void GetAvailableInterfaceAndIP(std::string* interface, std::string* ip) {
 #ifdef _MSC_VER
   typedef std::basic_string<TCHAR> tstring;
-  IP_ADAPTER_INFO * pAdapterInfo = NULL;
+  IP_ADAPTER_INFO* pAdapterInfo = NULL;
   {
     ULONG bufLen = 0;
     for (int i = 0; i < 5; i++) {
@@ -140,11 +140,12 @@ void GetAvailableInterfaceAndIP(
     }
   }
   if (pAdapterInfo) {
-    tstring keybase = _T(
+    tstring keybase =
+        _T(
         "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
     tstring connection = _T("\\Connection");
 
-    IP_ADAPTER_INFO *curpAdapterInfo = pAdapterInfo;
+    IP_ADAPTER_INFO* curpAdapterInfo = pAdapterInfo;
     HKEY hKEY = NULL;
     while (curpAdapterInfo) {
       std::string curip(curpAdapterInfo->IpAddressList.IpAddress.String);
@@ -159,18 +160,20 @@ void GetAvailableInterfaceAndIP(
 
       std::string AdapterName = curpAdapterInfo->AdapterName;
       // GUID only ascii
-      tstring key_set = keybase + tstring(AdapterName.begin(), AdapterName.end()) + connection;
+      tstring key_set = keybase +
+                        tstring(AdapterName.begin(), AdapterName.end()) +
+                        connection;
       LPCTSTR data_Set = key_set.c_str();
       LPCTSTR dwValue = NULL;
       if (ERROR_SUCCESS ==
           ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, data_Set, 0, KEY_READ, &hKEY)) {
         DWORD dwSize = 0;
         DWORD dwType = REG_SZ;
-        if (ERROR_SUCCESS ==
-            ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize)) {
+        if (ERROR_SUCCESS == ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType,
+                                               (LPBYTE)dwValue, &dwSize)) {
           dwValue = new TCHAR[dwSize];
-          if (ERROR_SUCCESS ==
-              ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType, (LPBYTE)dwValue, &dwSize)) {
+          if (ERROR_SUCCESS == ::RegQueryValueEx(hKEY, _T("Name"), 0, &dwType,
+                                                 (LPBYTE)dwValue, &dwSize)) {
             // interface name must only ascii
             tstring tstr = dwValue;
             std::string s(tstr.begin(), tstr.end());
@@ -191,8 +194,8 @@ void GetAvailableInterfaceAndIP(
     free(pAdapterInfo);
   }
 #else
-  struct ifaddrs * ifAddrStruct = nullptr;
-  struct ifaddrs * ifa = nullptr;
+  struct ifaddrs* ifAddrStruct = nullptr;
+  struct ifaddrs* ifa = nullptr;
 
   interface->clear();
   ip->clear();
@@ -203,7 +206,8 @@ void GetAvailableInterfaceAndIP(
     if (AF_INET == ifa->ifa_addr->sa_family &&
         0 == (ifa->ifa_flags & IFF_LOOPBACK)) {
       char address_buffer[INET_ADDRSTRLEN];
-      void* sin_addr_ptr = &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr))->sin_addr;
+      void* sin_addr_ptr =
+          &(reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr))->sin_addr;
       inet_ntop(AF_INET, sin_addr_ptr, address_buffer, INET_ADDRSTRLEN);
 
       *ip = address_buffer;
@@ -228,8 +232,9 @@ int GetAvailablePort(int num_ports, std::array<int, 32>* ports) {
   int num_available_ports = 0;
   for (int i = 0; i < num_ports; ++i) {
     struct sockaddr_in addr;
-    addr.sin_port = htons(0);  // have system pick up a random port available for me
-    addr.sin_family = AF_INET;  // IPV4
+    addr.sin_port =
+        htons(0);  // have system pick up a random port available for me
+    addr.sin_family = AF_INET;                 // IPV4
     addr.sin_addr.s_addr = htonl(INADDR_ANY);  // set our addr to any interface
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (0 != bind(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
@@ -254,7 +259,7 @@ int GetAvailablePort(int num_ports, std::array<int, 32>* ports) {
   }
   for (int i = 0; i < num_available_ports; ++i) {
     int sock = socks[i];
-#ifdef  _MSC_VER
+#ifdef _MSC_VER
     closesocket(sock);
 #else
     close(sock);

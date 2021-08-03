@@ -4,9 +4,9 @@
 #ifndef PS_RESENDER_H_
 #define PS_RESENDER_H_
 #include <chrono>
-#include <vector>
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 namespace ps {
 
 /**
@@ -77,7 +77,8 @@ class Resender {
       ack.meta.control.msg_sig = key;
       van_->Send(ack);
       // warning
-      if (duplicated) LOG(WARNING) << "Duplicated message: " << msg.DebugString();
+      if (duplicated)
+        LOG(WARNING) << "Duplicated message: " << msg.DebugString();
       return duplicated;
     }
   }
@@ -95,13 +96,13 @@ class Resender {
   uint64_t GetKey(const Message& msg) {
     CHECK_NE(msg.meta.timestamp, Meta::kEmpty) << msg.DebugString();
     uint16_t id = msg.meta.app_id;
-    uint8_t sender = msg.meta.sender == Node::kEmpty ?
-                     van_->my_node().id : msg.meta.sender;
+    uint8_t sender =
+        msg.meta.sender == Node::kEmpty ? van_->my_node().id : msg.meta.sender;
     uint8_t recver = msg.meta.recver;
     return (static_cast<uint64_t>(id) << 48) |
-        (static_cast<uint64_t>(sender) << 40) |
-        (static_cast<uint64_t>(recver) << 32) |
-        (msg.meta.timestamp << 1) | msg.meta.request;
+           (static_cast<uint64_t>(sender) << 40) |
+           (static_cast<uint64_t>(recver) << 32) | (msg.meta.timestamp << 1) |
+           msg.meta.request;
   }
   Time Now() {
     return std::chrono::duration_cast<Time>(
@@ -115,12 +116,13 @@ class Resender {
       Time now = Now();
       mu_.lock();
       for (auto& it : send_buff_) {
-        if (it.second.send + Time(timeout_) * (1+it.second.num_retry) < now) {
+        if (it.second.send + Time(timeout_) * (1 + it.second.num_retry) < now) {
           resend.push_back(it.second.msg);
           ++it.second.num_retry;
           LOG(WARNING) << van_->my_node().ShortDebugString()
                        << ": Timeout to get the ACK message. Resend (retry="
-                       << it.second.num_retry << ") " << it.second.msg.DebugString();
+                       << it.second.num_retry << ") "
+                       << it.second.msg.DebugString();
           CHECK_LT(it.second.num_retry, max_num_retry_);
         }
       }

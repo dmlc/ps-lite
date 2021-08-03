@@ -2,30 +2,31 @@
  *  Copyright (c) 2015 by Contributors
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  */
+// clang-format off
+#include "ps/internal/van.h"
+#include "ps/internal/postoffice.h"
+
+#include <string.h>
 
 #include <chrono>
-#include <thread>
 #include <fstream>
-#include <string.h>
-#include <sstream>
 #include <set>
-
-#include "ps/base.h"
-#include "ps/internal/customer.h"
-#include "ps/internal/postoffice.h"
-#include "ps/internal/van.h"
-#include "ps/sarray.h"
-
-#include "./meta.h"
-#include "./network_utils.h"
-#include "./rdma_van.h"
+#include <sstream>
+#include <thread>
 
 #include "./fabric_van.h"
-
-#include "./resender.h"
-#include "./zmq_van.h"
+#include "./meta.h"
 #include "./multi_van.h"
+#include "./network_utils.h"
+#include "./rdma_van.h"
+#include "./resender.h"
 #include "./ucx_van.h"
+#include "./zmq_van.h"
+#include "ps/base.h"
+#include "ps/internal/customer.h"
+#include "ps/sarray.h"
+// clang-format on
+
 #define USE_PROFILING
 
 namespace ps {
@@ -40,37 +41,37 @@ std::fstream fout_;
 #endif
 
 bool is_van_profiling_;
-Van *Van::Create(const std::string &type, Postoffice* postoffice) {
+Van *Van::Create(const std::string &type, Postoffice *postoffice) {
 #ifdef USE_PROFILING
   const char *val;
   val = Environment::Get()->find("ENABLE_PROFILING");
-  is_van_profiling_ = val? atoi(val) : false;
+  is_van_profiling_ = val ? atoi(val) : false;
   if (is_van_profiling_) {
     LOG(INFO) << "Van: Enable profiling.";
     std::string sysvar = "";
-    if (getenv("PROFILE_PATH")!=nullptr)
+    if (getenv("PROFILE_PATH") != nullptr)
       sysvar = std::string(getenv("PROFILE_PATH"));
-    std::string CONST_WORKER_STR ("worker");
-    std::string CONST_SERVER_STR ("server");
+    std::string CONST_WORKER_STR("worker");
+    std::string CONST_SERVER_STR("server");
 
-    std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
+    std::chrono::microseconds ms =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch());
     std::stringstream temp_stream;
     std::string ts_string;
     temp_stream << ms.count();
     temp_stream >> ts_string;
 
-    if (CONST_WORKER_STR == postoffice->role_str()){
-      if (sysvar.length()==0) {
-        fout_.open("pslite_profile_van_worker_"+ts_string, std::fstream::out);
+    if (CONST_WORKER_STR == postoffice->role_str()) {
+      if (sysvar.length() == 0) {
+        fout_.open("pslite_profile_van_worker_" + ts_string, std::fstream::out);
       } else {
         fout_.open(sysvar + "_van_worker", std::fstream::out);
       }
-    }
-    else if (CONST_SERVER_STR == postoffice->role_str()){
-      if (sysvar.length()==0) {
-        fout_.open("pslite_profile_van_server_"+ts_string, std::fstream::out);
-      }
-      else {
+    } else if (CONST_SERVER_STR == postoffice->role_str()) {
+      if (sysvar.length() == 0) {
+        fout_.open("pslite_profile_van_server_" + ts_string, std::fstream::out);
+      } else {
         fout_.open(sysvar + "_van_server", std::fstream::out);
       }
     }
@@ -86,7 +87,7 @@ Van *Van::Create(const std::string &type, Postoffice* postoffice) {
   } else if (type == "1") {
     LOG(INFO) << "Creating RDMAVan.";
     LOG(WARNING) << "DMLC_ENABLE_RDMA=1 will be deprecated. "
-	         << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
+                 << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
     return new RDMAVan(postoffice);
 #endif
 #ifdef DMLC_USE_FABRIC
@@ -103,55 +104,61 @@ Van *Van::Create(const std::string &type, Postoffice* postoffice) {
   }
 }
 
-
 void Van::ProcessTerminateCommand() {
   PS_VLOG(1) << my_node().ShortDebugString() << " is stopped";
   ready_ = false;
 }
 
-void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *recovery_nodes) {
+void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
+                                           Meta *recovery_nodes) {
   recovery_nodes->control.cmd = Control::ADD_NODE;
   time_t t = time(NULL);
   // consider all worker and server instances
-  size_t num_nodes = postoffice_->num_server_instances() + postoffice_->num_worker_instances();
+  size_t num_nodes =
+      postoffice_->num_server_instances() + postoffice_->num_worker_instances();
   if (nodes->control.node.size() == num_nodes) {
-    bool mixed_mode = 
-        getenv("BYTEPS_ENABLE_MIXED_MODE") 
-        ? atoi(getenv("BYTEPS_ENABLE_MIXED_MODE")) 
-        : false;
+    bool mixed_mode = getenv("BYTEPS_ENABLE_MIXED_MODE")
+                          ? atoi(getenv("BYTEPS_ENABLE_MIXED_MODE"))
+                          : false;
     bool sparse_mode = getenv("BYTEPS_ORDERED_HOSTS") ? true : false;
-    CHECK_NE(mixed_mode && sparse_mode, true) 
-      << "BYTEPS_ENABLE_MIXED_MODE and BYTEPS_ORDERED_HOSTS should not coexist";
+    CHECK_NE(mixed_mode && sparse_mode, true)
+        << "BYTEPS_ENABLE_MIXED_MODE and BYTEPS_ORDERED_HOSTS should not "
+           "coexist";
 
     if (mixed_mode) {
       std::unordered_map<std::string, size_t> ip_cnt;
-      for (auto &node : nodes->control.node) { 
-        ip_cnt[node.hostname] += 1; 
+      for (auto &node : nodes->control.node) {
+        ip_cnt[node.hostname] += 1;
         CHECK_LE(ip_cnt[node.hostname], 2) << node.hostname;
       }
 
       // put non-colocate servers' IP to front
-      std::sort(nodes->control.node.begin(), nodes->control.node.end(),
-                [&ip_cnt](const Node &a, const Node &b) {
-                  if (ip_cnt[a.hostname] == ip_cnt[b.hostname]) {
-                    return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
-                  }
-                  return ip_cnt[a.hostname] < ip_cnt[b.hostname];
-                });
+      std::sort(
+          nodes->control.node.begin(), nodes->control.node.end(),
+          [&ip_cnt](const Node &a, const Node &b) {
+            if (ip_cnt[a.hostname] == ip_cnt[b.hostname]) {
+              return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
+            }
+            return ip_cnt[a.hostname] < ip_cnt[b.hostname];
+          });
 
       for (auto &node : nodes->control.node) {
-        std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
+        std::string node_host_ip =
+            node.hostname + ":" + std::to_string(node.port);
         if (ip_cnt[node.hostname] == 1) {
           PS_VLOG(1) << "Non-Colocate Server: " << node_host_ip;
           CHECK_EQ(node.role, Node::SERVER);
         } else {
-          PS_VLOG(1) << "Colocated " << ((node.role == Node::SERVER) ? "Server" : "Worker") << ": \t" << node_host_ip;
+          PS_VLOG(1) << "Colocated "
+                     << ((node.role == Node::SERVER) ? "Server" : "Worker")
+                     << ": \t" << node_host_ip;
         }
       }
     } else if (sparse_mode) {
       PS_VLOG(1) << "Assign the rank as the same order in BYTEPS_ORDERED_HOSTS";
-      CHECK(getenv("BYTEPS_ORDERED_HOSTS")) 
-          << "\n should set it as a list of IP:port (port is optional) concatenated by comma " 
+      CHECK(getenv("BYTEPS_ORDERED_HOSTS"))
+          << "\n should set it as a list of IP:port (port is optional) "
+             "concatenated by comma "
           << "\n an example: BYTEPS_ORDERED_HOSTS=10.0.0.1:1234,10.0.0.2:4321";
       std::string sparse_hosts = std::string(getenv("BYTEPS_ORDERED_HOSTS"));
       std::vector<std::string> hosts_list;
@@ -166,7 +173,8 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       std::unordered_map<std::string, size_t> ip_pos;
       for (size_t i = 0; i < hosts_list.size(); ++i) {
         std::string ip = hosts_list[i].substr(0, hosts_list[i].find(":"));
-        CHECK_EQ(ip_pos.find(ip), ip_pos.end()) << "\nDuplicate IP found in BYTEPS_ORDERED_HOSTS: " << ip; 
+        CHECK_EQ(ip_pos.find(ip), ip_pos.end())
+            << "\nDuplicate IP found in BYTEPS_ORDERED_HOSTS: " << ip;
         ip_pos[ip] = i;
       }
 
@@ -177,15 +185,17 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
                 });
     } else {
       // sort the nodes according their ip and port
-      // no need to sort for p2p communication case, but sort might be good for later usage
+      // no need to sort for p2p communication case, but sort might be good for
+      // later usage
       std::sort(nodes->control.node.begin(), nodes->control.node.end(),
-               [](const Node &a, const Node &b) {
-                 return (a.hostname.compare(b.hostname) | (a.port < b.port)) > 0;
-               });
+                [](const Node &a, const Node &b) {
+                  return (a.hostname.compare(b.hostname) | (a.port < b.port)) >
+                         0;
+                });
     }
 
     bool with_preferred_rank = false;
-    for (auto &node: nodes->control.node) {
+    for (auto &node : nodes->control.node) {
       if (node.aux_id != -1) {
         LOG(INFO) << "rank detected for node " << node.DebugString();
         with_preferred_rank = true;
@@ -196,16 +206,16 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
     if (with_preferred_rank) {
       std::unordered_set<int> server_ranks;
       std::unordered_set<int> worker_ranks;
-      for (auto &node: nodes->control.node){
+      for (auto &node : nodes->control.node) {
         if (node.role == Node::SERVER) {
           CHECK_EQ(server_ranks.find(node.aux_id), server_ranks.end())
-            << "rank must be unique: " << node.DebugString();
+              << "rank must be unique: " << node.DebugString();
           server_ranks.insert(node.aux_id);
-        } else if (node.role==Node::WORKER) {
+        } else if (node.role == Node::WORKER) {
           CHECK_EQ(worker_ranks.find(node.aux_id), worker_ranks.end())
-            << "rank must be unique: " << node.DebugString();
+              << "rank must be unique: " << node.DebugString();
           worker_ranks.insert(node.aux_id);
-        } else{
+        } else {
           LOG(FATAL) << "unrecognized node role " << node.DebugString();
         }
       }
@@ -215,24 +225,26 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
       for (int i = 0; i < num_servers; ++i) {
         CHECK(server_ranks.find(i) != server_ranks.end()) << i;
       }
-      CHECK(server_ranks.size() == (size_t) num_servers);
+      CHECK(server_ranks.size() == (size_t)num_servers);
 
       int num_workers = Postoffice::Get()->num_worker_instances();
       for (int i = 0; i < num_workers; ++i) {
         CHECK(worker_ranks.find(i) != worker_ranks.end()) << i;
       }
-      CHECK(worker_ranks.size() == (size_t) num_workers);
+      CHECK(worker_ranks.size() == (size_t)num_workers);
     }
-
 
     // assign node rank
     for (auto &node : nodes->control.node) {
-      std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
+      std::string node_host_ip =
+          node.hostname + ":" + std::to_string(node.port);
       int id = -1;
       if (node.role == Node::SERVER) {
-        id = Postoffice::ServerRankToID(with_preferred_rank ? node.aux_id : num_servers_);
+        id = Postoffice::ServerRankToID(with_preferred_rank ? node.aux_id
+                                                            : num_servers_);
       } else {
-        id = Postoffice::WorkerRankToID(with_preferred_rank ? node.aux_id : num_workers_);
+        id = Postoffice::WorkerRankToID(with_preferred_rank ? node.aux_id
+                                                            : num_workers_);
       }
       if (connected_nodes_.find(node_host_ip) == connected_nodes_.end()) {
         CHECK_EQ(node.id, Node::kEmpty);
@@ -260,8 +272,8 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
         Send(back);
       }
     }
-    PS_VLOG(1) << "The scheduler is connected to " << num_workers_ << " workers and "
-               << num_servers_ << " servers";
+    PS_VLOG(1) << "The scheduler is connected to " << num_workers_
+               << " workers and " << num_servers_ << " servers";
     ready_ = true;
   } else if (!recovery_nodes->control.node.empty()) {
     auto dead_nodes = postoffice_->GetDeadNodes(heartbeat_timeout_);
@@ -272,32 +284,35 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, Meta *reco
     postoffice_->UpdateHeartbeat(recovery_nodes->control.node[0].id, t);
     Message back;
     for (int r : postoffice_->GetNodeIDs(kWorkerGroup + kServerGroup)) {
-      if (r != recovery_nodes->control.node[0].id && dead_set.find(r) != dead_set.end()) {
+      if (r != recovery_nodes->control.node[0].id &&
+          dead_set.find(r) != dead_set.end()) {
         // do not try to send anything to dead node
         continue;
       }
       // only send recovery_node to nodes already exist
       // but send all nodes to the recovery_node
-      back.meta = (r == recovery_nodes->control.node[0].id) ? *nodes : *recovery_nodes;
+      back.meta =
+          (r == recovery_nodes->control.node[0].id) ? *nodes : *recovery_nodes;
       back.meta.recver = r;
       back.meta.timestamp = timestamp_++;
       Send(back);
     }
   } else {
-    PS_VLOG(1) << "AddNode (" << nodes->control.node.size() << "/" << num_nodes << "): "
-               << nodes->control.node.back().DebugString();
+    PS_VLOG(1) << "AddNode (" << nodes->control.node.size() << "/" << num_nodes
+               << "): " << nodes->control.node.back().DebugString();
   }
 }
 
-void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
-                        Meta* nodes, Meta* recovery_nodes) {
-  auto& ctrl = msg->meta.control;
-  size_t num_nodes = postoffice_->num_server_instances() + postoffice_->num_worker_instances();
+void Van::UpdateLocalID(Message *msg, std::unordered_set<int> *deadnodes_set,
+                        Meta *nodes, Meta *recovery_nodes) {
+  auto &ctrl = msg->meta.control;
+  size_t num_nodes =
+      postoffice_->num_server_instances() + postoffice_->num_worker_instances();
   // assign an id
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
     CHECK_EQ(ctrl.node.size(), 1);
-    if (static_cast<int>(nodes->control.node.size()) < (int) num_nodes) {
+    if (static_cast<int>(nodes->control.node.size()) < (int)num_nodes) {
       nodes->control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
@@ -310,8 +325,8 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
           // assign previous node id
           recovery_node.id = node.id;
           recovery_node.is_recovery = true;
-          PS_VLOG(1) << "replace dead node " << node.DebugString() << " by node "
-                     << recovery_node.DebugString();
+          PS_VLOG(1) << "replace dead node " << node.DebugString()
+                     << " by node " << recovery_node.DebugString();
           nodes->control.node[i] = recovery_node;
           recovery_nodes->control.node.push_back(recovery_node);
           break;
@@ -356,8 +371,10 @@ void Van::ProcessInstanceBarrierCommand(Message *msg) {
     }
     int group = ctrl.barrier_group;
     ++barrier_count_[group];
-    PS_VLOG(1) << "Instance barrier count for " << group << " : " << barrier_count_[group];
-    if (barrier_count_[group] == static_cast<int>(postoffice_->GetNodeIDs(group).size())) {
+    PS_VLOG(1) << "Instance barrier count for " << group << " : "
+               << barrier_count_[group];
+    if (barrier_count_[group] ==
+        static_cast<int>(postoffice_->GetNodeIDs(group).size())) {
       barrier_count_[group] = 0;
       Message res;
       res.meta.request = false;
@@ -392,7 +409,8 @@ void Van::ProcessBarrierCommand(Message *msg) {
     // since the scheduler always has just one instance,
     // while the worker/server may have multiple instances
     int group_size = postoffice_->group_size();
-    int num_instances = static_cast<int>(postoffice_->GetNodeIDs(node_group).size());
+    int num_instances =
+        static_cast<int>(postoffice_->GetNodeIDs(node_group).size());
     size_t num_expected_requests;
     if (node_group == kScheduler) {
       // scheduler only
@@ -433,31 +451,42 @@ void Van::ProcessDataMsg(Message *msg) {
   int app_id = msg->meta.app_id;
   int customer_id = postoffice_->is_worker() ? msg->meta.customer_id : app_id;
   auto *obj = postoffice_->GetCustomer(app_id, customer_id, 5);
-  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer " << customer_id
-             << " ready at " << my_node_.role;
+  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer "
+             << customer_id << " ready at " << my_node_.role;
   obj->Accept(*msg);
 
 #ifdef USE_PROFILING
-  if (is_van_profiling_ && msg->data.size()){
-    std::chrono::microseconds ms = std::chrono::duration_cast< std::chrono::microseconds >(std::chrono::system_clock::now().time_since_epoch());
-    //LOG(INFO) << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tvan_recv\t" << ms.count();
-    if (postoffice_->is_worker()){ // is worker
+  if (is_van_profiling_ && msg->data.size()) {
+    std::chrono::microseconds ms =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch());
+    // LOG(INFO) << (uint8_t)msg->data[0].data()[0] + 256 *
+    // (uint8_t)msg->data[0].data()[1] << "\tvan_recv\t" << ms.count();
+    if (postoffice_->is_worker()) {  // is worker
       if (msg->meta.push)
-        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tworker_van_recv_push\t" << ms.count() << "\n";
+        fout_ << (uint8_t)msg->data[0].data()[0] +
+                     256 * (uint8_t)msg->data[0].data()[1]
+              << "\tworker_van_recv_push\t" << ms.count() << "\n";
       else
-        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tworker_van_recv_pull\t" << ms.count() << "\n";
-    }
-    else{ // is server
+        fout_ << (uint8_t)msg->data[0].data()[0] +
+                     256 * (uint8_t)msg->data[0].data()[1]
+              << "\tworker_van_recv_pull\t" << ms.count() << "\n";
+    } else {  // is server
       if (msg->meta.push)
-        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tserver_van_recv_push\t" << ms.count() << "\n";
+        fout_ << (uint8_t)msg->data[0].data()[0] +
+                     256 * (uint8_t)msg->data[0].data()[1]
+              << "\tserver_van_recv_push\t" << ms.count() << "\n";
       else
-        fout_ << (uint8_t)msg->data[0].data()[0] + 256 * (uint8_t)msg->data[0].data()[1] << "\tserver_van_recv_pull\t" << ms.count() << "\n";
+        fout_ << (uint8_t)msg->data[0].data()[0] +
+                     256 * (uint8_t)msg->data[0].data()[1]
+              << "\tserver_van_recv_pull\t" << ms.count() << "\n";
     }
   }
 #endif
 }
 
-void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes) {
+void Van::ProcessAddNodeCommand(Message *msg, Meta *nodes,
+                                Meta *recovery_nodes) {
   auto dead_nodes = postoffice_->GetDeadNodes(heartbeat_timeout_);
   std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
   auto &ctrl = msg->meta.control;
@@ -485,9 +514,11 @@ void Van::Start(int customer_id, bool standalone) {
   // get scheduler info
   start_mu_.lock();
   if (init_stage == 0) {
-    scheduler_.hostname = std::string(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
+    scheduler_.hostname = std::string(
+        CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
     scheduler_.num_ports = 1;
-    scheduler_.port = atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
+    scheduler_.port =
+        atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
     scheduler_.ports[0] = scheduler_.port;
     scheduler_.dev_types[0] = CPU;
     scheduler_.dev_ids[0] = 0;
@@ -530,8 +561,8 @@ void Van::Start(int customer_id, bool standalone) {
       const char *pstr = Environment::Get()->find("DMLC_PORT");
       if (pstr) ports[0] = atoi(pstr);
       CHECK(!ip.empty()) << "failed to get ip";
-      CHECK_EQ(num_available_ports, num_ports) << "failed to get "
-                                               << num_ports << " ports";
+      CHECK_EQ(num_available_ports, num_ports)
+          << "failed to get " << num_ports << " ports";
       Node node = my_node_;
       node.hostname = ip;
       node.role = role;
@@ -558,7 +589,8 @@ void Van::Start(int customer_id, bool standalone) {
       drop_rate_ = atoi(Environment::Get()->find("PS_DROP_MSG"));
     }
     // start receiver
-    receiver_thread_ = std::unique_ptr<std::thread>(new std::thread(&Van::Receiving, this));
+    receiver_thread_ =
+        std::unique_ptr<std::thread>(new std::thread(&Van::Receiving, this));
     init_stage++;
   }
   start_mu_.unlock();
@@ -584,7 +616,8 @@ void Van::Start(int customer_id, bool standalone) {
   start_mu_.lock();
   if (init_stage == 1) {
     // resender
-    if (Environment::Get()->find("PS_RESEND") && atoi(Environment::Get()->find("PS_RESEND")) != 0) {
+    if (Environment::Get()->find("PS_RESEND") &&
+        atoi(Environment::Get()->find("PS_RESEND")) != 0) {
       int timeout = 1000;
       if (Environment::Get()->find("PS_RESEND_TIMEOUT")) {
         timeout = atoi(Environment::Get()->find("PS_RESEND_TIMEOUT"));
@@ -594,7 +627,8 @@ void Van::Start(int customer_id, bool standalone) {
 
     if (!is_scheduler_) {
       // start heartbeat thread
-      heartbeat_thread_ = std::unique_ptr<std::thread>(new std::thread(&Van::Heartbeat, this));
+      heartbeat_thread_ =
+          std::unique_ptr<std::thread>(new std::thread(&Van::Heartbeat, this));
     }
     init_stage++;
   }
@@ -636,7 +670,8 @@ int Van::Send(Message &msg) {
   CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
-  PS_VLOG(2) << this->GetType() << " " << my_node_.id << "\tsent: " << msg.DebugString();
+  PS_VLOG(2) << this->GetType() << " " << my_node_.id
+             << "\tsent: " << msg.DebugString();
   return send_bytes;
 }
 
@@ -659,7 +694,8 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    PS_VLOG(2) << this->GetType() << " " << my_node_.id << "\treceived: " << msg.DebugString();
+    PS_VLOG(2) << this->GetType() << " " << my_node_.id
+               << "\treceived: " << msg.DebugString();
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
 
@@ -688,7 +724,7 @@ void Van::Receiving() {
 
 int Van::GetPackMetaLen(const Meta &meta) {
   auto data_type_size = meta.data_type.size() * sizeof(int);
-  return sizeof(RawMeta) + meta.body.size() + data_type_size + 
+  return sizeof(RawMeta) + meta.body.size() + data_type_size +
          meta.control.node.size() * sizeof(RawNode);
 }
 
@@ -699,12 +735,12 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
     *meta_buf = new char[*buf_size + 1];
   }
 
-  RawMeta *raw = (RawMeta*)*meta_buf;
+  RawMeta *raw = (RawMeta *)*meta_buf;
   bzero(raw, sizeof(RawMeta));
   char *raw_body = *meta_buf + sizeof(RawMeta);
   auto data_type_len = meta.data_type.size();
-  int *raw_data_type = (int*)(raw_body + meta.body.size());
-  RawNode *raw_node = (RawNode*)(raw_data_type + data_type_len);
+  int *raw_data_type = (int *)(raw_body + meta.body.size());
+  RawNode *raw_node = (RawNode *)(raw_data_type + data_type_len);
 
   // convert into raw buffer
   raw->head = meta.head;
@@ -731,7 +767,8 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   auto ctrl = &(raw->control);
   if (!meta.control.empty()) {
     ctrl->cmd = meta.control.cmd;
-    if (meta.control.cmd == Control::BARRIER || meta.control.cmd == Control::INSTANCE_BARRIER) {
+    if (meta.control.cmd == Control::BARRIER ||
+        meta.control.cmd == Control::INSTANCE_BARRIER) {
       ctrl->barrier_group = meta.control.barrier_group;
     } else if (meta.control.cmd == Control::ACK) {
       ctrl->msg_sig = meta.control.msg_sig;
@@ -746,21 +783,25 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
       bzero(raw_node[node_count].ports, 32 * sizeof(int));
       memcpy(raw_node[node_count].ports, n.ports.data(), 32 * sizeof(int));
       bzero(raw_node[node_count].dev_types, 32 * sizeof(int));
-      memcpy(raw_node[node_count].dev_types, n.dev_types.data(), 32 * sizeof(int));
+      memcpy(raw_node[node_count].dev_types, n.dev_types.data(),
+             32 * sizeof(int));
       bzero(raw_node[node_count].dev_ids, 32 * sizeof(int));
       memcpy(raw_node[node_count].dev_ids, n.dev_ids.data(), 32 * sizeof(int));
-      bzero(raw_node[node_count].hostname, sizeof(raw_node[node_count].hostname));
-      memcpy(raw_node[node_count].hostname, n.hostname.c_str(), n.hostname.size());
-      bzero(raw_node[node_count].endpoint_name, sizeof(raw_node[node_count].endpoint_name));
-      memcpy(raw_node[node_count].endpoint_name, n.endpoint_name, sizeof(raw_node[node_count].endpoint_name));
+      bzero(raw_node[node_count].hostname,
+            sizeof(raw_node[node_count].hostname));
+      memcpy(raw_node[node_count].hostname, n.hostname.c_str(),
+             n.hostname.size());
+      bzero(raw_node[node_count].endpoint_name,
+            sizeof(raw_node[node_count].endpoint_name));
+      memcpy(raw_node[node_count].endpoint_name, n.endpoint_name,
+             sizeof(raw_node[node_count].endpoint_name));
       raw_node[node_count].endpoint_name_len = n.endpoint_name_len;
       raw_node[node_count].is_recovery = n.is_recovery;
       raw_node[node_count].customer_id = n.customer_id;
       raw_node[node_count].aux_id = n.aux_id;
       node_count++;
     }
-  }
-  else {
+  } else {
     ctrl->cmd = Control::EMPTY;
   }
   raw->data_size = meta.data_size;
@@ -772,11 +813,11 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
 }
 
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
-  RawMeta *raw = (RawMeta*)meta_buf;
+  RawMeta *raw = (RawMeta *)meta_buf;
   const char *raw_body = meta_buf + sizeof(RawMeta);
-  const int *raw_data_type = (const int*)(raw_body + raw->body_size);
+  const int *raw_data_type = (const int *)(raw_body + raw->body_size);
   auto data_type_len = raw->data_type_size;
-  const RawNode *raw_node = (RawNode*)(raw_data_type + data_type_len);
+  const RawNode *raw_node = (RawNode *)(raw_data_type + data_type_len);
 
   // to meta
   meta->head = raw->head;
@@ -845,9 +886,9 @@ void Van::Heartbeat() {
 }
 
 bool Van::IsValidPushpull(const Message &msg) {
-   if (!msg.meta.control.empty()) return false;
-   if (msg.meta.simple_app) return false;
-   return true;
+  if (!msg.meta.control.empty()) return false;
+  if (msg.meta.simple_app) return false;
+  return true;
 }
 
 }  // namespace ps

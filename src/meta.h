@@ -1,11 +1,11 @@
 /**
  *  Copyright (c) 2018-2019 Bytedance Inc.
  *  Author: zhuyibo@bytedance.com (Yibo Zhu)
-*/
+ */
 #ifndef PS_LITE_META_H_
 #define PS_LITE_META_H_
 
-#include<stdint.h>
+#include <stdint.h>
 
 namespace ps {
 
@@ -77,7 +77,7 @@ struct RawMeta {
   bool push;
   // whether or not it's for SimpleApp
   bool simple_app;
-  // message.data_size 
+  // message.data_size
   int data_size;
   // message.key
   uint64_t key;
@@ -95,6 +95,6 @@ struct RawMeta {
   // node
 };
 
-} // namespace
+}  // namespace ps
 
 #endif

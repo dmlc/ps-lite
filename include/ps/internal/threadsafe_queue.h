@@ -3,10 +3,11 @@
  */
 #ifndef PS_INTERNAL_THREADSAFE_QUEUE_H_
 #define PS_INTERNAL_THREADSAFE_QUEUE_H_
-#include <queue>
-#include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <queue>
+
 #include "ps/base.h"
 #include "spsc_queue.h"
 
@@ -15,7 +16,8 @@ namespace ps {
 /**
  * \brief thread-safe queue allowing push and waited pop
  */
-template<typename T> class ThreadsafeQueue {
+template <typename T>
+class ThreadsafeQueue {
  public:
   ThreadsafeQueue() : lockless_queue_(32768) {
     auto lockless_str = getenv("DMLC_LOCKLESS_QUEUE");
@@ -25,7 +27,7 @@ template<typename T> class ThreadsafeQueue {
     polling_duration_ = std::chrono::nanoseconds(polling_duration_int);
   }
 
-  ~ThreadsafeQueue() { }
+  ~ThreadsafeQueue() {}
 
   /**
    * \brief push an value into the end. threadsafe.
@@ -52,7 +54,7 @@ template<typename T> class ThreadsafeQueue {
       return;
     }
     std::unique_lock<std::mutex> lk(mu_);
-    cond_.wait(lk, [this]{return !queue_.empty();});
+    cond_.wait(lk, [this] { return !queue_.empty(); });
     *value = std::move(queue_.front());
     queue_.pop();
   }
@@ -69,7 +71,6 @@ template<typename T> class ThreadsafeQueue {
   }
 
  private:
-
   // lockless impl
   void PushLockless(T new_value) {
     write_mu_.lock();
@@ -114,7 +115,6 @@ template<typename T> class ThreadsafeQueue {
   mutable std::mutex write_mu_;
   rigtorp::SPSCQueue<T> lockless_queue_;
   std::chrono::nanoseconds polling_duration_;
-
 };
 
 }  // namespace ps

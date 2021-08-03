@@ -11,9 +11,12 @@ jobs:
 
     steps:
     - name: Install dependencies
-      run: sudo apt-get install numactl libnuma-dev
+      run: sudo apt-get install numactl libnuma-dev clang-format
+    - uses: actions/checkout@v1
+    - name: Code format
+      run: bash tools/check_diff.sh
     - name: Get UCX
-      run: git clone $UCX_LINK /tmp/ucx
+      run: git clone -b v1.11.0 $UCX_LINK /tmp/ucx
     - name: Build UCX
       run: |
         set -eE
@@ -21,6 +24,5 @@ jobs:
         ./autogen.sh
         ./contrib/configure-release --without-java --enable-mt --prefix $PWD/install
         make -j install
-    - uses: actions/checkout@v1
     - name: Build
       run: make -j USE_UCX=1 ADD_CFLAGS="-I/tmp/ucx/install/include -L/tmp/ucx/install/lib"

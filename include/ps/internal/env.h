@@ -4,9 +4,9 @@
 #ifndef PS_INTERNAL_ENV_H_
 #define PS_INTERNAL_ENV_H_
 #include <cstdlib>
-#include <unordered_map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 namespace ps {
 
 /**
@@ -17,9 +17,7 @@ class Environment {
   /**
    * \brief return the singleton instance
    */
-  static inline Environment* Get() {
-    return _GetSharedRef(nullptr).get();
-  }
+  static inline Environment* Get() { return _GetSharedRef(nullptr).get(); }
   /**
    * \brief return a shared ptr of the singleton instance
    */
@@ -31,7 +29,8 @@ class Environment {
    * \param envs key-value environment variables
    * \return the initialized singleton instance
    */
-  static inline Environment* Init(const std::unordered_map<std::string, std::string>& envs) {
+  static inline Environment* Init(
+      const std::unordered_map<std::string, std::string>& envs) {
     Environment* env = _GetSharedRef(&envs).get();
     env->kvs = envs;
     return env;
@@ -49,7 +48,8 @@ class Environment {
   }
 
  private:
-  explicit Environment(const std::unordered_map<std::string, std::string>* envs) {
+  explicit Environment(
+      const std::unordered_map<std::string, std::string>* envs) {
     if (envs) kvs = *envs;
   }
 
