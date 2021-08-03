@@ -491,20 +491,12 @@ int main(int argc, char *argv[]) {
   setenv("ENABLE_SERVER_MULTIPULL", "0", 1);
   // init env var options
   num_ports = env2int("DMLC_NUM_PORTS", 1);
-  LOG(INFO) << num_ports << " ports per node";
   enable_recv_buffer = env2bool("ENABLE_RECV_BUFFER", false);
-  if (enable_recv_buffer) {
-    LOG(INFO) << "recv buffer registration is enabled";
-  } else {
-    LOG(INFO) << "recv buffer registration is NOT enabled";
-  }
   skip_dev_id_check = env2bool("SKIP_DEV_ID_CHECK", false);
   // num worker/server env vars
   local_size = env2int("TEST_NUM_GPU_WORKER", 0);
-  LOG(INFO) << "TEST_NUM_GPU_WORKER = " << local_size;
   enable_cpu = env2int("TEST_NUM_CPU_WORKER", 1);
   num_gpu_server = env2int("TEST_NUM_GPU_SERVER", 0);
-  LOG(INFO) << "TEST_NUM_GPU_SERVER = " << num_gpu_server;
   enable_cpu_server = env2int("TEST_NUM_CPU_SERVER", 1);
 
   // role
@@ -518,9 +510,20 @@ int main(int argc, char *argv[]) {
     CHECK(local_size || enable_cpu);
   }
 
+  if (role_str == "server" || role_str == "joint") {
+    if (enable_recv_buffer) {
+      LOG(INFO) << "recv buffer registration is enabled";
+    } else {
+      LOG(INFO) << "recv buffer registration is NOT enabled";
+    }
+  }
+  LOG(INFO) << "TEST_NUM_GPU_WORKER=" << local_size  << " TEST_NUM_GPU_SERVER="
+            << num_gpu_server << " ports per node=" << num_ports;
+
+
   // start system
   int my_rank = env2int("DMLC_RANK", -1);
-  int group_size = env2int("DMLC_GROUP_SIZE", -1);
+  int group_size = env2int("DMLC_GROUP_SIZE", 1);
   StartPS(0, role, my_rank, true);
 
   // check rank
