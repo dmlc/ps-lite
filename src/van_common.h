@@ -17,6 +17,7 @@
 #define PS_RDMA_COMMON_H_
 
 #if defined(DMLC_USE_RDMA) || defined(DMLC_USE_FABRIC)
+#include <unistd.h>
 
 #define DIVUP(x, y) (((x) + (y)-1) / (y))
 #define ROUNDUP(x, y) (DIVUP((x), (y)) * (y))

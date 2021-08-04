@@ -989,7 +989,8 @@ class UCXVan : public Van {
           }
         }
         if (trial >= max_retry) {
-          CHECK(false) << "ucp_listener_create failed: " << ucs_status_string(status);
+          CHECK(false) << "ucp_listener_create failed: " << ucs_status_string(status)
+                       << " node=" << node.DebugString();
         }
       }
     }
