@@ -100,7 +100,7 @@ export UCX_USE_MT_MUTEX=y
 export UCX_SOCKADDR_CM_ENABLE=y
 export UCX_RNDV_THRESH=8k
 export UCX_IB_TRAFFIC_CLASS=236
-export UCX_TLS=rc_x,ib,sm,tcp,cuda
+export UCX_TLS=${UCX_TLS:=rc_x,ib,sm,tcp,cuda}
 export UCX_LOG_LEVEL=info
 # export UCX_IB_NUM_PATHS=${UCX_IB_NUM_PATHS:=2}
 # export UCX_MEMTYPE_CACHE=n

@@ -70,11 +70,11 @@ inline void _StartPS(int customer_id, Node::Role role, int rank,
     // Joint PS: one worker, one server
     std::thread thread_s(_StartPS, customer_id, Node::SERVER, rank, do_barrier,
                          argv0, instance_idx);
-    LOG(INFO) << "Postoffice server started.";
+    PS_VLOG(1) << "Postoffice server started.";
 
     std::thread thread_w(_StartPS, customer_id, Node::WORKER, rank, do_barrier,
                          argv0, instance_idx);
-    LOG(INFO) << "Postoffice worker started.";
+    PS_VLOG(1) << "Postoffice worker started.";
 
     thread_s.join();
     thread_w.join();
@@ -96,12 +96,12 @@ inline void _StartPSGroup(int customer_id, std::vector<int> worker_ranks,
   for (size_t i = 0; i < worker_ranks.size(); ++i) {
     threads.emplace_back(_StartPS, customer_id, Node::WORKER, worker_ranks[i],
                          do_barrier, argv0, i);
-    LOG(INFO) << "Postoffice worker rank " << worker_ranks[i] << " started.";
+    PS_VLOG(1) << "Postoffice worker rank " << worker_ranks[i] << " started.";
   }
   for (size_t i = 0; i < server_ranks.size(); ++i) {
     threads.emplace_back(_StartPS, customer_id, Node::SERVER, server_ranks[i],
                          do_barrier, argv0, i);
-    LOG(INFO) << "Postoffice server rank " << server_ranks[i] << " started.";
+    PS_VLOG(1) << "Postoffice server rank " << server_ranks[i] << " started.";
   }
   for (auto &t : threads) {
     t.join();
@@ -159,11 +159,11 @@ inline void _Finalize(int customer_id, Node::Role role,
     // Joint PS: one worker, one server
     std::thread thread_s(&Postoffice::Finalize, Postoffice::GetServer(index),
                          customer_id, do_barrier);
-    LOG(INFO) << "Finalize Postoffice server.";
+    PS_VLOG(1) << "Finalize Postoffice server.";
 
     std::thread thread_w(&Postoffice::Finalize, Postoffice::GetWorker(index),
                          customer_id, do_barrier);
-    LOG(INFO) << "Finalize Postoffice worker.";
+    PS_VLOG(1) << "Finalize Postoffice worker.";
 
     thread_s.join();
     thread_w.join();
@@ -177,14 +177,14 @@ inline void _FinalizeGroup(int customer_id, Node::Role role, int group_size,
     for (int i = 0; i < group_size; ++i) {
       threads.emplace_back(&Postoffice::Finalize, Postoffice::GetWorker(i),
                            customer_id, do_barrier);
-      LOG(INFO) << "Finalize worker instance " << i;
+      PS_VLOG(1) << "Finalize worker instance " << i;
     }
   }
   if (role == Node::JOINT || role == Node::SERVER) {
     for (int i = 0; i < group_size; ++i) {
       threads.emplace_back(&Postoffice::Finalize, Postoffice::GetServer(i),
                            customer_id, do_barrier);
-      LOG(INFO) << "Finalize server instance " << i;
+      PS_VLOG(1) << "Finalize server instance " << i;
     }
   }
   for (auto &t : threads) {
