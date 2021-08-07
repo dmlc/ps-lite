@@ -881,14 +881,11 @@ class UCXVan : public Van {
     if (!getenv("UCX_USE_MT_MUTEX") && !getenv("PSLITE_UCX_USE_MT_MUTEX")) {
       LOG(FATAL) << "PSLITE_UCX_USE_MT_MUTEX is not set. Please export PSLITE_UCX_USE_MT_MUTEX=y";
     }
-    if (!getenv("UCX_SOCKADDR_CM_ENABLE") && !getenv("PSLITE_UCX_SOCKADDR_CM_ENABLE")) {
-      LOG(FATAL) << "PSLITE_UCX_SOCKADDR_CM_ENABLE is not set. Please export PSLITE_UCX_SOCKADDR_CM_ENABLE=y";
-    }
     if (!getenv("UCX_RNDV_THRESH") && !getenv("PSLITE_UCX_RNDV_THRESH")) {
       LOG(WARNING) << "PSLITE_UCX_RNDV_THRESH is not set. We recommend export PSLITE_UCX_RNDV_THRESH=8k";
     }
-    if (!getenv("UCX_IB_TRAFFIC_CLASS") && !getenv("PSLITE_UCX_IB_TRAFFIC_CLASS")) {
-      LOG(WARNING) << "PSLITE_UCX_IB_TRAFFIC_CLASS is not set. RDMA traffic class may be incorrect";
+    if (!getenv("UCX_IB_TRAFFIC_CLASS")) {
+      LOG(WARNING) << "UCX_IB_TRAFFIC_CLASS is not set. RDMA traffic class may be incorrect";
     }
   }
 
