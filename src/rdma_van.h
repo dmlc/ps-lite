@@ -775,7 +775,8 @@ class RDMAVan : public Van {
     CHECK_EQ(endpoint->status, Endpoint::CONNECTING);
     CHECK_EQ(endpoint->cm_id, id);
 
-    PS_VLOG(1) << "Connection rejected, retrying...";
+    PS_VLOG(1) << my_node_.id << " to " << endpoint->node_id
+               << " connection rejected, retrying...";
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
       endpoint->status = Endpoint::REJECTED;
@@ -817,7 +818,7 @@ class RDMAVan : public Van {
       std::lock_guard<std::mutex> lk(local_mu_);
       is_local_[remote_ctx->node] = is_local_node;
     }
-    LOG(INFO) << "OnConnect to Node " << remote_ctx->node
+    LOG(INFO) << my_node_.id << " OnConnect to " << remote_ctx->node
               << " with Transport=" << (is_local_node ? "IPC" : "RDMA");
 
     std::shared_ptr<Transport> t =
@@ -894,7 +895,7 @@ class RDMAVan : public Van {
     }
     endpoint->cv.notify_all();
     if (endpoint->node_id != my_node_.id) {
-      PS_VLOG(1) << "OnConnected to Node " << endpoint->node_id;
+      PS_VLOG(1) << my_node_.id << " OnConnected to " << endpoint->node_id;
     }
   }
 
@@ -906,7 +907,7 @@ class RDMAVan : public Van {
       endpoint->status = Endpoint::IDLE;
     }
     endpoint->cv.notify_all();
-    LOG(INFO) << "OnDisconnected from Node " << endpoint->node_id;
+    LOG(INFO) << my_node_.id << " OnDisconnected from " << endpoint->node_id;
   }
 
   AddressPool<BufferContext> addr_pool_;
