@@ -54,10 +54,9 @@ struct Endpoint {
     std::string role_str(role_val);
     // for joint mode with large number of workers, the default value of rx/tx
     // depth is reduced for less memory consumption.
-    bool is_joint_ = (role_str == "joint");
-    if (is_joint_ && num_workers >= 8) {
-      kStartDepth = 512;
-      kRxDepth = 32;
+    if (role_str == "scheduler") {
+      kStartDepth = 256;
+      kRxDepth = 16;
     }
     kStartDepth = byteps_start_depth ? atoi(byteps_start_depth) : kStartDepth;
     kRxDepth = byteps_rx_depth ? atoi(byteps_rx_depth) : kRxDepth;
