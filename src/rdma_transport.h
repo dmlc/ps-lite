@@ -115,10 +115,10 @@ struct Endpoint {
       aligned_malloc((void **)&buf, kMempoolChunkSize);
       CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      CHECK(mr)
-          << "ibv_reg_mr failed: " << strerror(errno)
-          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
-          << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
+      CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno)
+                << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (current "
+                << kStartDepth << ") or BYTEPS_RDMA_RX_DEPTH (current "
+                << kRxDepth << ").";
 
       ctx[i].type = type;
       ctx[i].buffer = mr;
