@@ -49,7 +49,6 @@ struct Endpoint {
     auto byteps_rx_depth = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
     auto byteps_start_depth =
         Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
-    int num_workers = Postoffice::Get()->num_worker_instances();
     const char *role_val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
     std::string role_str(role_val);
     // for joint mode with large number of workers, the default value of rx/tx
