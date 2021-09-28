@@ -17,9 +17,9 @@ To build ps-lite with UCX:
 sudo apt install -y build-essential libtool autoconf automake libnuma-dev unzip pkg-config
 
 # build ucx
-wget https://github.com/openucx/ucx/archive/refs/tags/v1.11.0.tar.gz
-tar -xf v1.11.0.tar.gz
-cd ucx-1.11.0
+wget https://github.com/openucx/ucx/archive/refs/tags/v1.11.1.tar.gz
+tar -xf v1.11.1.tar.gz
+cd ucx-1.11.1
 (./autogen.sh || ./autogen.sh) && ./configure --enable-logging --enable-mt --with-verbs --with-rdmacm --with-cuda=/usr/local/cuda
 make clean && make -j && sudo make install -j
 
