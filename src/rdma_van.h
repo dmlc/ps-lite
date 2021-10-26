@@ -41,8 +41,12 @@ class RDMAVan : public Van {
 
     auto val = Environment::Get()->find("BYTEPS_ENABLE_IPC");
     disable_ipc_ = val ? !atoi(val) : true;
-    if (disable_ipc_) LOG(INFO) << "Shared memory IPC has been disabled";
-
+    if (disable_ipc_) {
+      LOG(INFO) << "Shared memory IPC has been disabled";
+    } else {
+      std::string role = Environment::Get()->find("DMLC_ROLE");
+      CHECK(role != "joint") << "RDMAVan in joint mode does not support IPC";
+    }
     if (event_channel_ == nullptr) {
       event_channel_ = rdma_create_event_channel();
       CHECK(event_channel_) << "Create RDMA event channel failed";
