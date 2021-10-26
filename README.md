@@ -28,6 +28,9 @@ cd ..
 make clean; USE_UCX=1 CUDA_HOME=/usr/local/cuda USE_CUDA=1 make -j
 ```
 
+BytePS relies on UCXVan for GPU related communication, such as intra-node cuda-IPC, inter-node GPU-to-GPU / GPU-to-CPU communication with GPU-direct RDMA.
+For the list of transports UCX supports, see [link](https://openucx.readthedocs.io/en/master/faq.html?highlight=UCX_TLS#list-of-main-transports-and-aliases).
+
 
 ## Concepts
 
@@ -138,7 +141,7 @@ DMLC_ROLE=worker ./tests/test_ipc_benchmark
 
 Note: This benchmark is only valid for RDMA. 
 
-### 3. Other benchmarks
+### 3. Other GPU-related benchmarks
 
 
 ```
