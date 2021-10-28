@@ -600,15 +600,17 @@ public:
       ep_pool_.Create(node);
   }
 
-  void PinMemory(void *addr, size_t length) {
+  void PinMemory(void *addr, size_t length, bool is_gpu) {
     ucp_mem_map_params_t mem_map_params;
     memset(&mem_map_params, 0, sizeof(ucp_mem_map_params_t));
     mem_map_params.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS |
                                 UCP_MEM_MAP_PARAM_FIELD_LENGTH |
-				UCP_MEM_MAP_PARAM_FIELD_MEMORY_TYPE;
+                                UCP_MEM_MAP_PARAM_FIELD_MEMORY_TYPE;
     mem_map_params.address = addr;
     mem_map_params.length = length;
-    mem_map_params.memory_type = UCS_MEMORY_TYPE_CUDA;
+    // Reference: https://github.com/openucx/ucx/blob/master/src/ucs/memory/memory_type.h#L38
+    // https://github.com/tensorflow/tensorflow/blob/0b6b491d21d6a4eb5fbab1cca565bc1e94ca9543/tensorflow/stream_executor/cuda/cuda_driver.cc#L795-L806
+    mem_map_params.memory_type = is_gpu ? UCS_MEMORY_TYPE_CUDA : UCS_MEMORY_TYPE_HOST;
     ucp_mem_h memh = NULL;
     auto status = ucp_mem_map(context_, &mem_map_params, &memh);
     CHECK_STATUS(status) << "ucp_mem_map failed: " << ucs_status_string(status);
@@ -619,7 +621,7 @@ public:
     ucp_rkey_buffer_release(rkey_buffer_p);
     status = ucp_mem_unmap(context_, memh);
     CHECK_STATUS(status) << "ucp_mem_unmap failed: " << ucs_status_string(status);
-    VLOG(1) << "Pinned memory for " << addr << " len=" << length;
+    VLOG(1) << "Pinned memory for " << addr << " len=" << length << " gpu=" << is_gpu;
   }
 
   void PollRx() {
@@ -656,6 +658,7 @@ public:
   }
 
   void PollTx() {
+    SetGpuDeviceId();
     ucp_worker_progress(tx_worker_);
   }
 
@@ -1190,17 +1193,17 @@ class UCXVan : public Van {
     return total_len;
   }
 
-  void PinMemory(void *addr, size_t length, bool gpu) override {
-    CHECK(gpu) << " cpu memory registration is not implemented yet";
-    int dev_id = -1;
+  void PinMemory(void *addr, size_t length, bool is_gpu, int numa_or_gpu_index) override {
+    int dev_id = 0;
 #if DMLC_USE_CUDA
-    if (cudaGetDevice(&dev_id) != cudaSuccess) {
-      LOG(ERROR) << "cudaGetDevice failed";
+    if (is_gpu) {
+      auto err = cudaGetDevice(&dev_id);
+      CHECK(err == cudaSuccess) << "cudaGetDevice failed: " << err;
     }
 #endif
     auto ctx = ContextById(dev_id);
     CHECK(ctx) << "invalid device id " << dev_id;
-    ctx->PinMemory(addr, length);
+    ctx->PinMemory(addr, length, is_gpu);
   }
 
   bool IsPushpullRequest(const RawMeta* raw) {

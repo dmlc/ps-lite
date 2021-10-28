@@ -123,7 +123,8 @@ class Van {
    * \param length the size of the memory buffer
    * \param gpu whether the address is on the GPU device
    */
-  virtual void PinMemory(void *addr, size_t length, bool gpu) {
+  virtual void PinMemory(void *addr, size_t length, bool is_gpu,
+                         int numa_or_gpu_index = 0) {
     CHECK(false) << "RDMA memory registration is not supported";
   }
 
