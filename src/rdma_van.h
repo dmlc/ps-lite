@@ -45,7 +45,9 @@ class RDMAVan : public Van {
       LOG(INFO) << "Shared memory IPC has been disabled";
     } else {
       std::string role = Environment::Get()->find("DMLC_ROLE");
-      CHECK(role != "joint") << "RDMAVan in joint mode does not support IPC";
+      if (role == "joint") {
+        LOG(INFO) << "You are using IPC in joint mode, make sure no P2P operations are involved";
+      }
     }
     if (event_channel_ == nullptr) {
       event_channel_ = rdma_create_event_channel();
