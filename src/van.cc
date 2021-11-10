@@ -41,6 +41,8 @@ std::fstream fout_;
 #endif
 
 bool is_van_profiling_;
+Van::ErrHandle Van::err_handle_ = nullptr;
+
 Van *Van::Create(const std::string &type, Postoffice *postoffice) {
 #ifdef USE_PROFILING
   const char *val;

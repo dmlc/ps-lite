@@ -46,7 +46,8 @@ class RDMAVan : public Van {
     } else {
       std::string role = Environment::Get()->find("DMLC_ROLE");
       if (role == "joint") {
-        LOG(INFO) << "You are using IPC in joint mode, make sure no P2P operations are involved";
+        LOG(INFO) << "You are using IPC in joint mode, make sure no P2P "
+                     "operations are involved";
       }
     }
     if (event_channel_ == nullptr) {

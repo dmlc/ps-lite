@@ -6,6 +6,7 @@
 #define PS_INTERNAL_VAN_H_
 #include <atomic>
 #include <ctime>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,6 +20,14 @@
 namespace ps {
 class Resender;
 class Postoffice;
+
+typedef enum ErrorCode {
+  PS_OK,
+  PS_ERR_TIMED_OUT,
+  PS_ERR_NOT_CONNECTED,
+  PS_ERR_CONNECTION_RESET,
+  PS_ERR_OTHER
+} ErrorCode;
 
 /**
  * \brief Van sends messages to remote nodes
@@ -117,6 +126,20 @@ class Van {
   }
 
   /**
+   * \brief the handle to process an error
+   * \param data custom data
+   * \param status error status
+   * \param reason error description
+   */
+  using ErrHandle =
+      std::function<void(void *data, ErrorCode status, std::string reason)>;
+
+  static void set_err_handle(const ErrHandle &err_handle) {
+    CHECK(err_handle) << "invalid error handle";
+    err_handle_ = err_handle;
+  }
+
+  /**
    * \brief pin a memory address for RDMA. This can be used to
             avoid memory registration overhead during ZPush/ZPull.
    * \param addr the memory address
@@ -137,6 +160,8 @@ class Van {
    * \brief get the node type {'fabric', 'zeromq', 'rdma'}
    */
   virtual std::string GetType() const = 0;
+
+  static ErrHandle err_handle_;
 
  protected:
   /**

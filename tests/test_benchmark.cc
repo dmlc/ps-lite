@@ -127,6 +127,12 @@ uint64_t DecodeKey(ps::Key key) {
   return key - kr.begin();
 }
 
+void ErrHandler(void* data, ps::ErrorCode status, std::string reason) {
+  LOG(INFO) << "Custom error handler invoked(" << (int) status << "). "
+            << "reason: " << reason << ". aborting in 5 seconds";
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  abort();
+}
 
 template <typename Val>
 void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer<Val> *server) {
@@ -498,6 +504,8 @@ int main(int argc, char *argv[]) {
   enable_cpu = env2int("TEST_NUM_CPU_WORKER", 1);
   num_gpu_server = env2int("TEST_NUM_GPU_SERVER", 0);
   enable_cpu_server = env2int("TEST_NUM_CPU_SERVER", 1);
+
+  Van::set_err_handle(ErrHandler);
 
   // role
   const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));

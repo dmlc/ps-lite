@@ -31,6 +31,23 @@
 
 namespace ps {
 
+ErrorCode GetErrorCode(ucs_status_t status) {
+  switch (status) {
+    case UCS_OK:
+    case UCS_INPROGRESS:
+      return PS_OK;
+    case UCS_ERR_TIMED_OUT:
+      return PS_ERR_TIMED_OUT;
+    case UCS_ERR_NOT_CONNECTED:
+      return PS_ERR_NOT_CONNECTED;
+    case UCS_ERR_CONNECTION_RESET:
+      return PS_ERR_CONNECTION_RESET;
+    default:
+      return PS_ERR_OTHER;
+  }
+  return PS_ERR_OTHER;
+}
+
 std::mutex g_log_mutex;
 
 #define CHECK_STATUS(_status) CHECK((_status) == UCS_OK)
@@ -698,7 +715,7 @@ private:
       cudaError_t cerr = cudaSetDevice(src_dev_idx_);
 
       if (cudaSuccess != cerr) {
-        LOG(ERROR) << "Failed to set device " << src_dev_idx_ << ": " << cerr;
+        LOG(ERROR) << "failed to set device " << src_dev_idx_ << ": " << cerr;
       }
     }
 #else
@@ -822,11 +839,15 @@ private:
   }
 
   static void RxMetaCompletedCb(void *request, ucs_status_t status,
-                              ucp_tag_recv_info_t *info)
+                                ucp_tag_recv_info_t *info)
   {
     UCXRequest *req = reinterpret_cast<UCXRequest*>(request);
-
-    CHECK_STATUS(status) << "RxMetaCompletedCb failed with " << ucs_status_string(status);
+    if (status != UCS_OK && Van::err_handle_ != nullptr) {
+      std::string reason = "RxMetaCompletedCb failed with " + std::string(ucs_status_string(status));
+      Van::err_handle_(&status, GetErrorCode(status), reason);
+    } else {
+      CHECK_STATUS(status) << "RxMetaCompletedCb failed with " << ucs_status_string(status);
+    }
     req->completed = true;
     if (req->data.raw_meta == nullptr) {
       // immediate completion
@@ -840,7 +861,12 @@ private:
   {
     UCXRequest *req = reinterpret_cast<UCXRequest*>(request);
 
-    CHECK_STATUS(status) << "RxDataCompletedCb failed with " << ucs_status_string(status);
+    if (status != UCS_OK && Van::err_handle_ != nullptr) {
+      std::string reason = "RxDataCompletedCb failed with " + std::string(ucs_status_string(status));
+      Van::err_handle_(&status, GetErrorCode(status), reason);
+    } else {
+      CHECK_STATUS(status) << "RxDataCompletedCb failed with " << ucs_status_string(status);
+    }
     req->completed = true;
     if (req->data.buffer == nullptr) {
       // immediate completion
@@ -854,9 +880,12 @@ private:
   {
     UCXRequest *req = reinterpret_cast<UCXRequest*>(request);
     char *send_buf  = static_cast<char*>(user_data);
-
-    CHECK_STATUS(status) << "TX request completed with " << ucs_status_string(status);
-
+    if (status != UCS_OK && Van::err_handle_ != nullptr) {
+      std::string reason = "TX request completed with " + std::string(ucs_status_string(status));
+      Van::err_handle_(&status, GetErrorCode(status), reason);
+    } else {
+      CHECK_STATUS(status) << "TX request completed with " << ucs_status_string(status);
+    }
     delete [] send_buf;
 
     UCX_REQUEST_FREE(req);
@@ -929,7 +958,7 @@ class UCXVan : public Van {
     polling_tx_thread_.reset();
 
     for (const auto& it : contexts_) {
-        it.second->Cleanup();
+      it.second->Cleanup();
     }
 
     rx_pool_.reset();
@@ -1080,8 +1109,14 @@ class UCXVan : public Van {
     } else {
       ucs_status_ptr_t st = ContextById(src_dev_id)->Send(req);
       if (UCS_PTR_IS_ERR(st)) {
-        LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st))
-                   << ". " << msg.DebugString();
+        auto st_val = UCS_PTR_STATUS(st);
+        if (Van::err_handle_ != nullptr) {
+          std::string reason = "failed to send data: " + std::string(ucs_status_string(st_val));
+          Van::err_handle_(&st_val, GetErrorCode(st_val), reason);
+        } else {
+          LOG(ERROR) << "failed to send data: " << ucs_status_string(st_val)
+                     << ". " << msg.DebugString();
+        }
         return -1;
       }
       UCX_LOG(3, "send data, len: " << msg.data[1].size() << ", to id " << id);
@@ -1139,8 +1174,15 @@ class UCXVan : public Van {
         // Send was completed immediately
         delete[] meta_buf;
         if (UCS_PTR_IS_ERR(st)) {
-          LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st))
-                     << ". " << msg.DebugString();
+          if (Van::err_handle_ != nullptr) {
+            auto st_val = UCS_PTR_STATUS(st);
+            std::string reason = "failed to send meta data: " + std::string(ucs_status_string(st_val))
+                                 + ". " + msg.DebugString();
+            Van::err_handle_(&st_val, GetErrorCode(st_val), reason);
+          } else {
+            LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st))
+                       << ". " << msg.DebugString();
+          }
           return -1;
         }
       }
