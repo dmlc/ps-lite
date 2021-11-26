@@ -45,6 +45,8 @@ struct Endpoint {
   ThreadsafeQueue<WRContext *> free_start_ctx;
   ThreadsafeQueue<WRContext *> free_reply_ctx;
 
+  bool inited = false;
+
   Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {
     auto byteps_rx_depth = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
     auto byteps_start_depth =
@@ -141,28 +143,33 @@ struct Endpoint {
     CHECK_EQ(rdma_create_qp(cm_id, pd, &attr), 0)
         << "Create RDMA queue pair failed: " << strerror(errno);
 
-    InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
-                          kRendezvousStartContext);
-    InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
-                          kRendezvousReplyContext);
+    if (inited == false) { 
+      InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
+                            kRendezvousStartContext);
+      InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
+                            kRendezvousReplyContext);
+    }
 
     for (int i = 0; i < kRxDepth; ++i) {
-      void *buf;
-      aligned_malloc((void **)&buf, kMempoolChunkSize);
-      CHECK(buf);
-      struct ibv_mr *mr =
-          ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-      CHECK(mr)
-          << "ibv_reg_mr failed: " << strerror(errno)
-          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
-          << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
+      if (inited == false) { 
+        void *buf;
+        aligned_malloc((void **)&buf, kMempoolChunkSize);
+        CHECK(buf);
+        struct ibv_mr *mr =
+            ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
+        CHECK(mr)
+            << "ibv_reg_mr failed: " << strerror(errno)
+            << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
+            << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
 
-      rx_ctx[i].type = kReceiveContext;
-      rx_ctx[i].buffer = mr;
-      rx_ctx[i].private_data = this;
+        rx_ctx[i].type = kReceiveContext;
+        rx_ctx[i].buffer = mr;
+        rx_ctx[i].private_data = this;
+      }
 
       PostRecv(&rx_ctx[i]);
     }
+    inited = true;
   }
 
   void PostRecv(WRContext *ctx) {
