@@ -1,7 +1,7 @@
 """Workspace initialization. Consult the WORKSPACE on how to use it."""
 
 # Import third party config rules.
-load("//bazel:version_check.bzl", "check_bazel_version_at_least")
+load("//bazel:tensorflow.bzl", "check_bazel_version_at_least")
 
 # Import external repository rules.
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
