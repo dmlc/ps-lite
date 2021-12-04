@@ -7,7 +7,7 @@ package(default_visibility = ["//visibility:public"])
 build_test(
     name = "build_test",
     targets = [
-        # "@zstd//:zstd",
+        "@lz4",
         "@zeromq//:libzmq",
     ],
     visibility = ["//:__pkg__"],
