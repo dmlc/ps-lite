@@ -2,12 +2,9 @@
 
 # Import third party config rules.
 load("//bazel:version_check.bzl", "check_bazel_version_at_least")
-load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 
 # Import external repository rules.
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
-
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # Define all external repositories
 def _tf_repositories():
@@ -19,17 +16,11 @@ def _tf_repositories():
     #    curl -L <url> | sha256sum
     # and update the sha256 with the result.
 
-    tf_http_archive(
+    http_archive(
         name = "com_google_protobuf",
-        # patch_file = "//third_party/protobuf:protobuf.patch",
         sha256 = "25f1292d4ea6666f460a2a30038eef121e6c3937ae0f61d610611dfb14b0bd32",
         strip_prefix = "protobuf-3.19.1",
-        system_build_file = "//third_party/systemlibs:protobuf.BUILD",
-        system_link_files = {
-            "//third_party/systemlibs:protobuf.bzl": "protobuf.bzl",
-            "//third_party/systemlibs:protobuf_deps.bzl": "protobuf_deps.bzl",
-        },
-        urls = tf_mirror_urls("https://github.com/protocolbuffers/protobuf/archive/v3.19.1.zip"),
+        urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.19.1.zip"],
     )
 
     http_archive(
@@ -39,7 +30,6 @@ def _tf_repositories():
         build_file = Label("//third_party:zeromq.BUILD"),
         urls = ["https://github.com/zeromq/libzmq/archive/v4.3.4.zip"],
     )
-
 
 def workspace():
     # Check the bazel version before executing any repository rules, in case
