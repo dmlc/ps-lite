@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utilities for defining TensorFlow Bazel dependencies."""
+"""Utilities for defining Bazel dependencies."""
 
 def tf_mirror_urls(url):
     """A helper for generating TF-mirror versions of URLs.

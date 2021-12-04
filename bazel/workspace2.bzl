@@ -1,7 +1,7 @@
-"""TensorFlow workspace initialization. Consult the WORKSPACE on how to use it."""
+"""Workspace initialization. Consult the WORKSPACE on how to use it."""
 
 # Import third party config rules.
-load("//tensorflow:version_check.bzl", "check_bazel_version_at_least")
+load("//bazel:version_check.bzl", "check_bazel_version_at_least")
 load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 
 # Import external repository rules.
@@ -9,7 +9,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 
 
-# Define all external repositories required by TensorFlow
+# Define all external repositories
 def _tf_repositories():
     """All external dependencies for TF builds."""
 

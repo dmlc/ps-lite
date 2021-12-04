@@ -34,33 +34,6 @@ cc_proto_library(
     deps = [":meta_proto"],
 )
 
-cc_binary(
-    name = "zlib_usage_example",
-    srcs = ["zlib_example.cpp"],
-    deps = ["@zlib"],
-)
-
-cc_binary(
-    name = "lz4_usage_example",
-    srcs = ["lz4_frameCompress.c"],
-    deps = ["@lz4"],
-)
-
-build_test(
-    name = "build_test",
-    targets = [
-        "@rules_compressor//example:zlib_usage_example",
-        ":meta_cc_proto",
-        "@bzip2",
-        "@lz4",
-        "@org_lzma_lzma//:lzma",
-        "@snappy",
-        "@zlib",
-        # "@zstd//:zstd",
-    ],
-    visibility = ["//:__pkg__"],
-)
-
 # Public C++ headers for the Flatbuffers library.
 filegroup(
     name = "ps_headers",
@@ -80,7 +53,7 @@ cc_library(
 )
 
 cc_library(
-    name = "pslite",
+    name = "ps-lite",
     srcs = glob([
         "src/windows/*.h",
         "src/*.h",
@@ -89,7 +62,6 @@ cc_library(
     hdrs = [
         "//:ps_headers",
     ],
-    # copts = ["-Isrc"],
     linkstatic = 1,
     strip_include_prefix = "/include",
     visibility = ["//visibility:public"],

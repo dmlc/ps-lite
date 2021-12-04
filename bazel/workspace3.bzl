@@ -1,4 +1,4 @@
-"""TensorFlow workspace initialization. Consult the WORKSPACE on how to use it."""
+"""Workspace initialization. Consult the WORKSPACE on how to use it."""
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
@@ -39,10 +39,6 @@ def workspace():
         ],
     )
 
-    # native.local_repository(
-    #     name = "rules_compressor",
-    #     path = "/root/fuhailin/projects/rules_compressor",
-    # )
     git_repository(
         name = "rules_compressor",
         branch = "main",

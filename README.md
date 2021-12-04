@@ -44,6 +44,12 @@ git clone https://github.com/dmlc/ps-lite
 cd ps-lite && make -j4
 ```
 
+Or build with bazel
+
+```bash
+bazel build ps-lite
+```
+
 ### How to use
 
 `ps-lite` provides asynchronous communication for other projects: 

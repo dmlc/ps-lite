@@ -1,4 +1,4 @@
-"""TensorFlow workspace initialization. Consult the WORKSPACE on how to use it."""
+"""Workspace initialization. Consult the WORKSPACE on how to use it."""
 
 load("@rules_cc_toolchain//:rules_cc_toolchain_deps.bzl", "rules_cc_toolchain_deps")
 load("@rules_cc_toolchain//cc_toolchain:cc_toolchain.bzl", "register_cc_toolchains")
