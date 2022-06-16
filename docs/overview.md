@@ -177,6 +177,6 @@ name some of them
   convergence rate with large minibatch size *b*
 - [Sra, AISTATS'16](http://arxiv.org/abs/1508.05003) asynchronous SGD adaptive
   to the actually delay rather than the worst maximal delay
-- [Li, WSDM'16](http://www.cs.cmu.edu/~yuxiangw/docs/fm.pdf) practical
+- [Li, WSDM'16](https://sites.cs.ucsb.edu/~yuxiangw/docs/fm.pdf) practical
   considerations for asynchronous SGD with the parameter server
 - [Chen, LearningSys'16]() synchronized SGD for deep learning.

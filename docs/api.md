@@ -27,7 +27,7 @@ often server *i* handles the keys (feature indices) within the i-th
 
 , which is often used to monitor and control the
   progress of the machine learning application. It also can be used to deal with node
-  failures. See an example in [asynchronous SGD](https://github.com/dmlc/wormhole/blob/master/learn/solver/async_sgd.h#L27).
+  failures. See an example in [asynchronous SGD](https://github.com/dmlc/wormhole/blob/master/learn/linear/async_sgd.h#L27).
 
 ```eval_rst
 .. automodule:: ps::KVWorker
