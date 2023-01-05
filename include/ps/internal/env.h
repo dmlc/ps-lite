@@ -11,6 +11,7 @@ namespace ps {
 
 /**
  * \brief Environment configurations
+ * 一个单例模式的环境变量类，它通过一个 std::unordered_map<std::string, std::string> kvs 维护了一组 kvs 借以保存所有环境变量名以及值；
  */
 class Environment {
  public:

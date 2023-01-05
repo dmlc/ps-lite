@@ -8,7 +8,7 @@ void StartServer() {
     return;
   }
   auto server = new KVServer<float>(0);
-  server->set_request_handle(KVServerDefaultHandle<float>());
+  server->set_request_handle(KVServerDefaultHandle<float>()); //注册functor
   RegisterExitCallback([server](){ delete server; });
 }
 
@@ -32,7 +32,7 @@ void RunWorker() {
   int repeat = 50;
   std::vector<int> ts;
   for (int i = 0; i < repeat; ++i) {
-    ts.push_back(kv.Push(keys, vals));
+    ts.push_back(kv.Push(keys, vals));  //kv.Push()返回的是该请求的timestamp
 
     // to avoid too frequency push, which leads huge memory usage
     if (i > 10) kv.Wait(ts[ts.size()-10]);
@@ -63,12 +63,12 @@ void RunWorker() {
 
 int main(int argc, char *argv[]) {
   // start system
-  Start(0);
+  Start(0);  //Postoffice::start()，每个node都会调用到这里，但是在 Start 函数之中，会依据本次设定的角色来不同处理，只有角色为 scheduler 才会启动 Scheduler。
   // setup server nodes
-  StartServer();
+  StartServer(); //Server会在其中做有效执行，其他节点不会有效执行。
   // run worker nodes
-  RunWorker();
+  RunWorker();  //Worker会在其中做有效执行，其他节点不会有效执行。
   // stop system
-  Finalize(0, true);
+  Finalize(0, true); //结束。每个节点都需要执行这个函数。
   return 0;
 }

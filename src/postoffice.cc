@@ -41,6 +41,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     }
 
     // init node info.
+    // 对于所有的worker，进行node设置
     for (int i = 0; i < num_workers_; ++i) {
       int id = WorkerRankToID(i);
       for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
@@ -49,7 +50,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
         node_ids_[g].push_back(id);
       }
     }
-
+    // 对于所有的server，进行node设置
     for (int i = 0; i < num_servers_; ++i) {
       int id = ServerRankToID(i);
       for (int g : {id, kServerGroup, kWorkerGroup + kServerGroup,
@@ -58,7 +59,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
         node_ids_[g].push_back(id);
       }
     }
-
+    // 设置scheduler的node
     for (int g : {kScheduler, kScheduler + kServerGroup + kWorkerGroup,
                   kScheduler + kWorkerGroup, kScheduler + kServerGroup}) {
       node_ids_[g].push_back(kScheduler);
@@ -139,6 +140,11 @@ Customer* Postoffice::GetCustomer(int app_id, int customer_id, int timeout) cons
   return obj;
 }
 
+/**
+ * @brief 
+ * 每个节点在自己指定的命令运行完后会向schedular节点发送一个Control::BARRIER命令的请求并自己阻塞直到收到schedular对应的返回后才解除阻塞；
+ * schedular节点收到请求后则会在本地计数，看收到的请求数是否和barrier_group的数量是否相等，相等则表示每个机器都运行完指定的命令了，此时schedular节点会向barrier_group的每个机器发送一个返回的信息，并解除其阻塞。
+ */
 void Postoffice::Barrier(int customer_id, int node_group) {
   if (GetNodeIDs(node_group).size() <= 1) return;
   auto role = van_->my_node().role;
@@ -160,12 +166,15 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   req.meta.customer_id = customer_id;
   req.meta.control.barrier_group = node_group;
   req.meta.timestamp = van_->GetTimestamp();
-  van_->Send(req);
-  barrier_cond_.wait(ulk, [this, customer_id] {
+  van_->Send(req);  //给scheduler发给BARRIER
+  barrier_cond_.wait(ulk, [this, customer_id] {   //然后等待
       return barrier_done_[0][customer_id];
     });
 }
 
+/**
+ * 将int范围根据server个数均分
+*/
 const std::vector<Range>& Postoffice::GetServerKeyRanges() {
   server_key_ranges_mu_.lock();
   if (server_key_ranges_.empty()) {
@@ -189,10 +198,11 @@ void Postoffice::Manage(const Message& recv) {
       barrier_done_[recv.meta.app_id][customer_id] = true;
     }
     barrier_mu_.unlock();
-    barrier_cond_.notify_all();
+    barrier_cond_.notify_all();  //这里解除了barrier
   }
 }
 
+//Scheduler 在处理 ADD_NODE 消息时候，会看看是否已经有死亡节点，具体判通过当前时间戳与心跳包接收时间戳之差判断是否alive。
 std::vector<int> Postoffice::GetDeadNodes(int t) {
   std::vector<int> dead_nodes;
   if (!van_->IsReady() || t == 0) return dead_nodes;

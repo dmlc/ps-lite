@@ -15,6 +15,18 @@
 namespace ps {
 /**
  * \brief the center of the system
+ * 一个单例模式的全局管理类，一个 node 在生命期内具有一个PostOffice，依赖它的类成员对Node进行管理；
+ * 具有如下特点：
+ * 三种Node角色都依赖 Postoffice 进行管理，每一个 node 在生命期内具有一个单例 PostOffice。
+ * 如我们之前所说，ps-lite的特点是 worker, server, scheduler 都使用同一套代码，Postoffice也是如此，所以我们最好分开描述。
+ * 在 Scheduler侧，顾名思义，Postoffice 是邮局，可以认为是一个地址簿，一个调控中心，其记录了系统（由scheduler，server， worker 集体构成的这个系统）中所有节点的信息。具体功能如下：
+ *    维护了一个Van对象，负责整个网络的拉起、通信、命令管理如增加节点、移除节点、恢复节点等等；
+ *    负责整个集群基本信息的管理，比如worker、server数的获取，管理所有节点的地址，server 端 feature分布的获取，worker/server Rank与node id的互转，节点角色身份等等；
+ *    负责 Barrier 功能；
+ * 在 Server / Worker 端，负责：
+ *    配置当前node的一些信息，例如当前node是哪种类型(server，worker)，nodeid是啥，以及worker/server 的rank 到 node id的转换。
+ *    路由功能：负责 key 与 server 的对应关系。
+ *    Barrier 功能；
  */
 class Postoffice {
  public:
@@ -33,14 +45,14 @@ class Postoffice {
    * \param argv0 the program name, used for logging.
    * \param do_barrier whether to block until every nodes are started.
    */
-  void Start(int customer_id, const char* argv0, const bool do_barrier);
+  void Start(int customer_id, const char* argv0, const bool do_barrier); //建立通信初始化
   /**
    * \brief terminate the system
    *
    * All nodes should call this function before existing.
    * \param do_barrier whether to do block until every node is finalized, default true.
    */
-  void Finalize(const int customer_id, const bool do_barrier = true);
+  void Finalize(const int customer_id, const bool do_barrier = true); //节点阻塞退出
   /**
    * \brief add an customer to the system. threadsafe
    */
@@ -71,6 +83,9 @@ class Postoffice {
   /**
    * \brief return the key ranges of all server nodes
    */
+  /**
+   * 将int范围按照server个数均分
+  */
   const std::vector<Range>& GetServerKeyRanges();
   /**
    * \brief the template of a callback
@@ -98,6 +113,10 @@ class Postoffice {
    * \brief convert from a worker rank into a node id
    * \param rank the worker rank
    */
+  /**
+   * 逻辑rankid映射到物理node id，Node id 是物理节点的唯一标识，可以和一个 host + port 的二元组唯一对应，1-7 的id表示的是node group，单个节点的id 就从 8 开始
+   * 而且这个算法保证server id为偶数，worker id为奇数
+  */
   static inline int WorkerRankToID(int rank) {
     return rank * 2 + 9;
   }
@@ -142,16 +161,17 @@ class Postoffice {
    * \brief barrier
    * \param node_id the barrier group id
    */
-  void Barrier(int customer_id, int node_group);
+  void Barrier(int customer_id, int node_group); //进入 barrier 阻塞状态
   /**
    * \brief process a control message, called by van
    * \param the received message
    */
-  void Manage(const Message& recv);
+  void Manage(const Message& recv); //退出 barrier 阻塞状态
   /**
    * \brief update the heartbeat record map
    * \param node_id the \ref Node id
    * \param t the last received heartbeat time
+   * 存储了心跳关联的节点的活跃信息。键为节点编号，值为上次收到其 HEARTBEAT 消息的时间戳。
    */
   void UpdateHeartbeat(int node_id, time_t t) {
     std::lock_guard<std::mutex> lk(heartbeat_mu_);
@@ -161,23 +181,23 @@ class Postoffice {
    * \brief get node ids that haven't reported heartbeats for over t seconds
    * \param t timeout in sec
    */
-  std::vector<int> GetDeadNodes(int t = 60);
+  std::vector<int> GetDeadNodes(int t = 60); //根据 heartbeats_ 获取已经 dead 的节点；
 
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
 
-  void InitEnvironment();
-  Van* van_;
+  void InitEnvironment(); //初始化环境变量，创建 van 对象；
+  Van* van_; //底层通信对象
   mutable std::mutex mu_;
   // app_id -> (customer_id -> customer pointer)
-  std::unordered_map<int, std::unordered_map<int, Customer*>> customers_;
-  std::unordered_map<int, std::vector<int>> node_ids_;
+  std::unordered_map<int, std::unordered_map<int, Customer*>> customers_; //本节点目前有哪些customer
+  std::unordered_map<int, std::vector<int>> node_ids_;  //node id映射表
   std::mutex server_key_ranges_mu_;
-  std::vector<Range> server_key_ranges_;
-  bool is_worker_, is_server_, is_scheduler_;
-  int num_servers_, num_workers_;
-  std::unordered_map<int, std::unordered_map<int, bool> > barrier_done_;
+  std::vector<Range> server_key_ranges_; //Server key 区间范围对象
+  bool is_worker_, is_server_, is_scheduler_; //标注了本节点类型
+  int num_servers_, num_workers_; //节点心跳对象
+  std::unordered_map<int, std::unordered_map<int, bool> > barrier_done_; //Barrier 同步变量
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;

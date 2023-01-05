@@ -11,6 +11,11 @@ namespace ps {
 
 /**
  * \brief resend a messsage if no ack is received within a given time
+ * 在分布式系统中，通信也是不可靠的，丢包、延时都是必须考虑的场景。PS Lite 设计了 Resender类来提高通信的可靠性，它引入了 ACK 机制。即：
+ *    每一个节点，对于收到的非 ACK/TERMINATE 消息，必须响应一个 ACK 消息。
+ *    每一个节点，对于发送的每一个非 ACK/TERMINATE 消息，必须在本地缓存下来。存储的数据结构是一个 MAP，根据消息的内容生产唯一的键。
+ *    每一个节点，对于收到的 ACK 消息，必须根据反馈的键从本地缓存中移除对应的消息。
+ *    每一个节点运行一个监控线程，每隔 PS_RESEND_TIMEOUT 毫秒检查一下本地缓存。根据每个消息的发送时间戳和当前时间，找出超时的消息进行重发，并累加其重试次数。
  */
 class Resender {
  public:
