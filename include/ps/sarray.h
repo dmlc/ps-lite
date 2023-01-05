@@ -37,6 +37,13 @@ namespace ps {
  *
  * \tparam V the value type
  */
+/**
+ * SArray 有如下特点：
+ * SArray 是共享数据的智能数组，提供类似 std::vector 的功能。
+ * SArray 可以从 std::vector 构建出来。
+ * SArray 可以像 C 指针一样拷贝赋值，当对某个SArray的引用为0时，就自动回收该SArray的内存。
+ * 可以理解为一个零拷贝的vector，能兼容vector的数据结构。
+*/
 template<typename V>
 class SArray {
  public:

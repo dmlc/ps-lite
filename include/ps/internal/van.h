@@ -23,6 +23,8 @@ class PBMeta;
  * If environment variable PS_RESEND is set to be 1, then van will resend a
  * message if it no ACK messsage is received within PS_RESEND_TIMEOUT
  * millisecond
+ * 通信模块，负责与其他节点的网络通信和Message的实际收发工作。PostOffice持有一个Van成员；相当于邮局里有了地址簿，就需要有货车来负责拉送物件，Van 就是整个Parameter Server的通信模块
+ * Van 负责具体的节点间通信。具体来说就是负责建立起节点之间的互相连接（例如Worker与Scheduler之间的连接），并且开启本地的receiving thread用来监听收到的message。
  */
 class Van {
  public:
@@ -48,7 +50,7 @@ class Van {
    * control message, give it to postoffice::manager, otherwise, give it to the
    * corresponding app.
    */
-  virtual void Start(int customer_id);
+  virtual void Start(int customer_id); //建立通信初始化；
 
   /**
    * \brief send a message, It is thread-safe
@@ -83,6 +85,7 @@ class Van {
  protected:
   /**
    * \brief connect to a node
+   * 连接节点
    */
   virtual void Connect(const Node &node) = 0;
 
@@ -91,18 +94,21 @@ class Van {
    * do multiple retries on binding the port. since it's possible that
    * different nodes on the same machine picked the same port
    * \return return the port binded, -1 if failed.
+   * 绑定到自己节点之上 
    */
   virtual int Bind(const Node &node, int max_retry) = 0;
 
   /**
    * \brief block until received a message
    * \return the number of bytes received. -1 if failed or timeout
+   * 接收消息，用阻塞方式  
    */
   virtual int RecvMsg(Message *msg) = 0;
 
   /**
    * \brief send a mesage
    * \return the number of bytes sent
+   * 发送消息
    */
   virtual int SendMsg(const Message &msg) = 0;
 
@@ -121,17 +127,17 @@ class Van {
    */
   void UnpackMeta(const char *meta_buf, int buf_size, Meta *meta);
 
-  Node scheduler_;
-  Node my_node_;
-  bool is_scheduler_;
+  Node scheduler_; //Scheduler 节点参数，每一个node都会记录Scheduler 节点的信息；
+  Node my_node_; //本节点参数。如果本节点是Scheduler，则 my_node_ 会指向上面的 scheduler_ ；
+  bool is_scheduler_; //本节点是否是 scheduler;
   std::mutex start_mu_;
 
  private:
   /** thread function for receving */
-  void Receiving();
+  void Receiving(); //接收消息线程的处理函数；
 
   /** thread function for heartbeat */
-  void Heartbeat();
+  void Heartbeat(); //发送心跳线程的处理函数；
 
   // node's address string (i.e. ip:port) -> node id
   // this map is updated when ip:port is received for the first time
@@ -147,20 +153,21 @@ class Van {
   int num_servers_ = 0;
   int num_workers_ = 0;
   /** the thread for receiving messages */
-  std::unique_ptr<std::thread> receiver_thread_;
+  std::unique_ptr<std::thread> receiver_thread_; //接收消息线程指针；
   /** the thread for sending heartbeat */
-  std::unique_ptr<std::thread> heartbeat_thread_;
-  std::vector<int> barrier_count_;
+  std::unique_ptr<std::thread> heartbeat_thread_; //发送心跳线程指针；
+  std::vector<int> barrier_count_; //barrier 计数，用来记录登记节点数目，只有所有节点都登记之后，系统才到了 ready 状态，scheduler 才会给所有节点发送 ready 消息，系统才正式启动。
   /** msg resender */
-  Resender *resender_ = nullptr;
+  Resender *resender_ = nullptr; //重新发送消息指针;
   int drop_rate_ = 0;
-  std::atomic<int> timestamp_{0};
-  int init_stage = 0;
+  std::atomic<int> timestamp_{0}; //message 自增 id，原子变量;
+  int init_stage = 0; //记录了目前连接到哪些 nodes;
 
   /**
    * \brief processing logic of AddNode message for scheduler
+   * scheduler 的 AddNode 消息处理函数；
    */
-  void ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
+  void ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes, 
                                         Meta *recovery_nodes);
 
   /**
@@ -170,21 +177,25 @@ class Van {
 
   /**
    * \brief processing logic of AddNode message (run on each node)
+   * worker 和 server 的 AddNode 消息处理函数；
    */
   void ProcessAddNodeCommand(Message *msg, Meta *nodes, Meta *recovery_nodes);
 
   /**
    * \brief processing logic of Barrier message (run on each node)
+   * Barrier 消息处理函数；
    */
   void ProcessBarrierCommand(Message *msg);
 
   /**
    * \brief processing logic of AddNode message (run on each node)
+   * 心跳包处理函数；
    */
   void ProcessHearbeat(Message *msg);
 
   /**
    * \brief processing logic of Data message
+   * 数据消息（push & pull）处理函数；
    */
   void ProcessDataMsg(Message *msg);
 

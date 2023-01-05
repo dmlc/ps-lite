@@ -436,24 +436,29 @@ class KVServer : public SimpleApp {
 
 /**
  * \brief an example handle adding pushed kv into store
+ * functor，用与处理server收到的来自worker的请求
  */
 template <typename Val>
 struct KVServerDefaultHandle {
+  // req_meta 是存储该请求的一些元信息，比如请求来自于哪个节点，发送给哪个节点等等
+  // req_data 是发送过来的数据
+  // server 是指向当前server对象的指针  
   void operator()(
       const KVMeta& req_meta, const KVPairs<Val>& req_data, KVServer<Val>* server) {
     size_t n = req_data.keys.size();
     KVPairs<Val> res;
-    if (!req_meta.pull) {
+    if (!req_meta.pull) { //收到的是pull请求
       CHECK_EQ(n, req_data.vals.size());
-    } else {
-      res.keys = req_data.keys; res.vals.resize(n);
+    } else { //收到的是push请求
+      res.keys = req_data.keys; 
+      res.vals.resize(n);
     }
     for (size_t i = 0; i < n; ++i) {
       Key key = req_data.keys[i];
-      if (req_meta.push) {
-        store[key] += req_data.vals[i];
+      if (req_meta.push) { //push请求
+        store[key] += req_data.vals[i]; //将相同key的value相加
       }
-      if (req_meta.pull) {
+      if (req_meta.pull) { //pull请求
         res.vals[i] = store[key];
       }
     }
@@ -667,7 +672,7 @@ int KVWorker<Val>::AddPullCB(
 
       // do check
       size_t total_key = 0, total_val = 0;
-      for (const auto& s : kvs) {
+      for (const auto& s : kvs) {   // 进行有效性验证
         Range range = FindRange(keys, s.keys.front(), s.keys.back()+1);
         CHECK_EQ(range.size(), s.keys.size())
             << "unmatched keys size from one server";

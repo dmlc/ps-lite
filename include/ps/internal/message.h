@@ -59,6 +59,7 @@ DataType GetDataType() {
 }
 /**
  * \brief information about a node
+ * 信息类，存储了本节点的对应信息，每个 Node 可以使用 hostname + port 来唯一标识。
  */
 struct Node {
   /** \brief the empty value */
@@ -120,6 +121,14 @@ struct Control {
     return ss.str();
   }
   /** \brief all commands */
+  /**
+   * ADD_NODE：worker和server向shceduler进行节点注册；
+   * BARRIER：节点间的同步阻塞消息；
+   * HEARTBEAT：节点间的心跳信号；
+   * TERMINATE：节点退出信号；
+   * ACK：确认消息，ACK 类型只有启用了 Resender 类才会出现。
+   * EMPTY：push or pull；
+  */
   enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT };
   /** \brief the command */
   Command cmd;
@@ -201,6 +210,22 @@ struct Meta {
 /**
  * \brief messages that communicated amaong nodes.
  */
+
+/**
+ * Message 是要发送的信息，具体如下：
+ * 消息头 meta：就是元数据（使用了Protobuf 进行数据压缩），包括：
+ *   控制信息（Control）表示这个消息表示的意义（例如终止，确认ACK，同步等），具体包括：
+ *      命令类型；
+ *          节点列表（vector），节点包括：
+ *            节点的角色、ip, port、id、是否是恢复节点
+ *      group id表示这个控制命令对谁执行；
+ *      方法签名；
+ * 发送者；
+ * 接受者；
+ * 时间戳；
+ * ...
+ * 消息体 body：就是发送的数据，使用了自定义的 SArray 共享数据，减少数据拷贝；
+*/
 struct Message {
   /** \brief the meta info of this message */
   Meta meta;

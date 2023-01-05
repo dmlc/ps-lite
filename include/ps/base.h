@@ -7,6 +7,9 @@
 #include "ps/internal/utils.h"
 namespace ps {
 
+/**
+ * ps-lite的key只支持int类型
+ */
 #if USE_KEY32
 /*! \brief Use unsigned 32-bit int as the key type */
 using Key = uint32_t;

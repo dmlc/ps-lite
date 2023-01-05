@@ -10,6 +10,7 @@ namespace ps {
 
 /**
  * \brief the format for a received request or reponse for \ref SimpleApp
+ * KVServer和KVWorker的父类，它提供了简单的Request, Wait, Response，Process功能；KVServer和KVWorker分别根据自己的使命重写了这些功能；
  */
 struct SimpleData {
   /** \brief the int head */
@@ -172,7 +173,7 @@ inline void SimpleApp::Process(const Message& msg) {
   recv.body      = msg.meta.body;
   recv.timestamp = msg.meta.timestamp;
   recv.customer_id = msg.meta.customer_id;
-  if (msg.meta.request) {
+  if (msg.meta.request) { // 判断是request还是response，调用相应handle处理
     CHECK(request_handle_);
     request_handle_(recv, this);
   } else {
