@@ -8,6 +8,7 @@
 #include <zmq.h>
 #include <string>
 #include <unordered_map>
+#include <ctime>
 #include "ps/internal/van.h"
 #if _MSC_VER
 #define rand_r(x) rand()
@@ -30,7 +31,7 @@ inline void FreeData(void *data, void *hint) {
  */
 class ZMQVan : public Van {
  public:
-  ZMQVan() {}
+  ZMQVan() : context_(nullptr), receiver_(nullptr) {}
   virtual ~ZMQVan() {}
 
  protected:
@@ -77,7 +78,7 @@ class ZMQVan : public Van {
     }
     std::string addr = local ? "ipc:///tmp/" : "tcp://" + hostname + ":";
     int port = node.port;
-    unsigned seed = static_cast<unsigned>(time(NULL) + port);
+    unsigned int seed = static_cast<unsigned int>(std::time(nullptr) + port);
     for (int i = 0; i < max_retry + 1; ++i) {
       auto address = addr + std::to_string(port);
       if (zmq_bind(receiver_, address.c_str()) == 0) break;

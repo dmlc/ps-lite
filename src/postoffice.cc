@@ -17,11 +17,29 @@ void Postoffice::InitEnvironment() {
   const char* val = NULL;
   std::string van_type = GetEnv("DMLC_PS_VAN_TYPE", "zmq");
   van_ = Van::Create(van_type);
-  val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
-  num_workers_ = atoi(val);
-  val =  CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
-  num_servers_ = atoi(val);
-  val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  
+  // 获取worker和server数量，如果未设置则提供默认值
+  val = Environment::Get()->find("DMLC_NUM_WORKER");
+  if (!val) {
+    LOG(WARNING) << "DMLC_NUM_WORKER未设置，使用默认值1";
+    num_workers_ = 1;
+  } else {
+    num_workers_ = atoi(val);
+  }
+  
+  val = Environment::Get()->find("DMLC_NUM_SERVER");
+  if (!val) {
+    LOG(WARNING) << "DMLC_NUM_SERVER未设置，使用默认值1";
+    num_servers_ = 1;
+  } else {
+    num_servers_ = atoi(val);
+  }
+  
+  val = Environment::Get()->find("DMLC_ROLE");
+  if (!val) {
+    LOG(WARNING) << "DMLC_ROLE未设置，请指定角色(worker/server/scheduler)";
+    val = "worker";  // 默认为worker角色
+  }
   std::string role(val);
   is_worker_ = role == "worker";
   is_server_ = role == "server";

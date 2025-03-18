@@ -57,6 +57,28 @@ cd ps-lite && make -j4
     [DiFacto](https://github.com/dmlc/difacto)
     [Wormhole](https://github.com/dmlc/wormhole)
 
+### Testing
+
+To run the tests:
+
+```bash
+cd tests
+bash run_tests.sh
+```
+
+You can also run specific tests:
+
+```bash
+# 运行特定测试
+bash run_tests.sh connection_test
+bash run_tests.sh simple_app_test
+bash run_tests.sh kv_app_test
+
+# 运行多工作者测试
+bash run_tests.sh multi_workers
+```
+
+For more details on testing, see [tests/README.md](tests/README.md).
 
 ### Research papers
   1. Mu Li, Dave Andersen, Alex Smola, Junwoo Park, Amr Ahmed, Vanja Josifovski,
