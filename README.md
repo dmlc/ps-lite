@@ -6,7 +6,7 @@ framework. It provides clean yet powerful APIs. For example, a worker node can
 communicate with the server nodes by
 - `Push(keys, values)`: push a list of (key, value) pairs to the server nodes
 - `Pull(keys)`: pull the values from servers for a list of keys
-- `Wait`: wait untill a push or pull finished.
+- `Wait`: wait until a push or pull finished.
 
 A simple example:
 
