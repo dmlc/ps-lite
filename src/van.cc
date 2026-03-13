@@ -306,9 +306,10 @@ void Van::Start(int customer_id) {
     }
 
     // bind.
-    my_node_.port = Bind(my_node_, is_scheduler_ ? 0 : 40);
+    int max_retry = 10;  // 增加重试次数
+    my_node_.port = Bind(my_node_, is_scheduler_ ? max_retry : 40);
     PS_VLOG(1) << "Bind to " << my_node_.DebugString();
-    CHECK_NE(my_node_.port, -1) << "bind failed";
+    CHECK_NE(my_node_.port, -1) << "bind failed, port可能被占用，尝试使用不同端口或检查防火墙设置";
 
     // connect to the scheduler
     Connect(scheduler_);
