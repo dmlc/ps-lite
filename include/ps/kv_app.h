@@ -640,18 +640,16 @@ void KVWorker<Val>::Process(const Message& msg) {
 }
 template <typename Val>
 void KVWorker<Val>::RunCallback(int timestamp) {
+  Callback cb = nullptr;
   mu_.lock();
   auto it = callbacks_.find(timestamp);
   if (it != callbacks_.end()) {
-    mu_.unlock();
-
-    CHECK(it->second);
-    it->second();
-
-    mu_.lock();
+    cb = it->second;
+    CHECK(cb);
     callbacks_.erase(it);
   }
   mu_.unlock();
+  if (cb) cb();
 }
 
 template <typename Val>
