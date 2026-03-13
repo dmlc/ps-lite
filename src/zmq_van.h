@@ -72,7 +72,7 @@ class ZMQVan : public Van {
     int local = GetEnv("DMLC_LOCAL", 0);
     std::string hostname = node.hostname.empty() ? "*" : node.hostname;
     int use_kubernetes = GetEnv("DMLC_USE_KUBERNETES", 0);
-    if (use_kubernetes > 0 && node.role == Node::SCHEDULER) {
+    if (use_kubernetes > 0) {
       hostname = "0.0.0.0";
     }
     std::string addr = local ? "ipc:///tmp/" : "tcp://" + hostname + ":";
